@@ -1,0 +1,89 @@
+{
+  "name": "devnotes",
+  "displayName": "DevNotes",
+  "description": "Project-scoped sticky-note canvas for developers",
+  "version": "0.1.0",
+  "publisher": "devnotes",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "devnotes-container",
+          "title": "DevNotes",
+          "icon": "media/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "devnotes-container": [
+        {
+          "type": "webview",
+          "id": "devnotesView",
+          "name": "Notes"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "devnotes.openCanvas",
+        "title": "Open Canvas",
+        "icon": "$(layout-panel-center)",
+        "category": "DevNotes"
+      },
+      {
+        "command": "devnotes.refresh",
+        "title": "Refresh",
+        "icon": "$(refresh)",
+        "category": "DevNotes"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "devnotes.openCanvas",
+          "when": "view == devnotesView",
+          "group": "navigation@1"
+        },
+        {
+          "command": "devnotes.refresh",
+          "when": "view == devnotesView",
+          "group": "navigation@2"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./ && npm run build:webview",
+    "build:webview": "npm run build:editor && npm run build:canvas",
+    "build:editor": "esbuild src/webview/editor.ts --bundle --outfile=media/editor.js --platform=browser --target=es2020 --minify",
+    "build:canvas": "esbuild src/webview/canvas.ts --bundle --outfile=media/canvas.js --platform=browser --target=es2020 --minify",
+    "watch": "tsc -watch -p ./",
+    "watch:canvas": "esbuild src/webview/canvas.ts --bundle --outfile=media/canvas.js --platform=browser --target=es2020 --watch",
+    "lint": "eslint src --ext ts"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/vscode": "^1.85.0",
+    "esbuild": "^0.27.4",
+    "typescript": "^5.3.0"
+  },
+  "dependencies": {
+    "@tiptap/core": "^3.21.0",
+    "@tiptap/extension-task-item": "^3.21.0",
+    "@tiptap/extension-task-list": "^3.21.0",
+    "@tiptap/pm": "^3.21.0",
+    "@tiptap/starter-kit": "^3.21.0",
+    "tiptap-markdown": "^0.9.0"
+  }
+}

@@ -1,0 +1,14 @@
+# Build output
+out/
+media/canvas.js
+media/editor.js
+
+# Dependencies
+node_modules/
+
+# VS Code extension package
+*.vsix
+
+# Private / personal
+drafts/
+.claude/
