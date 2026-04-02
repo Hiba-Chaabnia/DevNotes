@@ -75,6 +75,7 @@ export class CanvasPanel {
       type        : 'init',
       notes       : this.storage.getNotes(),
       tags        : this.storage.getTags(),
+      canvasLayout: this.storage.getCanvasLayout(),
       focusNoteId : this.focusNoteId,
     });
   }
@@ -118,6 +119,10 @@ export class CanvasPanel {
         }
         break;
       }
+
+      case 'updateCanvasLayout':
+        await this.storage.updateCanvasLayout(msg.id, msg.rect);
+        break;
     }
   }
 
@@ -522,6 +527,7 @@ export class CanvasPanel {
 
   let notes        = [];
   let tags         = [];
+  let canvasLayout = {};
   let isFreeMode   = false;
   let activeCardId = null;
   let activeEditor = null;
@@ -539,8 +545,9 @@ export class CanvasPanel {
   window.addEventListener('message', function (ev) {
     var msg = ev.data;
     if (msg.type !== 'init') return;
-    notes = msg.notes || [];
-    tags  = msg.tags  || [];
+    notes        = msg.notes        || [];
+    tags         = msg.tags         || [];
+    canvasLayout = msg.canvasLayout || {};
     if (msg.projectName) {
       document.getElementById('toolbar-title').textContent = msg.projectName + ' — Canvas';
     }
@@ -630,7 +637,7 @@ export class CanvasPanel {
       canvasArea.appendChild(card);
 
       if (isFreeMode) {
-        var pos = note.canvas || defaultPos(idx);
+        var pos = canvasLayout[note.id] || defaultPos(idx);
         card.style.left   = pos.x + 'px';
         card.style.top    = pos.y + 'px';
         card.style.width  = (pos.w || 250) + 'px';
@@ -958,8 +965,8 @@ export class CanvasPanel {
       card.style.zIndex = '';
       var x = parseInt(card.style.left), y = parseInt(card.style.top);
       var w = card.offsetWidth, h = card.offsetHeight;
-      note.canvas = { x: x, y: y, w: w, h: h };
-      vscode.postMessage({ type: 'updateNote', id: note.id, changes: { canvas: note.canvas } });
+      canvasLayout[note.id] = { x: x, y: y, w: w, h: h };
+      vscode.postMessage({ type: 'updateCanvasLayout', id: note.id, rect: canvasLayout[note.id] });
     });
   }
 
@@ -985,8 +992,8 @@ export class CanvasPanel {
       handle.releasePointerCapture(e.pointerId);
       var x = parseInt(card.style.left), y = parseInt(card.style.top);
       var w = card.offsetWidth, h = card.offsetHeight;
-      note.canvas = { x: x, y: y, w: w, h: h };
-      vscode.postMessage({ type: 'updateNote', id: note.id, changes: { canvas: note.canvas } });
+      canvasLayout[note.id] = { x: x, y: y, w: w, h: h };
+      vscode.postMessage({ type: 'updateCanvasLayout', id: note.id, rect: canvasLayout[note.id] });
     });
   }
 

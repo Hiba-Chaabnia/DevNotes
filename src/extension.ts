@@ -6,23 +6,60 @@ import { detectProjectIdentity } from './GitDetector';
 
 // ─── Activation ──────────────────────────────────────────────────────────────
 
-export function activate(context: vscode.ExtensionContext): void {
+export async function activate(context: vscode.ExtensionContext): Promise<void> {
   try {
-    _activate(context);
+    await _activate(context);
   } catch (err) {
     vscode.window.showErrorMessage(`DevNotes failed to activate: ${err}`);
     console.error('[DevNotes] activation error:', err);
   }
 }
 
-function _activate(context: vscode.ExtensionContext): void {
-  const storage = new NoteStorage(context.workspaceState, context.globalState);
+async function _activate(context: vscode.ExtensionContext): Promise<void> {
+  const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri;
+
+  if (!workspaceRoot) {
+    // No folder open — register a minimal provider so the sidebar panel shows
+    // a helpful message instead of a blank/broken view.
+    context.subscriptions.push(
+      vscode.window.registerWebviewViewProvider('devnotesView', {
+        resolveWebviewView(view: vscode.WebviewView) {
+          view.webview.options = { enableScripts: false };
+          view.webview.html = `<!DOCTYPE html>
+<html lang="en"><body style="
+  font-family:var(--vscode-font-family);
+  font-size:13px;
+  color:var(--vscode-descriptionForeground);
+  padding:24px 16px;
+  text-align:center;
+  line-height:1.5;
+">
+  <p>DevNotes requires an open workspace folder.</p>
+  <p style="margin-top:8px;font-size:12px;">
+    Open a folder or workspace to start taking notes.
+  </p>
+</body></html>`;
+        },
+      })
+    );
+    return;
+  }
+
+  const storage = new NoteStorage(workspaceRoot, context.workspaceState, context.globalState);
+  const watcher = await storage.init();
+  context.subscriptions.push(watcher);
 
   const sidebar = new SidebarView(
     context,
     storage,
     (noteId) => CanvasPanel.show(context, storage, noteId, () => sidebar.push())
   );
+
+  // Sync both panels when notes change due to external file edits (e.g. git pull)
+  storage.onExternalChange = () => {
+    sidebar.push();
+    CanvasPanel.current?.push();
+  };
 
   // Register the WebviewView in the sidebar
   context.subscriptions.push(
