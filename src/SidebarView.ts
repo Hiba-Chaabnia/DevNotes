@@ -8,7 +8,6 @@ type ToExt =
   | { type: 'createNote'; title: string; color: string }
   | { type: 'updateNote'; id: string; changes: Partial<Note> }
   | { type: 'deleteNote'; id: string }
-  | { type: 'openCanvas'; noteId?: string }
   | { type: 'addTag'; label: string; color: string }
   | { type: 'deleteTag'; id: string };
 
@@ -21,7 +20,6 @@ export class SidebarView implements vscode.WebviewViewProvider {
   constructor(
     private readonly context: vscode.ExtensionContext,
     private readonly storage: NoteStorage,
-    private readonly onOpenCanvas: (noteId?: string) => void
   ) {}
 
   setProjectName(name: string): void {
@@ -88,10 +86,6 @@ export class SidebarView implements vscode.WebviewViewProvider {
         }
         break;
       }
-
-      case 'openCanvas':
-        this.onOpenCanvas(msg.noteId);
-        break;
 
       case 'addTag': {
         await this.storage.addTag(msg.label, msg.color);
@@ -546,12 +540,6 @@ export class SidebarView implements vscode.WebviewViewProvider {
 <div class="topbar">
   <div class="topbar-row">
     <span class="project-name" id="project-name">Loading…</span>
-    <button class="icon-btn" id="btn-canvas" title="Open Canvas">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-        <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/>
-        <rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/>
-      </svg>
-    </button>
     <button class="icon-btn" id="btn-new" title="New Note">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
         <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
@@ -681,11 +669,6 @@ export class SidebarView implements vscode.WebviewViewProvider {
     vscode.postMessage({ type: 'createNote', title, color: newColor });
     closeNewForm();
   }
-
-  // ── Canvas button ────────────────────────────────────────────────────────
-  document.getElementById('btn-canvas').addEventListener('click', () => {
-    vscode.postMessage({ type: 'openCanvas' });
-  });
 
   // ── Tag bar ─────────────────────────────────────────────────────────────
   function renderTagBar() {
@@ -821,13 +804,6 @@ export class SidebarView implements vscode.WebviewViewProvider {
       if (!wasOpen) { colorPop.classList.add('open'); openColorPop = note.id; }
     });
 
-    // ↗ Canvas button
-    const canvasBtn = mkEl('button', 'card-btn', '↗');
-    canvasBtn.title = 'Open on canvas';
-    canvasBtn.addEventListener('click', () => {
-      vscode.postMessage({ type: 'openCanvas', noteId: note.id });
-    });
-
     // Delete button
     const delBtn = mkEl('button', 'card-btn', '✕');
     delBtn.title = 'Delete note';
@@ -835,7 +811,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
       vscode.postMessage({ type: 'deleteNote', id: note.id });
     });
 
-    actions.append(colorBtn, canvasBtn, delBtn);
+    actions.append(colorBtn, delBtn);
     hdr.append(starBtn, title, actions);
     card.append(hdr, colorPop);
 

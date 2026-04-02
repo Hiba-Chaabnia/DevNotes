@@ -35,47 +35,18 @@
     },
     "commands": [
       {
-        "command": "devnotes.openCanvas",
-        "title": "Open Canvas",
-        "icon": "$(layout-panel-center)",
-        "category": "DevNotes"
-      },
-      {
         "command": "devnotes.refresh",
         "title": "Refresh",
         "icon": "$(refresh)",
         "category": "DevNotes"
-      },
-      {
-        "command": "devnotes.search",
-        "title": "Search Notes",
-        "icon": "$(search)",
-        "category": "DevNotes"
-      }
-    ],
-    "keybindings": [
-      {
-        "command": "devnotes.search",
-        "key": "ctrl+alt+d",
-        "mac": "cmd+alt+d"
       }
     ],
     "menus": {
       "view/title": [
         {
-          "command": "devnotes.openCanvas",
-          "when": "view == devnotesView",
-          "group": "navigation@1"
-        },
-        {
           "command": "devnotes.refresh",
           "when": "view == devnotesView",
-          "group": "navigation@2"
-        },
-        {
-          "command": "devnotes.search",
-          "when": "view == devnotesView",
-          "group": "navigation@0"
+          "group": "navigation@1"
         }
       ]
     }
@@ -83,11 +54,9 @@
   "scripts": {
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./ && npm run build:webview",
-    "build:webview": "npm run build:editor && npm run build:canvas",
+    "build:webview": "npm run build:editor",
     "build:editor": "esbuild src/webview/editor.ts --bundle --outfile=media/editor.js --platform=browser --target=es2020 --minify",
-    "build:canvas": "esbuild src/webview/canvas.ts --bundle --outfile=media/canvas.js --platform=browser --target=es2020 --minify",
     "watch": "tsc -watch -p ./",
-    "watch:canvas": "esbuild src/webview/canvas.ts --bundle --outfile=media/canvas.js --platform=browser --target=es2020 --watch",
     "lint": "eslint src --ext ts"
   },
   "devDependencies": {

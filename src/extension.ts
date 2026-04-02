@@ -1,7 +1,6 @@
 import * as vscode from 'vscode';
 import { NoteStorage } from './NoteStorage';
 import { SidebarView } from './SidebarView';
-import { CanvasPanel } from './CanvasPanel';
 import { detectProjectIdentity } from './GitDetector';
 
 // ─── Activation ──────────────────────────────────────────────────────────────
@@ -49,16 +48,11 @@ async function _activate(context: vscode.ExtensionContext): Promise<void> {
   const watcher = await storage.init();
   context.subscriptions.push(watcher);
 
-  const sidebar = new SidebarView(
-    context,
-    storage,
-    (noteId) => CanvasPanel.show(context, storage, noteId, () => sidebar.push())
-  );
+  const sidebar = new SidebarView(context, storage);
 
-  // Sync both panels when notes change due to external file edits (e.g. git pull)
+  // Sync sidebar when notes change due to external file edits (e.g. git pull)
   storage.onExternalChange = () => {
     sidebar.push();
-    CanvasPanel.current?.push();
   };
 
   // Register the WebviewView in the sidebar
@@ -78,35 +72,8 @@ async function _activate(context: vscode.ExtensionContext): Promise<void> {
   // ── Commands ─────────────────────────────────────────────────────────────
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('devnotes.openCanvas', () => {
-      CanvasPanel.show(context, storage, undefined, () => sidebar.push());
-    }),
-
     vscode.commands.registerCommand('devnotes.refresh', () => {
       sidebar.push();
-    }),
-
-    vscode.commands.registerCommand('devnotes.search', async () => {
-      const notes = storage.getNotes();
-      const tags  = storage.getTags();
-
-      type NoteItem = vscode.QuickPickItem & { noteId: string };
-      const items: NoteItem[] = notes.map(n => ({
-        label      : n.title,
-        description: n.tags.map(tid => tags.find(t => t.id === tid)?.label).filter(Boolean).join(', ') || undefined,
-        detail     : n.content.slice(0, 120).replace(/\n/g, ' ') || undefined,
-        noteId     : n.id,
-      }));
-
-      const pick = await vscode.window.showQuickPick<NoteItem>(items, {
-        matchOnDescription: true,
-        matchOnDetail     : true,
-        placeHolder       : 'Search notes by title, content, or tag…',
-      });
-
-      if (pick) {
-        CanvasPanel.show(context, storage, pick.noteId, () => sidebar.push());
-      }
     })
   );
 }

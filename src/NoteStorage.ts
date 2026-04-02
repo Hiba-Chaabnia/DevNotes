@@ -21,10 +21,6 @@ export interface Tag {
   color: string;         // hex color for the tag pill
 }
 
-export interface CanvasLayout {
-  [noteId: string]: { x: number; y: number; w: number; h: number };
-}
-
 // ─── Constants ───────────────────────────────────────────────────────────────
 
 export const NOTE_COLORS: Record<string, string> = {
@@ -69,19 +65,17 @@ const dec = new TextDecoder();
  * File layout
  * ───────────
  *   .devnotes/
- *     .gitignore          – ignores everything except .gitignore and tags.json
- *     tags.json           – custom Tag definitions (committed; shared with team)
- *     canvas-layout.json  – freeform card positions (gitignored; personal)
- *     <id>.md             – one file per note (personal by default; opt-in sharing
- *                           via the `shared` field which un-ignores the file)
+ *     .gitignore  – ignores everything except .gitignore and tags.json
+ *     tags.json   – custom Tag definitions (committed; shared with team)
+ *     <id>.md     – one file per note (personal by default; opt-in sharing
+ *                   via the `shared` field which un-ignores the file)
  *
  * Concurrency model
  * ─────────────────
- *   • getNotes() / getTags() / getCanvasLayout() are synchronous reads from an
- *     in-memory cache — SidebarView and CanvasPanel callers need no changes.
+ *   • getNotes() / getTags() are synchronous reads from an in-memory cache.
  *   • Writes to individual note files are serialised per note ID via writeQueues.
- *   • Writes to canvas-layout.json and .gitignore are serialised via dedicated
- *     single-file queues so read-modify-write operations never race.
+ *   • Writes to .gitignore are serialised via a dedicated queue so
+ *     read-modify-write operations never race.
  *   • Self-triggered watcher events (our own writes) are suppressed via
  *     selfWrites (notes) and tagsWriteInflight (tags.json).
  *
@@ -92,9 +86,8 @@ const dec = new TextDecoder();
  *   (e.g. after a git pull that brings in a teammate's shared notes).
  */
 export class NoteStorage {
-  private notes:  Note[]        = [];
-  private tags:   Tag[]         = [];
-  private layout: CanvasLayout  = {};
+  private notes: Note[] = [];
+  private tags:  Tag[]  = [];
 
   /** Called when the cache is updated due to external file changes (e.g. git pull). */
   onExternalChange?: () => void;
@@ -104,8 +97,7 @@ export class NoteStorage {
   // IDs of notes currently being written by us — suppresses self-triggered watcher events
   private readonly selfWrites  = new Set<string>();
 
-  // Serialised queues for shared files (read-modify-write operations must not race)
-  private layoutWriteQueue:    Promise<void> = Promise.resolve();
+  // Serialised queue for .gitignore (read-modify-write operations must not race)
   private gitignoreWriteQueue: Promise<void> = Promise.resolve();
 
   // Counter for in-flight tags.json writes — suppresses self-triggered watcher events
@@ -128,9 +120,8 @@ export class NoteStorage {
   async init(): Promise<vscode.Disposable> {
     await this.ensureFolder();
     await this.migrate();
-    this.notes  = await this.readAllNotes();
-    this.tags   = await this.readTags();
-    this.layout = await this.readCanvasLayout();
+    this.notes = await this.readAllNotes();
+    this.tags  = await this.readTags();
     return this.setupWatcher();
   }
 
@@ -143,8 +134,6 @@ export class NoteStorage {
   }
 
   getTags(): Tag[] { return this.tags; }
-
-  getCanvasLayout(): CanvasLayout { return this.layout; }
 
   // ── Notes ─────────────────────────────────────────────────────────────────
 
@@ -179,22 +168,7 @@ export class NoteStorage {
     try {
       await vscode.workspace.fs.delete(this.noteUri(id));
     } catch { /* already gone */ }
-    // Only rewrite canvas layout if the note actually had a position
-    if (id in this.layout) {
-      delete this.layout[id];
-      await this.writeCanvasLayout();
-    }
     await this.updateGitignore(id, false);
-  }
-
-  // ── Canvas layout ─────────────────────────────────────────────────────────
-
-  async updateCanvasLayout(
-    id: string,
-    rect: { x: number; y: number; w: number; h: number }
-  ): Promise<void> {
-    this.layout[id] = rect;
-    await this.writeCanvasLayout();
   }
 
   // ── Tags ──────────────────────────────────────────────────────────────────
@@ -368,32 +342,6 @@ export class NoteStorage {
     }
   }
 
-  private async readCanvasLayout(): Promise<CanvasLayout> {
-    try {
-      const raw = await vscode.workspace.fs.readFile(
-        vscode.Uri.joinPath(this.folder, 'canvas-layout.json')
-      );
-      return JSON.parse(dec.decode(raw)) as CanvasLayout;
-    } catch {
-      return {};
-    }
-  }
-
-  // Serialised via layoutWriteQueue — concurrent drag/resize events never race
-  private writeCanvasLayout(): Promise<void> {
-    this.layoutWriteQueue = this.layoutWriteQueue
-      .then(() => this.doWriteCanvasLayout())
-      .catch(() => {});
-    return this.layoutWriteQueue;
-  }
-
-  private async doWriteCanvasLayout(): Promise<void> {
-    await vscode.workspace.fs.writeFile(
-      vscode.Uri.joinPath(this.folder, 'canvas-layout.json'),
-      enc.encode(JSON.stringify(this.layout, null, 2))
-    );
-  }
-
   // Serialised via gitignoreWriteQueue — each read-modify-write sees the previous result
   private updateGitignore(id: string, shared: boolean): Promise<void> {
     this.gitignoreWriteQueue = this.gitignoreWriteQueue
@@ -487,20 +435,10 @@ export class NoteStorage {
     // ── Notes (workspace-scoped → .md files) ────────────────────────────
     const legacyNotes = this.legacyWorkspaceState.get<any[]>(LEGACY_NOTES_KEY, []);
     if (legacyNotes.length > 0) {
-      const migratedLayout: CanvasLayout = {};
       for (const raw of legacyNotes) {
-        // Extract canvas position into layout map
-        if (raw.canvas) {
-          migratedLayout[raw.id] = raw.canvas;
-        }
-        // Write note without the canvas field
         // eslint-disable-next-line @typescript-eslint/no-unused-vars
         const { canvas, ...note } = raw;
         await this.writeNote(note as Note);
-      }
-      if (Object.keys(migratedLayout).length > 0) {
-        this.layout = migratedLayout;
-        await this.writeCanvasLayout();
       }
       await this.legacyWorkspaceState.update(LEGACY_NOTES_KEY, undefined);
     }
