@@ -201,6 +201,26 @@ export class SidebarView implements vscode.WebviewViewProvider {
   }
   .search-row input::placeholder { color: var(--vscode-input-placeholderForeground); }
 
+  .search-clear {
+    background: none;
+    border: none;
+    color: var(--vscode-descriptionForeground);
+    cursor: pointer;
+    padding: 0 2px;
+    font-size: 11px;
+    line-height: 1;
+    opacity: .7;
+    flex-shrink: 0;
+  }
+  .search-clear:hover { opacity: 1; }
+
+  mark.match-highlight {
+    background: var(--vscode-editor-findMatchHighlightBackground, rgba(255,200,0,.4));
+    color: inherit;
+    border-radius: 2px;
+    padding: 0 1px;
+  }
+
   /* ── Tag filter bar ──────────────────────────────────── */
   .tag-bar {
     display: flex;
@@ -543,6 +563,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
       <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
     </svg>
     <input id="search" type="text" placeholder="Search notes…" autocomplete="off">
+    <button class="search-clear" id="search-clear" title="Clear search" style="display:none">✕</button>
   </div>
 </div>
 
@@ -590,7 +611,8 @@ export class SidebarView implements vscode.WebviewViewProvider {
   const projectName  = document.getElementById('project-name');
   const cardList     = document.getElementById('card-list');
   const tagBar       = document.getElementById('tag-bar');
-  const searchEl     = document.getElementById('search');
+  const searchEl      = document.getElementById('search');
+  const searchClearEl = document.getElementById('search-clear');
   const newForm      = document.getElementById('new-note-form');
   const newTitleEl   = document.getElementById('new-title');
   const newColorsEl  = document.getElementById('new-colors');
@@ -618,7 +640,23 @@ export class SidebarView implements vscode.WebviewViewProvider {
   // ── Search ──────────────────────────────────────────────────────────────
   searchEl.addEventListener('input', () => {
     searchQuery = searchEl.value.toLowerCase();
+    searchClearEl.style.display = searchQuery ? 'block' : 'none';
     renderCards();
+  });
+  searchClearEl.addEventListener('click', () => {
+    searchQuery = '';
+    searchEl.value = '';
+    searchClearEl.style.display = 'none';
+    searchEl.focus();
+    renderCards();
+  });
+  searchEl.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && searchQuery) {
+      searchQuery = '';
+      searchEl.value = '';
+      searchClearEl.style.display = 'none';
+      renderCards();
+    }
   });
 
   // ── New note ────────────────────────────────────────────────────────────
@@ -701,8 +739,12 @@ export class SidebarView implements vscode.WebviewViewProvider {
   // ── Cards ────────────────────────────────────────────────────────────────
   function visibleNotes() {
     return notes.filter(n => {
-      if (searchQuery && !n.title.toLowerCase().includes(searchQuery) &&
-          !n.content.toLowerCase().includes(searchQuery)) return false;
+      if (searchQuery) {
+        const tagText = n.tags.map(tid => { const t = tags.find(t => t.id === tid); return t ? t.label : ''; }).join(' ').toLowerCase();
+        if (!n.title.toLowerCase().includes(searchQuery) &&
+            !n.content.toLowerCase().includes(searchQuery) &&
+            !tagText.includes(searchQuery)) return false;
+      }
       if (activeTagIds.length > 0 && !activeTagIds.some(id => n.tags.includes(id))) return false;
       return true;
     });
@@ -713,7 +755,11 @@ export class SidebarView implements vscode.WebviewViewProvider {
     const visible = visibleNotes();
     if (visible.length === 0) {
       const empty = mkEl('div', 'empty');
-      empty.innerHTML = '<div class="empty-icon">📋</div><p>No notes yet.<br>Click <strong>+</strong> to create one.</p>';
+      if (notes.length === 0) {
+        empty.innerHTML = '<div class="empty-icon">📋</div><p>No notes yet.<br>Click <strong>+</strong> to create one.</p>';
+      } else {
+        empty.innerHTML = '<div class="empty-icon">🔍</div><p>No notes match<br><strong>' + esc(searchQuery || 'the selected filter') + '</strong>.</p>';
+      }
       cardList.appendChild(empty);
       return;
     }
@@ -810,7 +856,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
     const contentWrap = mkEl('div', 'card-content');
 
     const preview  = mkEl('div', 'card-preview clamped');
-    preview.innerHTML = simpleMarkdown(note.content);
+    preview.innerHTML = searchQuery ? matchSnippet(note.content, searchQuery) : simpleMarkdown(note.content);
 
     const showMore = mkEl('div', 'show-more', '▾ more');
     const isLong   = note.content.split('\\n').length > 4 || note.content.length > 200;
@@ -878,6 +924,20 @@ export class SidebarView implements vscode.WebviewViewProvider {
   }
 
   // ── Helpers ─────────────────────────────────────────────────────────────
+  function esc(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+  function matchSnippet(content, query) {
+    if (!content) return '';
+    const lower = content.toLowerCase();
+    const idx   = lower.indexOf(query);
+    if (idx === -1) return simpleMarkdown(content);
+    const start  = Math.max(0, idx - 40);
+    const end    = Math.min(content.length, idx + query.length + 80);
+    const text   = (start > 0 ? '\\u2026' : '') + content.slice(start, end) + (end < content.length ? '\\u2026' : '');
+    const li     = text.toLowerCase().indexOf(query);
+    return '<p>' + esc(text.slice(0, li)) + '<mark class="match-highlight">' + esc(text.slice(li, li + query.length)) + '</mark>' + esc(text.slice(li + query.length)) + '</p>';
+  }
+
   function mkEl(tag, cls = '', text = '') {
     const el = document.createElement(tag);
     if (cls)  el.className = cls;

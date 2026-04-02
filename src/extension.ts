@@ -84,6 +84,29 @@ async function _activate(context: vscode.ExtensionContext): Promise<void> {
 
     vscode.commands.registerCommand('devnotes.refresh', () => {
       sidebar.push();
+    }),
+
+    vscode.commands.registerCommand('devnotes.search', async () => {
+      const notes = storage.getNotes();
+      const tags  = storage.getTags();
+
+      type NoteItem = vscode.QuickPickItem & { noteId: string };
+      const items: NoteItem[] = notes.map(n => ({
+        label      : n.title,
+        description: n.tags.map(tid => tags.find(t => t.id === tid)?.label).filter(Boolean).join(', ') || undefined,
+        detail     : n.content.slice(0, 120).replace(/\n/g, ' ') || undefined,
+        noteId     : n.id,
+      }));
+
+      const pick = await vscode.window.showQuickPick<NoteItem>(items, {
+        matchOnDescription: true,
+        matchOnDetail     : true,
+        placeHolder       : 'Search notes by title, content, or tag…',
+      });
+
+      if (pick) {
+        CanvasPanel.show(context, storage, pick.noteId, () => sidebar.push());
+      }
     })
   );
 }

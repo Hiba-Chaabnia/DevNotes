@@ -45,6 +45,19 @@
         "title": "Refresh",
         "icon": "$(refresh)",
         "category": "DevNotes"
+      },
+      {
+        "command": "devnotes.search",
+        "title": "Search Notes",
+        "icon": "$(search)",
+        "category": "DevNotes"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "devnotes.search",
+        "key": "ctrl+alt+d",
+        "mac": "cmd+alt+d"
       }
     ],
     "menus": {
@@ -58,6 +71,11 @@
           "command": "devnotes.refresh",
           "when": "view == devnotesView",
           "group": "navigation@2"
+        },
+        {
+          "command": "devnotes.search",
+          "when": "view == devnotesView",
+          "group": "navigation@0"
         }
       ]
     }

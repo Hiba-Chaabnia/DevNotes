@@ -207,6 +207,43 @@ export class CanvasPanel {
   }
   .tb-btn-new:hover { filter: brightness(1.1); }
 
+  /* ── Toolbar search ──────────────────────────────────── */
+  .tb-search {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    background: var(--vscode-input-background);
+    border: 1px solid var(--vscode-input-border, transparent);
+    border-radius: 5px;
+    padding: 3px 7px;
+    flex: 1;
+    max-width: 220px;
+    min-width: 0;
+  }
+  .tb-search input {
+    flex: 1;
+    border: none;
+    background: transparent;
+    color: var(--vscode-input-foreground);
+    outline: none;
+    font-size: 12px;
+    font-family: var(--vscode-font-family);
+    min-width: 0;
+  }
+  .tb-search input::placeholder { color: var(--vscode-input-placeholderForeground); }
+  .tb-search-clear {
+    background: none;
+    border: none;
+    color: var(--vscode-descriptionForeground);
+    cursor: pointer;
+    padding: 0 2px;
+    font-size: 11px;
+    line-height: 1;
+    opacity: .7;
+    flex-shrink: 0;
+  }
+  .tb-search-clear:hover { opacity: 1; }
+
   /* ── Canvas area ─────────────────────────────────────── */
   .canvas-scroll {
     flex: 1;
@@ -491,6 +528,13 @@ export class CanvasPanel {
 <!-- ── Toolbar ── -->
 <div class="toolbar">
   <span class="toolbar-title" id="toolbar-title">DevNotes Canvas</span>
+  <div class="tb-search">
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" style="opacity:.5;flex-shrink:0">
+      <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+    </svg>
+    <input id="canvas-search" type="text" placeholder="Search…" autocomplete="off">
+    <button class="tb-search-clear" id="canvas-search-clear" title="Clear search" style="display:none">✕</button>
+  </div>
   <div class="tb-group">
     <button class="tb-btn active" id="btn-grid" title="Grid layout">Grid</button>
     <button class="tb-btn"        id="btn-free" title="Freeform layout">Freeform</button>
@@ -525,16 +569,19 @@ export class CanvasPanel {
   const COLORS     = ${colorsJson};
   const COLOR_KEYS = Object.keys(COLORS);
 
-  let notes        = [];
-  let tags         = [];
-  let canvasLayout = {};
-  let isFreeMode   = false;
-  let activeCardId = null;
-  let activeEditor = null;
-  let saveDebounce = null;
-  let qaColor      = COLOR_KEYS[0];
+  let notes             = [];
+  let tags              = [];
+  let canvasLayout      = {};
+  let canvasSearchQuery = '';
+  let isFreeMode        = false;
+  let activeCardId      = null;
+  let activeEditor      = null;
+  let saveDebounce      = null;
+  let qaColor           = COLOR_KEYS[0];
 
-  const canvasArea = document.getElementById('canvas-area');
+  const canvasArea         = document.getElementById('canvas-area');
+  const canvasSearchEl     = document.getElementById('canvas-search');
+  const canvasSearchClearEl = document.getElementById('canvas-search-clear');
   const qaOverlay  = document.getElementById('qa-overlay');
   const qaTitleEl  = document.getElementById('qa-title');
   const qaColorsEl = document.getElementById('qa-colors');
@@ -571,6 +618,28 @@ export class CanvasPanel {
     document.getElementById('btn-free').classList.add('active');
     document.getElementById('btn-grid').classList.remove('active');
     renderCanvas();
+  });
+
+  // ── Search ────────────────────────────────────────────────────────────
+  canvasSearchEl.addEventListener('input', function () {
+    canvasSearchQuery = canvasSearchEl.value.toLowerCase();
+    canvasSearchClearEl.style.display = canvasSearchQuery ? 'block' : 'none';
+    renderCanvas();
+  });
+  canvasSearchClearEl.addEventListener('click', function () {
+    canvasSearchQuery = '';
+    canvasSearchEl.value = '';
+    canvasSearchClearEl.style.display = 'none';
+    canvasSearchEl.focus();
+    renderCanvas();
+  });
+  canvasSearchEl.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && canvasSearchQuery) {
+      canvasSearchQuery = '';
+      canvasSearchEl.value = '';
+      canvasSearchClearEl.style.display = 'none';
+      renderCanvas();
+    }
   });
 
   // ── New note ───────────────────────────────────────────────────────────
@@ -615,24 +684,39 @@ export class CanvasPanel {
     canvasArea.innerHTML = '';
     canvasArea.className = 'canvas-area ' + (isFreeMode ? 'free-mode' : 'grid-mode');
 
-    if (notes.length === 0) {
+    var sorted = notes.slice().sort(function (a, b) {
+      return (b.starred ? 1 : 0) - (a.starred ? 1 : 0) || b.updatedAt - a.updatedAt;
+    });
+
+    var filtered = canvasSearchQuery ? sorted.filter(function (n) {
+      var tagText = (n.tags || []).map(function (tid) {
+        var t = tags.find(function (t) { return t.id === tid; });
+        return t ? t.label : '';
+      }).join(' ').toLowerCase();
+      return n.title.toLowerCase().includes(canvasSearchQuery) ||
+             n.content.toLowerCase().includes(canvasSearchQuery) ||
+             tagText.includes(canvasSearchQuery);
+    }) : sorted;
+
+    if (filtered.length === 0) {
       var empty = document.createElement('div');
       empty.className = 'empty';
       var icon = document.createElement('div');
       icon.className = 'empty-icon';
-      icon.textContent = '📋';
       var txt = document.createElement('p');
-      txt.innerHTML = 'No notes yet.<br>Click <strong>+ Note</strong> to create one.';
+      if (notes.length === 0) {
+        icon.textContent = '📋';
+        txt.innerHTML = 'No notes yet.<br>Click <strong>+ Note</strong> to create one.';
+      } else {
+        icon.textContent = '🔍';
+        txt.innerHTML = 'No notes match <strong>' + canvasSearchQuery.replace(/&/g,'&amp;').replace(/</g,'&lt;') + '</strong>.';
+      }
       empty.append(icon, txt);
       canvasArea.appendChild(empty);
       return;
     }
 
-    var sorted = notes.slice().sort(function (a, b) {
-      return (b.starred ? 1 : 0) - (a.starred ? 1 : 0) || b.updatedAt - a.updatedAt;
-    });
-
-    sorted.forEach(function (note, idx) {
+    filtered.forEach(function (note, idx) {
       var card = buildCard(note);
       canvasArea.appendChild(card);
 
