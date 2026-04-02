@@ -1,11 +1,10 @@
 # DevNotes
 
-A VS Code extension that gives you a **project-scoped sticky-note canvas** — rich text notes that live alongside your code, organized visually on a free-form canvas.
+A VS Code extension that gives you a **project-scoped note panel** — rich text notes that live alongside your code, organized in a sidebar view.
 
 ## Features
 
 - **Sidebar panel** — quick access to all notes from the activity bar
-- **Canvas view** — arrange notes spatially, resize and reposition freely
 - **Rich text editor** — powered by [Tiptap](https://tiptap.dev/), with support for bold, italic, task lists, and Markdown input
 - **Project-scoped storage** — notes are tied to the workspace, not a global account
 - **Git-aware** — detects the current repo so notes stay relevant to the project
@@ -15,7 +14,7 @@ A VS Code extension that gives you a **project-scoped sticky-note canvas** — r
 
 1. Install the extension (or run it via **F5** in the repo)
 2. Click the **DevNotes** icon in the activity bar
-3. Use the **Open Canvas** button to arrange notes visually, or create notes directly in the sidebar panel
+3. Create notes directly in the sidebar panel
 
 ## Sharing Notes with Teammates
 
@@ -49,10 +48,9 @@ Storing notes as files in the workspace solves all three: git handles versioning
 
 ```
 .devnotes/
-  .gitignore          — ignores everything by default; updated when notes are shared
-  tags.json           — custom tag definitions for this workspace
-  canvas-layout.json  — personal canvas card positions (never committed)
-  <id>.md             — one file per note
+  .gitignore  — ignores everything by default; updated when notes are shared
+  tags.json   — custom tag definitions for this workspace
+  <id>.md     — one file per note
 ```
 
 ### Note format
@@ -83,12 +81,16 @@ This means notes are readable and editable in any text editor, even without the 
 |---|---|---|
 | `<id>.md` | Gitignored | Note marked as Shared |
 | `tags.json` | Gitignored | Added manually by user |
-| `canvas-layout.json` | Gitignored | Never — always personal |
 | `.gitignore` | Gitignored | First note is shared |
 
-Canvas card positions (`canvas-layout.json`) are intentionally never shared — each person arranges their own workspace.
+## Why the canvas view was removed
 
-When the first note is shared, `.devnotes/.gitignore` is also un-ignored automatically so teammates receive the same sharing rules when they pull.
+An earlier version included a freeform canvas — a separate VS Code panel where notes could be arranged and resized spatially. It was removed for the following reasons:
+
+- **Complexity for little gain.** The canvas required a dedicated webview, a separate esbuild bundle, and a `canvas-layout.json` file to persist card positions. This was a significant slice of the codebase serving a feature that duplicated what the sidebar already does.
+- **State fragmentation.** The extension had to keep two panels in sync — any note mutation in the sidebar had to be pushed to the canvas and vice versa. This introduced subtle race conditions and made the message-passing logic harder to follow.
+- **Personal layout, no sharing value.** Canvas positions were intentionally never committed to git, making the spatial arrangement purely personal. Given that notes themselves are the shareable artifact, the canvas added friction without adding collaboration value.
+- **The sidebar covers the same need more simply.** The sidebar has inline search, tag filtering, starred sorting, and per-card editing — the same information the canvas displayed, without the overhead of a free-form layout engine.
 
 ## Development
 
@@ -101,9 +103,8 @@ Press **F5** in VS Code to launch the Extension Development Host.
 
 | Script | Description |
 |---|---|
-| `npm run compile` | Full build (TypeScript + webviews) |
+| `npm run compile` | Full build (TypeScript + webview) |
 | `npm run watch` | Watch TypeScript files |
-| `npm run watch:canvas` | Watch canvas webview only |
 | `npm run lint` | Lint source files |
 
 ## Tech Stack
