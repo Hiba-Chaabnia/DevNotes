@@ -4,8 +4,11 @@ A VS Code extension that gives you a **project-scoped note panel** — rich text
 
 ## Features
 
-- **Sidebar panel** — quick access to all notes from the activity bar
-- **Rich text editor** — powered by [Tiptap](https://tiptap.dev/), with support for bold, italic, task lists, and Markdown input
+- **Sidebar panel** — quick access to all notes from the activity bar, with inline search and tag filtering
+- **Rich text editor** — click ✏ on any note to open a full Tiptap editor with a formatting toolbar (bold, italic, headings, lists, task lists, code blocks, and more)
+- **Tags** — assign tags to notes for filtering; create custom tags with any color; delete tags you no longer need
+- **Color-coded notes** — eight color options per note, changeable at any time from the card
+- **Starred notes** — star important notes to pin them to the top of the list
 - **Project-scoped storage** — notes are tied to the workspace, not a global account
 - **Git-aware** — detects the current repo so notes stay relevant to the project
 - **Opt-in sharing** — share individual notes with teammates through git, with nothing exposed by default
@@ -14,7 +17,17 @@ A VS Code extension that gives you a **project-scoped note panel** — rich text
 
 1. Install the extension (or run it via **F5** in the repo)
 2. Click the **DevNotes** icon in the activity bar
-3. Create notes directly in the sidebar panel
+3. Hit **+** to create a note — pick a title, color, and any tags upfront
+4. Click the note content to edit inline, or press **✏** to open the full rich text editor
+
+## Working with Tags
+
+Tags are shown in the filter bar at the top of the sidebar. Click any tag to filter the list to matching notes; click multiple tags to broaden the selection.
+
+- **Create a tag** — click **+ tag** at the right end of the tag bar, enter a name, and pick a color
+- **Assign tags to a note** — click the **#** button on a card to open the tag picker; click any tag to toggle it on or off
+- **Assign tags at creation** — tags can also be selected in the new-note form before the note is created
+- **Delete a tag** — hover over a tag chip in the filter bar and click the **✕** that appears (built-in tags cannot be deleted)
 
 ## Sharing Notes with Teammates
 
@@ -22,15 +35,11 @@ Notes are private by default — the `.devnotes/` folder is fully gitignored and
 
 To share a note:
 
-1. Mark the note as **Shared** in the UI
-2. Commit the resulting files:
-   ```
-   git add .devnotes/.gitignore .devnotes/<note-id>.md
-   git commit -m "share: <note title>"
-   ```
-3. Teammates pull and the note appears automatically in their DevNotes panel
+1. Click the **share icon** (⇄) on a note card — it highlights teal when sharing is active
+2. A notification appears with the exact git commands to commit; click **Copy git commands** to copy them
+3. Run the commands and push — teammates pull and the note appears automatically in their DevNotes panel
 
-To un-share, unmark the note as Shared and commit the updated `.devnotes/.gitignore`.
+To un-share, click the share icon again to toggle it off, then commit the updated `.devnotes/.gitignore`.
 
 ## Storage Design
 
@@ -73,7 +82,7 @@ updatedAt: 1712349000
 2. Make any API call → 401
 ```
 
-This means notes are readable and editable in any text editor, even without the extension installed.
+Notes are readable and editable in any text editor, even without the extension installed.
 
 ### Personal vs. shared data
 
