@@ -81,19 +81,29 @@ export class SidebarView implements vscode.WebviewViewProvider {
           const note = this.storage.getNote(msg.id);
           if (!note) break;
           if (msg.changes.shared && !prevShared) {
+            // Determine whether custom tags exist so we know to include tags.json
+            const defaultIds = new Set(DEFAULT_TAGS.map(t => t.id));
+            const hasCustomTags = this.storage.getTags().some(t => !defaultIds.has(t.id));
+            const tagsCmdPart = hasCustomTags ? ' .devnotes/tags.json' : '';
             const action = await vscode.window.showInformationMessage(
-              `"${note.title}" is now shared. Commit it to git to share with teammates.`,
+              `"${note.title}" is now shared. Commit it to git to make it visible to teammates.`,
               'Copy git commands'
             );
             if (action === 'Copy git commands') {
               await vscode.env.clipboard.writeText(
-                `git add .devnotes/.gitignore .devnotes/${note.id}.md\ngit commit -m "share: ${note.title}"`
+                `git add .devnotes/.gitignore${tagsCmdPart} ".devnotes/${note.id}.md"\ngit commit -m "share: ${note.title}"`
               );
             }
           } else if (!msg.changes.shared && prevShared) {
-            vscode.window.showInformationMessage(
-              `"${note.title}" unshared. Commit the updated .devnotes/.gitignore to remove it for teammates.`
+            const action = await vscode.window.showInformationMessage(
+              `"${note.title}" unshared. Remove it from git tracking and push to update teammates.`,
+              'Copy git commands'
             );
+            if (action === 'Copy git commands') {
+              await vscode.env.clipboard.writeText(
+                `git rm --cached ".devnotes/${note.id}.md"\ngit add .devnotes/.gitignore\ngit commit -m "unshare: ${note.title}"`
+              );
+            }
           }
         }
         break;

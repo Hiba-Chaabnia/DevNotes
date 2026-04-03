@@ -368,19 +368,28 @@ export class NoteStorage {
 
     const noteEntry      = `!${id}.md`;
     const gitignoreEntry = '!.gitignore';
+    const tagsEntry      = '!tags.json';
 
-    const lines = content.split('\n').filter(l => l.trim() !== noteEntry);
+    // Normalise line endings (CRLF → LF) and strip blank lines to keep the
+    // file tidy after repeated edits.
+    const lines = content
+      .split(/\r?\n/)
+      .filter(l => l.trim() !== '' || l === '*') // preserve the wildcard line
+      .filter(l => l.trim() !== noteEntry);       // remove stale note entry
 
     if (shared) {
-      // Un-ignore .gitignore itself the first time any note is shared so
-      // teammates can pull the sharing rules alongside the note.
+      // Un-ignore .gitignore and tags.json the first time any note is shared
+      // so teammates can pull both the sharing rules and custom tag definitions.
       if (!lines.some(l => l.trim() === gitignoreEntry)) {
         lines.push(gitignoreEntry);
+      }
+      if (!lines.some(l => l.trim() === tagsEntry)) {
+        lines.push(tagsEntry);
       }
       lines.push(noteEntry);
     }
 
-    await vscode.workspace.fs.writeFile(gitignorePath, enc.encode(lines.join('\n')));
+    await vscode.workspace.fs.writeFile(gitignorePath, enc.encode(lines.join('\n') + '\n'));
   }
 
   // ── Private: file watcher ─────────────────────────────────────────────────
