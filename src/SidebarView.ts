@@ -1,13 +1,14 @@
 import * as vscode from 'vscode';
-import { NoteStorage, Note, Tag, NOTE_COLORS } from './NoteStorage';
+import { NoteStorage, Note, Tag, NOTE_COLORS, DEFAULT_TAGS } from './NoteStorage';
 
 // ─── Message types ────────────────────────────────────────────────────────────
 
 type ToExt =
   | { type: 'ready' }
-  | { type: 'createNote'; title: string; color: string }
+  | { type: 'createNote'; title: string; color: string; tags: string[] }
   | { type: 'updateNote'; id: string; changes: Partial<Note> }
   | { type: 'deleteNote'; id: string }
+  | { type: 'openEditor'; noteId: string }
   | { type: 'addTag'; label: string; color: string }
   | { type: 'deleteTag'; id: string };
 
@@ -20,6 +21,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
   constructor(
     private readonly context: vscode.ExtensionContext,
     private readonly storage: NoteStorage,
+    private readonly onOpenEditor: (noteId: string) => void,
   ) {}
 
   setProjectName(name: string): void {
@@ -39,7 +41,6 @@ export class SidebarView implements vscode.WebviewViewProvider {
 
     webviewView.webview.onDidReceiveMessage((msg: ToExt) => this.handle(msg));
 
-    // Push fresh data whenever the panel becomes visible
     webviewView.onDidChangeVisibility(() => {
       if (webviewView.visible) this.push();
     });
@@ -49,10 +50,11 @@ export class SidebarView implements vscode.WebviewViewProvider {
   push(): void {
     if (!this.view?.visible) return;
     this.view.webview.postMessage({
-      type       : 'init',
-      notes      : this.storage.getNotes(),
-      tags       : this.storage.getTags(),
-      projectName: this.projectName,
+      type         : 'init',
+      notes        : this.storage.getNotes(),
+      tags         : this.storage.getTags(),
+      defaultTagIds: DEFAULT_TAGS.map(t => t.id),
+      projectName  : this.projectName,
     });
   }
 
@@ -65,14 +67,36 @@ export class SidebarView implements vscode.WebviewViewProvider {
         break;
 
       case 'createNote':
-        await this.storage.createNote({ title: msg.title, color: msg.color });
+        await this.storage.createNote({ title: msg.title, color: msg.color, tags: msg.tags });
         this.push();
         break;
 
-      case 'updateNote':
+      case 'updateNote': {
+        const prevShared = this.storage.getNote(msg.id)?.shared;
         await this.storage.updateNote(msg.id, msg.changes);
         this.push();
+
+        if ('shared' in msg.changes) {
+          const note = this.storage.getNote(msg.id);
+          if (!note) break;
+          if (msg.changes.shared && !prevShared) {
+            const action = await vscode.window.showInformationMessage(
+              `"${note.title}" is now shared. Commit it to git to share with teammates.`,
+              'Copy git commands'
+            );
+            if (action === 'Copy git commands') {
+              await vscode.env.clipboard.writeText(
+                `git add .devnotes/.gitignore .devnotes/${note.id}.md\ngit commit -m "share: ${note.title}"`
+              );
+            }
+          } else if (!msg.changes.shared && prevShared) {
+            vscode.window.showInformationMessage(
+              `"${note.title}" unshared. Commit the updated .devnotes/.gitignore to remove it for teammates.`
+            );
+          }
+        }
         break;
+      }
 
       case 'deleteNote': {
         const note = this.storage.getNote(msg.id);
@@ -86,6 +110,10 @@ export class SidebarView implements vscode.WebviewViewProvider {
         }
         break;
       }
+
+      case 'openEditor':
+        this.onOpenEditor(msg.noteId);
+        break;
 
       case 'addTag': {
         await this.storage.addTag(msg.label, msg.color);
@@ -228,7 +256,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
 
   .tag-chip {
     font-size: 11px;
-    padding: 2px 8px;
+    padding: 2px 7px;
     border-radius: 20px;
     border: 1.5px solid transparent;
     cursor: pointer;
@@ -236,11 +264,29 @@ export class SidebarView implements vscode.WebviewViewProvider {
     color: #1a1a2e;
     transition: opacity .12s;
     white-space: nowrap;
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
   }
   .tag-chip:hover { opacity: .85; }
   .tag-chip.active { border-color: #1a1a2e; }
   .tag-chip.all { background: var(--vscode-button-secondaryBackground); color: var(--vscode-button-secondaryForeground); }
   .tag-chip.all.active { background: var(--vscode-button-background); color: var(--vscode-button-foreground); border-color: transparent; }
+
+  .tag-chip-delete {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 9px;
+    opacity: 0;
+    transition: opacity .12s;
+    cursor: pointer;
+    padding: 0 1px;
+    line-height: 1;
+    border-radius: 50%;
+  }
+  .tag-chip:hover .tag-chip-delete { opacity: .65; }
+  .tag-chip-delete:hover { opacity: 1 !important; background: rgba(0,0,0,.15); }
 
   .add-tag-btn {
     font-size: 11px;
@@ -277,6 +323,16 @@ export class SidebarView implements vscode.WebviewViewProvider {
   }
   .card:hover { box-shadow: 0 4px 14px rgba(0,0,0,.15); transform: translateY(-1px); }
   .card.hidden { display: none; }
+
+  /* Shared indicator — left-edge stripe */
+  .card.is-shared::before {
+    content: '';
+    position: absolute;
+    left: 0; top: 8px; bottom: 8px;
+    width: 3px;
+    background: rgba(6, 214, 214, 0.75);
+    border-radius: 0 3px 3px 0;
+  }
 
   /* Card header row */
   .card-header {
@@ -333,6 +389,10 @@ export class SidebarView implements vscode.WebviewViewProvider {
     transition: background .1s;
   }
   .card-btn:hover { background: rgba(0,0,0,.22); }
+  .card-btn.is-active {
+    background: rgba(6, 214, 214, 0.35);
+  }
+  .card-btn.is-active:hover { background: rgba(6, 214, 214, 0.5); }
 
   /* Color picker popover */
   .color-pop {
@@ -361,6 +421,52 @@ export class SidebarView implements vscode.WebviewViewProvider {
   }
   .color-swatch:hover { transform: scale(1.15); }
   .color-swatch.selected { border-color: #1a1a2e; }
+
+  /* Tag assignment popover */
+  .tag-pop {
+    position: absolute;
+    top: 30px; right: 8px;
+    background: var(--vscode-editorWidget-background, #fff);
+    border: 1px solid var(--vscode-panel-border);
+    border-radius: 8px;
+    padding: 5px;
+    display: none;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 140px;
+    max-width: 200px;
+    max-height: 220px;
+    overflow-y: auto;
+    z-index: 50;
+    box-shadow: 0 4px 16px rgba(0,0,0,.18);
+  }
+  .tag-pop.open { display: flex; }
+  .tag-pop-empty {
+    font-size: 11px;
+    padding: 6px 8px;
+    opacity: .55;
+    color: #1a1a2e;
+  }
+  .tag-pop-item {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 5px 8px;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 11px;
+    font-weight: 600;
+    color: #1a1a2e;
+    transition: filter .1s;
+  }
+  .tag-pop-item:hover { filter: brightness(.93); }
+  .tag-pop-check {
+    font-size: 10px;
+    margin-left: auto;
+    opacity: 0;
+    flex-shrink: 0;
+  }
+  .tag-pop-item.selected .tag-pop-check { opacity: 1; }
 
   /* Card content */
   .card-content {
@@ -479,6 +585,13 @@ export class SidebarView implements vscode.WebviewViewProvider {
     flex-wrap: wrap;
   }
 
+  .new-note-tags {
+    display: flex;
+    gap: 5px;
+    flex-wrap: wrap;
+    min-height: 22px;
+  }
+
   .form-actions {
     display: flex;
     gap: 6px;
@@ -559,6 +672,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
 <div class="new-note-form" id="new-note-form">
   <input id="new-title" type="text" placeholder="Note title…" maxlength="120">
   <div class="color-strip" id="new-colors"></div>
+  <div class="new-note-tags" id="new-tags"></div>
   <div class="form-actions">
     <button class="btn btn-ghost" id="btn-cancel-new">Cancel</button>
     <button class="btn btn-primary" id="btn-confirm-new">Create</button>
@@ -587,37 +701,45 @@ export class SidebarView implements vscode.WebviewViewProvider {
   const COLORS  = ${colorsJson};
   const COLOR_KEYS = Object.keys(COLORS);
 
-  let notes        = [];
-  let tags         = [];
-  let activeTagIds = [];   // empty = show all
-  let searchQuery  = '';
-  let newColor     = COLOR_KEYS[0];
-  let tagColor     = '#74B9FF';
-  let openColorPop = null; // noteId whose color pop is open
+  let notes         = [];
+  let tags          = [];
+  let defaultTagIds = [];
+  let activeTagIds  = [];
+  let searchQuery   = '';
+  let newColor      = COLOR_KEYS[0];
+  let newTags       = [];
+  let tagColor      = '#74B9FF';
+  let openColorPop  = null;
+  let openTagPop    = null;
 
   // ── DOM refs ────────────────────────────────────────────────────────────
-  const projectName  = document.getElementById('project-name');
-  const cardList     = document.getElementById('card-list');
-  const tagBar       = document.getElementById('tag-bar');
-  const searchEl      = document.getElementById('search');
-  const searchClearEl = document.getElementById('search-clear');
-  const newForm      = document.getElementById('new-note-form');
-  const newTitleEl   = document.getElementById('new-title');
-  const newColorsEl  = document.getElementById('new-colors');
-  const addTagForm   = document.getElementById('add-tag-form');
-  const tagLabelEl   = document.getElementById('tag-label');
-  const tagColorsEl  = document.getElementById('tag-colors');
+  const projectName    = document.getElementById('project-name');
+  const cardList       = document.getElementById('card-list');
+  const tagBar         = document.getElementById('tag-bar');
+  const searchEl       = document.getElementById('search');
+  const searchClearEl  = document.getElementById('search-clear');
+  const newForm        = document.getElementById('new-note-form');
+  const newTitleEl     = document.getElementById('new-title');
+  const newColorsEl    = document.getElementById('new-colors');
+  const newTagsEl      = document.getElementById('new-tags');
+  const addTagForm     = document.getElementById('add-tag-form');
+  const tagLabelEl     = document.getElementById('tag-label');
+  const tagColorsEl    = document.getElementById('tag-colors');
 
   // ── Init ────────────────────────────────────────────────────────────────
   vscode.postMessage({ type: 'ready' });
 
   window.addEventListener('message', ({ data: msg }) => {
     if (msg.type === 'init') {
-      notes = msg.notes ?? [];
-      tags  = msg.tags  ?? [];
+      notes         = msg.notes         ?? [];
+      tags          = msg.tags          ?? [];
+      defaultTagIds = msg.defaultTagIds ?? [];
       if (msg.projectName) projectName.textContent = msg.projectName;
+      // Drop filter selections for tags that no longer exist
+      activeTagIds = activeTagIds.filter(id => tags.some(t => t.id === id));
       renderTagBar();
       renderCards();
+      renderNewNoteTags();
       buildColorStrip(newColorsEl,  c => { newColor = c; highlightSwatch(newColorsEl, c); });
       buildColorStrip(tagColorsEl, c => { tagColor = c; highlightSwatch(tagColorsEl, c); });
       highlightSwatch(newColorsEl, newColor);
@@ -649,6 +771,8 @@ export class SidebarView implements vscode.WebviewViewProvider {
 
   // ── New note ────────────────────────────────────────────────────────────
   document.getElementById('btn-new').addEventListener('click', () => {
+    newTags = [];
+    renderNewNoteTags();
     newForm.classList.add('open');
     newTitleEl.focus();
   });
@@ -662,33 +786,63 @@ export class SidebarView implements vscode.WebviewViewProvider {
   function closeNewForm() {
     newForm.classList.remove('open');
     newTitleEl.value = '';
+    newTags = [];
   }
   function confirmNewNote() {
     const title = newTitleEl.value.trim();
     if (!title) { newTitleEl.focus(); return; }
-    vscode.postMessage({ type: 'createNote', title, color: newColor });
+    vscode.postMessage({ type: 'createNote', title, color: newColor, tags: [...newTags] });
     closeNewForm();
+  }
+
+  function renderNewNoteTags() {
+    newTagsEl.innerHTML = '';
+    if (tags.length === 0) return;
+    tags.forEach(tag => {
+      const chip = mkEl('button', 'tag-chip' + (newTags.includes(tag.id) ? ' active' : ''));
+      chip.type = 'button';
+      chip.textContent = tag.label;
+      chip.style.background = tag.color;
+      chip.addEventListener('click', () => {
+        newTags = newTags.includes(tag.id)
+          ? newTags.filter(id => id !== tag.id)
+          : [...newTags, tag.id];
+        renderNewNoteTags();
+      });
+      newTagsEl.appendChild(chip);
+    });
   }
 
   // ── Tag bar ─────────────────────────────────────────────────────────────
   function renderTagBar() {
     tagBar.innerHTML = '';
 
-    // "All" chip
     const all = mkEl('button', 'tag-chip all' + (activeTagIds.length === 0 ? ' active' : ''), 'All');
     all.addEventListener('click', () => { activeTagIds = []; renderTagBar(); renderCards(); });
     tagBar.appendChild(all);
 
     tags.forEach(tag => {
       const chip = mkEl('button', 'tag-chip' + (activeTagIds.includes(tag.id) ? ' active' : ''));
-      chip.textContent = tag.label;
       chip.style.background = tag.color;
+
+      const chipLabel = mkEl('span', '', tag.label);
+      chip.appendChild(chipLabel);
+
+      // Delete button — only for custom (non-default) tags
+      if (!defaultTagIds.includes(tag.id)) {
+        const delBtn = mkEl('span', 'tag-chip-delete', '✕');
+        delBtn.title = 'Delete tag';
+        delBtn.addEventListener('click', e => {
+          e.stopPropagation();
+          vscode.postMessage({ type: 'deleteTag', id: tag.id });
+        });
+        chip.appendChild(delBtn);
+      }
+
       chip.addEventListener('click', () => {
-        if (activeTagIds.includes(tag.id)) {
-          activeTagIds = activeTagIds.filter(id => id !== tag.id);
-        } else {
-          activeTagIds = [...activeTagIds, tag.id];
-        }
+        activeTagIds = activeTagIds.includes(tag.id)
+          ? activeTagIds.filter(id => id !== tag.id)
+          : [...activeTagIds, tag.id];
         renderTagBar();
         renderCards();
       });
@@ -746,7 +900,6 @@ export class SidebarView implements vscode.WebviewViewProvider {
       cardList.appendChild(empty);
       return;
     }
-    // Starred first, then by updatedAt desc
     [...visible]
       .sort((a, b) => (b.starred ? 1 : 0) - (a.starred ? 1 : 0) || b.updatedAt - a.updatedAt)
       .forEach(note => cardList.appendChild(buildCard(note)));
@@ -754,7 +907,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
 
   function buildCard(note) {
     const bg   = COLORS[note.color] || COLORS.yellow;
-    const card = mkEl('div', 'card');
+    const card = mkEl('div', 'card' + (note.shared ? ' is-shared' : ''));
     card.dataset.id = note.id;
     card.style.background = bg;
 
@@ -781,7 +934,52 @@ export class SidebarView implements vscode.WebviewViewProvider {
 
     const actions = mkEl('div', 'card-actions');
 
-    // Color picker button
+    // ── Tag assignment button ──
+    const tagBtn = mkEl('button', 'card-btn', '#');
+    tagBtn.title = 'Assign tags';
+    const tagPop = mkEl('div', 'tag-pop');
+
+    if (tags.length === 0) {
+      tagPop.appendChild(mkEl('div', 'tag-pop-empty', 'No tags yet'));
+    } else {
+      tags.forEach(tag => {
+        const item  = mkEl('div', 'tag-pop-item' + (note.tags.includes(tag.id) ? ' selected' : ''));
+        item.style.background = tag.color;
+        const lbl   = mkEl('span', '', tag.label);
+        const check = mkEl('span', 'tag-pop-check', '✓');
+        item.append(lbl, check);
+        item.addEventListener('click', e => {
+          e.stopPropagation();
+          const newNoteTags = note.tags.includes(tag.id)
+            ? note.tags.filter(t => t !== tag.id)
+            : [...note.tags, tag.id];
+          vscode.postMessage({ type: 'updateNote', id: note.id, changes: { tags: newNoteTags } });
+          tagPop.classList.remove('open');
+          openTagPop = null;
+        });
+        tagPop.appendChild(item);
+      });
+    }
+
+    tagBtn.addEventListener('click', e => {
+      e.stopPropagation();
+      const wasOpen = tagPop.classList.contains('open');
+      closeAllPops();
+      if (!wasOpen) { tagPop.classList.add('open'); openTagPop = note.id; }
+    });
+
+    // ── Share toggle button ──
+    const shareBtn = mkEl('button', 'card-btn' + (note.shared ? ' is-active' : ''));
+    shareBtn.title = note.shared ? 'Unshare note' : 'Share note (opt into git)';
+    shareBtn.innerHTML = \`<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
+      <circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/>
+      <line x1="8.6" y1="13.5" x2="15.4" y2="17.5"/><line x1="15.4" y1="6.5" x2="8.6" y2="10.5"/>
+    </svg>\`;
+    shareBtn.addEventListener('click', () => {
+      vscode.postMessage({ type: 'updateNote', id: note.id, changes: { shared: !note.shared } });
+    });
+
+    // ── Color picker button ──
     const colorBtn = mkEl('button', 'card-btn', '🎨');
     colorBtn.title = 'Change color';
     const colorPop = mkEl('div', 'color-pop');
@@ -800,20 +998,27 @@ export class SidebarView implements vscode.WebviewViewProvider {
     colorBtn.addEventListener('click', e => {
       e.stopPropagation();
       const wasOpen = colorPop.classList.contains('open');
-      closeAllColorPops();
+      closeAllPops();
       if (!wasOpen) { colorPop.classList.add('open'); openColorPop = note.id; }
     });
 
-    // Delete button
+    // ── Open in rich editor button ──
+    const editBtn = mkEl('button', 'card-btn', '✏');
+    editBtn.title = 'Open in rich editor';
+    editBtn.addEventListener('click', () => {
+      vscode.postMessage({ type: 'openEditor', noteId: note.id });
+    });
+
+    // ── Delete button ──
     const delBtn = mkEl('button', 'card-btn', '✕');
     delBtn.title = 'Delete note';
     delBtn.addEventListener('click', () => {
       vscode.postMessage({ type: 'deleteNote', id: note.id });
     });
 
-    actions.append(colorBtn, delBtn);
+    actions.append(tagBtn, shareBtn, colorBtn, editBtn, delBtn);
     hdr.append(starBtn, title, actions);
-    card.append(hdr, colorPop);
+    card.append(hdr, colorPop, tagPop);
 
     // ── Tags on card ──
     if (note.tags.length > 0) {
@@ -823,6 +1028,14 @@ export class SidebarView implements vscode.WebviewViewProvider {
         if (!tag) return;
         const pill = mkEl('span', 'tag-pill', tag.label);
         pill.style.background = tag.color;
+        pill.title = 'Filter by ' + tag.label;
+        pill.addEventListener('click', () => {
+          if (!activeTagIds.includes(tid)) {
+            activeTagIds = [...activeTagIds, tid];
+            renderTagBar();
+            renderCards();
+          }
+        });
         tagRow.appendChild(pill);
       });
       card.appendChild(tagRow);
@@ -850,7 +1063,6 @@ export class SidebarView implements vscode.WebviewViewProvider {
     editor.placeholder = 'Write something…';
     editor.rows = 4;
 
-    // Click preview → switch to editor
     preview.addEventListener('click', () => {
       preview.style.display = 'none';
       showMore.style.display = 'none';
@@ -858,7 +1070,6 @@ export class SidebarView implements vscode.WebviewViewProvider {
       editor.focus();
     });
 
-    // Leave editor → save + show preview
     editor.addEventListener('blur', () => {
       const newContent = editor.value;
       if (newContent !== note.content) {
@@ -881,7 +1092,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
 
     // ── Footer ──
     const footer = mkEl('div', 'card-footer');
-    footer.innerHTML = '<span></span>'; // spacer
+    footer.innerHTML = '<span></span>';
     const dateEl = mkEl('span', 'card-date', formatDate(note.updatedAt));
     footer.appendChild(dateEl);
     card.appendChild(footer);
@@ -889,14 +1100,15 @@ export class SidebarView implements vscode.WebviewViewProvider {
     return card;
   }
 
-  // ── Close color pops on outside click ──────────────────────────────────
+  // ── Close all popover on outside click ─────────────────────────────────
   document.addEventListener('click', () => {
-    closeAllColorPops();
+    closeAllPops();
   });
 
-  function closeAllColorPops() {
-    document.querySelectorAll('.color-pop.open').forEach(el => el.classList.remove('open'));
+  function closeAllPops() {
+    document.querySelectorAll('.color-pop.open, .tag-pop.open').forEach(el => el.classList.remove('open'));
     openColorPop = null;
+    openTagPop   = null;
   }
 
   // ── Helpers ─────────────────────────────────────────────────────────────
@@ -958,7 +1170,6 @@ export class SidebarView implements vscode.WebviewViewProvider {
         .replace(/\`(.+?)\`/g, '<code>$1</code>')
         .replace(/~~(.+?)~~/g, '<del>$1</del>');
       if (/^#{1,3}\\s/.test(line)) {
-        const lvl = line.match(/^(#+)/)[1].length;
         l = \`<strong>\${l.replace(/^#+\\s/, '')}</strong>\`;
       }
       return \`<p>\${l || '&nbsp;'}</p>\`;

@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { NoteStorage } from './NoteStorage';
 import { SidebarView } from './SidebarView';
+import { EditorPanel } from './EditorPanel';
 import { detectProjectIdentity } from './GitDetector';
 
 // ─── Activation ──────────────────────────────────────────────────────────────
@@ -48,11 +49,16 @@ async function _activate(context: vscode.ExtensionContext): Promise<void> {
   const watcher = await storage.init();
   context.subscriptions.push(watcher);
 
-  const sidebar = new SidebarView(context, storage);
+  const sidebar = new SidebarView(
+    context,
+    storage,
+    (noteId) => EditorPanel.show(context, storage, noteId, () => sidebar.push())
+  );
 
-  // Sync sidebar when notes change due to external file edits (e.g. git pull)
+  // Sync both panels when notes change due to external file edits (e.g. git pull)
   storage.onExternalChange = () => {
     sidebar.push();
+    EditorPanel.current?.push();
   };
 
   // Register the WebviewView in the sidebar
