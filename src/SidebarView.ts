@@ -10,7 +10,8 @@ type ToExt =
   | { type: 'deleteNote'; id: string }
   | { type: 'openEditor'; noteId: string }
   | { type: 'addTag'; label: string; color: string }
-  | { type: 'deleteTag'; id: string };
+  | { type: 'deleteTag'; id: string }
+  | { type: 'updateTag'; id: string; changes: Partial<Pick<Tag, 'label' | 'color'>> };
 
 // ─── Provider ────────────────────────────────────────────────────────────────
 
@@ -123,6 +124,12 @@ export class SidebarView implements vscode.WebviewViewProvider {
 
       case 'deleteTag': {
         await this.storage.deleteTag(msg.id);
+        this.push();
+        break;
+      }
+
+      case 'updateTag': {
+        await this.storage.updateTag(msg.id, msg.changes);
         this.push();
         break;
       }
@@ -286,7 +293,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
     border-radius: 50%;
   }
   .tag-chip:hover .tag-chip-delete { opacity: .65; }
-  .tag-chip-delete:hover { opacity: 1 !important; background: rgba(0,0,0,.15); }
+  .tag-chip-delete:hover { opacity: 1 !important; background: rgba(0,0,0,.15); border-radius: 50%; }
 
   .add-tag-btn {
     font-size: 11px;
@@ -298,6 +305,137 @@ export class SidebarView implements vscode.WebviewViewProvider {
     cursor: pointer;
   }
   .add-tag-btn:hover { border-color: var(--vscode-foreground); color: var(--vscode-foreground); }
+
+  .manage-tags-btn {
+    font-size: 12px;
+    padding: 2px 7px;
+    border-radius: 20px;
+    background: none;
+    border: 1.5px solid transparent;
+    color: var(--vscode-descriptionForeground);
+    cursor: pointer;
+    margin-left: auto;
+  }
+  .manage-tags-btn:hover { color: var(--vscode-foreground); border-color: var(--vscode-panel-border); }
+  .manage-tags-btn.active {
+    background: var(--vscode-button-secondaryBackground);
+    color: var(--vscode-button-secondaryForeground);
+    border-color: transparent;
+  }
+
+  /* ── Tag manager panel ───────────────────────────────── */
+  .tag-manager {
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--vscode-panel-border);
+    flex-shrink: 0;
+    background: var(--vscode-input-background);
+    max-height: 240px;
+    overflow-y: auto;
+  }
+
+  .tag-mgr-section {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .05em;
+    color: var(--vscode-descriptionForeground);
+    padding: 6px 0 3px;
+    margin-top: 2px;
+  }
+  .tag-mgr-section:first-child { padding-top: 0; }
+
+  .tag-mgr-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 3px 0;
+    position: relative;
+  }
+
+  .tag-mgr-swatch {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    border: 1.5px solid rgba(0,0,0,.2);
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: transform .1s;
+  }
+  .tag-mgr-swatch:hover { transform: scale(1.2); }
+  .tag-mgr-swatch-ro { cursor: default; }
+  .tag-mgr-swatch-ro:hover { transform: none; }
+
+  .tag-mgr-input {
+    flex: 1;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    padding: 2px 6px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--vscode-input-foreground);
+    font-family: var(--vscode-font-family);
+    outline: none;
+    min-width: 0;
+  }
+  .tag-mgr-input:hover { border-color: var(--vscode-panel-border); }
+  .tag-mgr-input:focus {
+    border-color: var(--vscode-focusBorder, var(--vscode-panel-border));
+    background: var(--vscode-input-background);
+  }
+
+  .tag-mgr-del {
+    background: none;
+    border: none;
+    color: var(--vscode-descriptionForeground);
+    cursor: pointer;
+    font-size: 11px;
+    padding: 2px 5px;
+    border-radius: 3px;
+    opacity: .45;
+    flex-shrink: 0;
+  }
+  .tag-mgr-del:hover { opacity: 1; background: var(--vscode-toolbar-hoverBackground); }
+
+  .tag-mgr-ro-label {
+    flex: 1;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--vscode-foreground);
+    opacity: .6;
+  }
+
+  .tag-mgr-ro-hint {
+    font-size: 10px;
+    color: var(--vscode-descriptionForeground);
+    opacity: .5;
+    font-style: italic;
+  }
+
+  .tag-mgr-empty {
+    font-size: 11px;
+    color: var(--vscode-descriptionForeground);
+    padding: 4px 0;
+    opacity: .7;
+  }
+
+  /* Color picker popover inside the manager */
+  .tag-mgr-color-pop {
+    position: absolute;
+    left: 22px;
+    top: 22px;
+    background: var(--vscode-editorWidget-background, #fff);
+    border: 1px solid var(--vscode-panel-border);
+    border-radius: 8px;
+    padding: 8px;
+    display: none;
+    gap: 6px;
+    flex-wrap: wrap;
+    width: 128px;
+    z-index: 100;
+    box-shadow: 0 4px 16px rgba(0,0,0,.18);
+  }
+  .tag-mgr-color-pop.open { display: flex; }
 
   /* ── Card list ───────────────────────────────────────── */
   .card-list {
@@ -682,6 +820,9 @@ export class SidebarView implements vscode.WebviewViewProvider {
 <!-- ── Tag filter bar ── -->
 <div class="tag-bar" id="tag-bar"></div>
 
+<!-- ── Tag manager panel ── -->
+<div class="tag-manager" id="tag-manager" style="display:none"></div>
+
 <!-- ── Card list ── -->
 <div class="card-list" id="card-list"></div>
 
@@ -709,8 +850,10 @@ export class SidebarView implements vscode.WebviewViewProvider {
   let newColor      = COLOR_KEYS[0];
   let newTags       = [];
   let tagColor      = '#74B9FF';
-  let openColorPop  = null;
-  let openTagPop    = null;
+  let openColorPop    = null;
+  let openTagPop      = null;
+  let isManagingTags  = false;
+  let openMgrColorPop = null;
 
   // ── DOM refs ────────────────────────────────────────────────────────────
   const projectName    = document.getElementById('project-name');
@@ -735,9 +878,10 @@ export class SidebarView implements vscode.WebviewViewProvider {
       tags          = msg.tags          ?? [];
       defaultTagIds = msg.defaultTagIds ?? [];
       if (msg.projectName) projectName.textContent = msg.projectName;
-      // Drop filter selections for tags that no longer exist
+      // Drop filter state for tags that no longer exist
       activeTagIds = activeTagIds.filter(id => tags.some(t => t.id === id));
       renderTagBar();
+      if (isManagingTags) renderTagManager();
       renderCards();
       renderNewNoteTags();
       buildColorStrip(newColorsEl,  c => { newColor = c; highlightSwatch(newColorsEl, c); });
@@ -822,14 +966,13 @@ export class SidebarView implements vscode.WebviewViewProvider {
     tagBar.appendChild(all);
 
     tags.forEach(tag => {
+      const isDefault = defaultTagIds.includes(tag.id);
+
       const chip = mkEl('button', 'tag-chip' + (activeTagIds.includes(tag.id) ? ' active' : ''));
       chip.style.background = tag.color;
+      chip.appendChild(mkEl('span', '', tag.label));
 
-      const chipLabel = mkEl('span', '', tag.label);
-      chip.appendChild(chipLabel);
-
-      // Delete button — only for custom (non-default) tags
-      if (!defaultTagIds.includes(tag.id)) {
+      if (!isDefault) {
         const delBtn = mkEl('span', 'tag-chip-delete', '✕');
         delBtn.title = 'Delete tag';
         delBtn.addEventListener('click', e => {
@@ -855,6 +998,102 @@ export class SidebarView implements vscode.WebviewViewProvider {
       tagLabelEl.focus();
     });
     tagBar.appendChild(addBtn);
+
+    const mgrBtn = mkEl('button', 'manage-tags-btn' + (isManagingTags ? ' active' : ''), '⚙');
+    mgrBtn.title = isManagingTags ? 'Close tag manager' : 'Manage tags (rename, recolor)';
+    mgrBtn.addEventListener('click', () => {
+      isManagingTags = !isManagingTags;
+      const mgr = document.getElementById('tag-manager');
+      mgr.style.display = isManagingTags ? '' : 'none';
+      if (isManagingTags) renderTagManager();
+      renderTagBar();
+    });
+    tagBar.appendChild(mgrBtn);
+  }
+
+  // ── Tag manager ─────────────────────────────────────────────────────────
+  function renderTagManager() {
+    const mgr = document.getElementById('tag-manager');
+    mgr.innerHTML = '';
+
+    const customTags  = tags.filter(t => !defaultTagIds.includes(t.id));
+    const builtinTags = tags.filter(t =>  defaultTagIds.includes(t.id));
+
+    if (customTags.length > 0) {
+      mgr.appendChild(mkEl('div', 'tag-mgr-section', 'Custom tags'));
+      customTags.forEach(tag => {
+        const row = mkEl('div', 'tag-mgr-row');
+
+        const swatch = mkEl('div', 'tag-mgr-swatch');
+        swatch.style.background = tag.color;
+        swatch.title = 'Change color';
+
+        const colorPop = mkEl('div', 'tag-mgr-color-pop');
+        COLOR_KEYS.forEach(key => {
+          const sw = mkEl('div', 'color-swatch' + (COLORS[key] === tag.color ? ' selected' : ''));
+          sw.style.background = COLORS[key];
+          sw.title = key;
+          sw.addEventListener('click', e => {
+            e.stopPropagation();
+            colorPop.classList.remove('open');
+            openMgrColorPop = null;
+            vscode.postMessage({ type: 'updateTag', id: tag.id, changes: { color: COLORS[key] } });
+          });
+          colorPop.appendChild(sw);
+        });
+
+        swatch.addEventListener('click', e => {
+          e.stopPropagation();
+          const wasOpen = colorPop.classList.contains('open');
+          document.querySelectorAll('.tag-mgr-color-pop.open').forEach(p => p.classList.remove('open'));
+          openMgrColorPop = null;
+          if (!wasOpen) { colorPop.classList.add('open'); openMgrColorPop = tag.id; }
+        });
+
+        const input = mkEl('input', 'tag-mgr-input');
+        input.type = 'text';
+        input.value = tag.label;
+        input.maxLength = 24;
+        let pendingLabel = tag.label;
+        input.addEventListener('input', e => { pendingLabel = e.target.value; });
+        input.addEventListener('blur', () => {
+          const newLabel = pendingLabel.trim();
+          if (newLabel && newLabel !== tag.label) {
+            vscode.postMessage({ type: 'updateTag', id: tag.id, changes: { label: newLabel } });
+          }
+        });
+        input.addEventListener('keydown', e => {
+          if (e.key === 'Enter')  { e.preventDefault(); input.blur(); }
+          if (e.key === 'Escape') { input.value = tag.label; pendingLabel = tag.label; input.blur(); }
+        });
+
+        const delBtn = mkEl('button', 'tag-mgr-del', '✕');
+        delBtn.title = 'Delete tag';
+        delBtn.addEventListener('click', () => {
+          vscode.postMessage({ type: 'deleteTag', id: tag.id });
+        });
+
+        row.append(swatch, colorPop, input, delBtn);
+        mgr.appendChild(row);
+      });
+    }
+
+    if (builtinTags.length > 0) {
+      mgr.appendChild(mkEl('div', 'tag-mgr-section', 'Built-in tags'));
+      builtinTags.forEach(tag => {
+        const row  = mkEl('div', 'tag-mgr-row');
+        const dot  = mkEl('div', 'tag-mgr-swatch tag-mgr-swatch-ro');
+        dot.style.background = tag.color;
+        const lbl  = mkEl('span', 'tag-mgr-ro-label', tag.label);
+        const hint = mkEl('span', 'tag-mgr-ro-hint', 'built-in');
+        row.append(dot, lbl, hint);
+        mgr.appendChild(row);
+      });
+    }
+
+    if (customTags.length === 0 && builtinTags.length === 0) {
+      mgr.appendChild(mkEl('div', 'tag-mgr-empty', 'No tags yet — click "+ tag" to create one.'));
+    }
   }
 
   // ── Add tag ─────────────────────────────────────────────────────────────
@@ -1106,9 +1345,10 @@ export class SidebarView implements vscode.WebviewViewProvider {
   });
 
   function closeAllPops() {
-    document.querySelectorAll('.color-pop.open, .tag-pop.open').forEach(el => el.classList.remove('open'));
-    openColorPop = null;
-    openTagPop   = null;
+    document.querySelectorAll('.color-pop.open, .tag-pop.open, .tag-mgr-color-pop.open').forEach(el => el.classList.remove('open'));
+    openColorPop    = null;
+    openTagPop      = null;
+    openMgrColorPop = null;
   }
 
   // ── Helpers ─────────────────────────────────────────────────────────────

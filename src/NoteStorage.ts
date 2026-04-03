@@ -180,6 +180,13 @@ export class NoteStorage {
     return tag;
   }
 
+  async updateTag(id: string, changes: Partial<Pick<Tag, 'label' | 'color'>>): Promise<void> {
+    const idx = this.tags.findIndex(t => t.id === id);
+    if (idx === -1) return;
+    this.tags[idx] = { ...this.tags[idx], ...changes };
+    await this.writeTags();
+  }
+
   async deleteTag(id: string): Promise<void> {
     const isDefault = DEFAULT_TAGS.some(t => t.id === id);
 
