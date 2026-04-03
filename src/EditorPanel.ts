@@ -35,7 +35,7 @@ export class EditorPanel {
   push(): void {
     const note = this.storage.getNote(this.noteId);
     if (!note) return;
-    this.panel.webview.postMessage({ type: 'setContent', content: note.content });
+    this.panel.webview.postMessage({ type: 'setContent', content: note.content, title: note.title });
     this.panel.title = `✏ ${note.title}`;
   }
 
@@ -66,14 +66,22 @@ export class EditorPanel {
     this.panel.webview.html = this.buildHtml(
       this.panel.webview.asWebviewUri(editorJsUri),
       this.panel.webview.cspSource,
-      note.content
+      note.content,
+      note.title
     );
 
     this.panel.webview.onDidReceiveMessage(
-      async (msg: { type: string; content?: string }) => {
+      async (msg: { type: string; content?: string; title?: string }) => {
         if (msg.type === 'save' && msg.content !== undefined) {
           await this.storage.updateNote(this.noteId, { content: msg.content });
           this.onUpdate?.();
+        } else if (msg.type === 'saveTitle' && msg.title) {
+          const trimmed = msg.title.trim();
+          if (trimmed) {
+            await this.storage.updateNote(this.noteId, { title: trimmed });
+            this.panel.title = `✏ ${trimmed}`;
+            this.onUpdate?.();
+          }
         }
       },
       null,
@@ -90,9 +98,10 @@ export class EditorPanel {
 
   // ── HTML ────────────────────────────────────────────────────────────────
 
-  private buildHtml(editorJsUri: vscode.Uri, cspSource: string, initialContent: string): string {
+  private buildHtml(editorJsUri: vscode.Uri, cspSource: string, initialContent: string, initialTitle: string): string {
     const nonce   = getNonce();
     const content = JSON.stringify(initialContent);
+    const title   = JSON.stringify(initialTitle);
 
     return `<!DOCTYPE html>
 <html lang="en">
@@ -113,6 +122,30 @@ export class EditorPanel {
     display: flex;
     flex-direction: column;
     overflow: hidden;
+  }
+
+  /* ── Note title ── */
+  #title-input {
+    display: block;
+    width: 100%;
+    background: transparent;
+    border: none;
+    border-bottom: 1px solid transparent;
+    outline: none;
+    font-size: 1.55em;
+    font-weight: 700;
+    color: var(--vscode-editor-foreground);
+    padding: 18px min(10%, 80px) 10px;
+    font-family: var(--vscode-font-family);
+    flex-shrink: 0;
+    transition: border-color .15s;
+  }
+  #title-input:focus {
+    border-bottom-color: var(--vscode-focusBorder, var(--vscode-panel-border));
+  }
+  #title-input::placeholder {
+    color: var(--vscode-input-placeholderForeground);
+    font-weight: 400;
   }
 
   /* ── Toolbar ── */
@@ -159,7 +192,7 @@ export class EditorPanel {
   #editor-mount {
     flex: 1;
     overflow-y: auto;
-    padding: 28px min(10%, 80px);
+    padding: 14px min(10%, 80px) 28px;
   }
   .ProseMirror {
     outline: none;
@@ -214,6 +247,8 @@ export class EditorPanel {
 </head>
 <body>
 
+<input id="title-input" type="text" placeholder="Untitled" spellcheck="false" autocomplete="off">
+
 <div id="toolbar">
   <button data-action="bold"        title="Bold (Ctrl+B)"><b>B</b></button>
   <button data-action="italic"      title="Italic (Ctrl+I)"><i>I</i></button>
@@ -250,7 +285,7 @@ export class EditorPanel {
 <div id="editor-mount"></div>
 <div id="save-status"></div>
 
-<script nonce="${nonce}">var __INITIAL_CONTENT__ = ${content};</script>
+<script nonce="${nonce}">var __INITIAL_CONTENT__ = ${content}; var __INITIAL_TITLE__ = ${title};</script>
 <script src="${editorJsUri}" nonce="${nonce}"></script>
 </body>
 </html>`;

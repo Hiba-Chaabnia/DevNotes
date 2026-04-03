@@ -18,6 +18,7 @@ import { Markdown } from 'tiptap-markdown';
 // ── Globals injected by EditorPanel.ts before this script loads ──────────────
 declare function acquireVsCodeApi(): { postMessage(msg: unknown): void };
 declare const __INITIAL_CONTENT__: string;
+declare const __INITIAL_TITLE__: string;
 
 // ── Bootstrap ────────────────────────────────────────────────────────────────
 (function main() {
@@ -25,10 +26,24 @@ declare const __INITIAL_CONTENT__: string;
   const statusEl = document.getElementById('save-status') as HTMLElement;
   const mountEl  = document.getElementById('editor-mount') as HTMLElement;
   const toolbarEl = document.getElementById('toolbar') as HTMLElement;
+  const titleEl  = document.getElementById('title-input') as HTMLInputElement | null;
 
   let saveTimer: ReturnType<typeof setTimeout> | null = null;
 
   // ── Tiptap instance ──────────────────────────────────────────────────────
+  // ── Title input ──────────────────────────────────────────────────────────
+  if (titleEl) {
+    titleEl.value = typeof __INITIAL_TITLE__ !== 'undefined' ? __INITIAL_TITLE__ : '';
+    titleEl.addEventListener('blur', () => {
+      const t = titleEl!.value.trim();
+      if (t) vscode.postMessage({ type: 'saveTitle', title: t });
+    });
+    titleEl.addEventListener('keydown', (e: KeyboardEvent) => {
+      if (e.key === 'Enter')  { e.preventDefault(); titleEl!.blur(); }
+      if (e.key === 'Escape') titleEl!.blur();
+    });
+  }
+
   const editor = new Editor({
     element: mountEl,
     extensions: [
@@ -128,6 +143,18 @@ declare const __INITIAL_CONTENT__: string;
     if (data?.type === 'setContent') {
       // Pass emitUpdate:false so auto-save doesn't fire on programmatic updates
       editor.commands.setContent(data.content ?? '', { emitUpdate: false } as never);
+      if (titleEl && data.title !== undefined) {
+        titleEl.value = data.title;
+      }
+    }
+  });
+
+  // ── Flush pending save when the panel is closed ──────────────────────────
+  window.addEventListener('pagehide', () => {
+    if (saveTimer) {
+      clearTimeout(saveTimer);
+      saveTimer = null;
+      save();
     }
   });
 })();
