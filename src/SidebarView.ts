@@ -12,6 +12,7 @@ type ToExt =
   | { type: 'branchFilterChanged'; active: boolean }
   | { type: 'setReminder'; noteId: string }
   | { type: 'exportNotes'; noteIds: string[] }
+  | { type: 'openConflict'; noteId: string }
   | { type: 'updateNote'; id: string; changes: Partial<Note> }
   | { type: 'deleteNote'; id: string }
   | { type: 'openEditor'; noteId: string }
@@ -120,6 +121,10 @@ export class SidebarView implements vscode.WebviewViewProvider {
 
       case 'exportNotes':
         vscode.commands.executeCommand('devnotes.exportSelected', msg.noteIds);
+        break;
+
+      case 'openConflict':
+        vscode.commands.executeCommand('devnotes.openConflict', msg.noteId);
         break;
 
       case 'setReminder': {
@@ -1019,6 +1024,32 @@ export class SidebarView implements vscode.WebviewViewProvider {
     border-radius: 3px;
   }
 
+  /* ── Conflict indicator ─────────────────────────────── */
+  .card.conflict::after {
+    content: '';
+    position: absolute;
+    left: 0; top: 0; bottom: 0;
+    width: 3px;
+    background: #EF6C57;
+    border-radius: var(--radius) 0 0 var(--radius);
+  }
+  .conflict-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 10px;
+    font-weight: 700;
+    padding: 3px 8px;
+    border-radius: 4px;
+    background: rgba(239,108,87,.18);
+    border: 1px solid rgba(239,108,87,.4);
+    color: var(--card-text);
+    cursor: pointer;
+    align-self: flex-start;
+    transition: background .1s;
+  }
+  .conflict-badge:hover { background: rgba(239,108,87,.3); }
+
   /* ── Reminder badge ─────────────────────────────────── */
   .reminder-badge {
     display: inline-flex;
@@ -1636,7 +1667,11 @@ export class SidebarView implements vscode.WebviewViewProvider {
   function buildCard(note) {
     const bg          = COLORS[note.color] || COLORS.yellow;
     const isOffBranch = currentBranch && note.branch && note.branch !== currentBranch;
-    const card = mkEl('div', 'card' + (note.shared ? ' is-shared' : '') + (isOffBranch ? ' off-branch' : ''));
+    const card = mkEl('div', 'card'
+      + (note.shared     ? ' is-shared' : '')
+      + (isOffBranch     ? ' off-branch' : '')
+      + (note.conflicted ? ' conflict' : '')
+    );
     card.dataset.id = note.id;
     card.style.background = bg;
 
@@ -1820,6 +1855,16 @@ export class SidebarView implements vscode.WebviewViewProvider {
         tagRow.appendChild(pill);
       });
       card.appendChild(tagRow);
+    }
+
+    // ── Conflict badge ──
+    if (note.conflicted) {
+      const badge = mkEl('button', 'conflict-badge', '⚠ Conflict — click to resolve');
+      badge.addEventListener('click', e => {
+        e.stopPropagation();
+        vscode.postMessage({ type: 'openConflict', noteId: note.id });
+      });
+      card.appendChild(badge);
     }
 
     // ── Reminder badge ──

@@ -59,6 +59,11 @@
         "command": "devnotes.exportNote",
         "title": "Export Note",
         "category": "DevNotes"
+      },
+      {
+        "command": "devnotes.simulateConflict",
+        "title": "Simulate Shared Note Conflict (Debug)",
+        "category": "DevNotes"
       }
     ],
     "keybindings": [

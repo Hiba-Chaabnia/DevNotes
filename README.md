@@ -18,6 +18,7 @@ A VS Code extension that gives you a **project-scoped note panel** — rich text
 - **Project-scoped storage** — notes are tied to the workspace, not a global account
 - **Git-aware** — detects the current repo so notes stay relevant to the project
 - **Opt-in sharing** — share individual notes with teammates through git, with nothing exposed by default
+- **Conflict resolution UI** — when a shared note has a git merge conflict, a visual two-column panel lets you keep yours, keep theirs, or merge both versions
 
 ## Quick Capture
 
@@ -294,6 +295,51 @@ To share a note:
 3. Run the commands and push — teammates pull and the note appears automatically in their DevNotes panel
 
 To un-share, click the share icon again to toggle it off, then commit the updated `.devnotes/.gitignore`.
+
+## Conflict Resolution
+
+When two teammates edit the same shared note and one pulls after the other has pushed, git writes conflict markers into the `.devnotes/<id>.md` file. DevNotes detects this automatically and handles it without requiring any raw file editing.
+
+### How it works
+
+1. **Detection** — the file watcher fires after a `git pull`. DevNotes checks for conflict markers (`<<<<<<<`, `=======`, `>>>>>>>`) before parsing. If found, the note is flagged as conflicted and a ⚠ notification fires:
+
+   ```
+   ⚠ Conflict in shared note: "Auth token bug"   [Resolve]  [Dismiss]
+   ```
+
+2. **Sidebar indicator** — the note card shows a persistent `⚠ Conflict — click to resolve` badge with a red left-border stripe so it can't be missed.
+
+3. **Resolution panel** — clicking **Resolve** (in the notification or on the badge) opens a two-column panel:
+
+   ```
+   ┌─────────────────────────┬────────────────────────────────┐
+   │  YOUR VERSION  (HEAD)   │  INCOMING  (feature/auth-v2)   │
+   │  ─────────────────────  │  ──────────────────────────    │
+   │  color: orange          │  color: blue          (★ diff) │
+   │  tags: bug, important   │  tags: bug            (★ diff) │
+   │                         │                                │
+   │  ## My approach…        │  ## Teammate's approach…       │
+   │                         │                                │
+   │  [✓ Keep mine]          │             [✓ Keep theirs]    │
+   └─────────────────────────┴────────────────────────────────┘
+              [⊕ Keep both]   [Edit raw file manually]
+   ```
+
+   Fields that differ between the two versions are highlighted.
+
+### Resolution options
+
+| Option | What it does |
+|---|---|
+| **Keep mine** | Keeps the HEAD version entirely; discards the incoming changes |
+| **Keep theirs** | Keeps the incoming version entirely; discards your local changes |
+| **Keep both** | Merges the two versions: tags are unioned, content is concatenated with a `---` divider, single-value fields (color, title) come from your version |
+| **Edit raw file** | Opens the `.md` file in VS Code for manual conflict editing |
+
+### When to use "Keep both"
+
+"Keep both" is most useful when both versions contain independent, non-overlapping information — for example, two people added different action items to a Meeting Notes, or two separate bug findings to a Code Review note. The merged result includes everything and can be cleaned up afterward.
 
 ## Storage Design
 

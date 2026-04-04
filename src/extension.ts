@@ -4,6 +4,7 @@ import { SidebarView } from './SidebarView';
 import { EditorPanel } from './EditorPanel';
 import { GutterController } from './GutterController';
 import { ReminderController } from './ReminderController';
+import { ConflictPanel } from './ConflictPanel';
 import { runExport } from './ExportController';
 import { detectProjectIdentity, getCurrentBranch } from './GitDetector';
 
@@ -72,12 +73,30 @@ async function _activate(context: vscode.ExtensionContext): Promise<void> {
   const reminderController = new ReminderController(storage, () => sidebar.push());
   context.subscriptions.push(reminderController);
 
+  // Track which note IDs have already shown a conflict notification this session
+  // so we don't re-notify on every subsequent onExternalChange fire.
+  const notifiedConflicts = new Set<string>();
+
   // Sync all surfaces when notes change due to external file edits (e.g. git pull)
   storage.onExternalChange = () => {
     sidebar.push();
     EditorPanel.current?.push();
     gutterController.refresh();
     reminderController.refresh();
+
+    // Detect newly conflicted notes and show a notification
+    const conflicted = storage.getNotes().filter(n => n.conflicted);
+
+    // Clear IDs of notes that are no longer conflicted
+    for (const id of notifiedConflicts) {
+      if (!conflicted.some(n => n.id === id)) notifiedConflicts.delete(id);
+    }
+
+    for (const note of conflicted) {
+      if (notifiedConflicts.has(note.id)) continue;
+      notifiedConflicts.add(note.id);
+      notifyConflict(note.id, note.title, context, storage, sidebar);
+    }
   };
 
   // Register the WebviewView in the sidebar
@@ -213,6 +232,65 @@ async function _activate(context: vscode.ExtensionContext): Promise<void> {
     })
   );
 
+  // ── Debug: simulate a conflicted shared note ─────────────────────────────
+  // Writes a fake .devnotes/<id>.md file containing git conflict markers.
+  // The file watcher detects it within seconds, triggers the conflict UI,
+  // and shows the notification — exactly as a real `git pull` conflict would.
+  context.subscriptions.push(
+    vscode.commands.registerCommand('devnotes.simulateConflict', async () => {
+      const id  = 'sim-conflict-' + Date.now().toString(36);
+      const now = Date.now();
+      const uri = vscode.Uri.joinPath(workspaceRoot, '.devnotes', `${id}.md`);
+
+      const content = [
+        '---',
+        `id: ${id}`,
+        `title: Auth token expiry fix`,
+        '<<<<<<< HEAD',
+        'color: orange',
+        'tags: bug,important',
+        '=======',
+        'color: blue',
+        'tags: bug',
+        '>>>>>>> feature/auth-v2',
+        'starred: false',
+        'shared: true',
+        `createdAt: ${now}`,
+        `updatedAt: ${now}`,
+        '---',
+        '',
+        '<<<<<<< HEAD',
+        '## My approach',
+        '',
+        'Use a refresh token with a 24h TTL.',
+        '',
+        '- Implement token rotation',
+        '- Add `/auth/refresh` endpoint',
+        '- Update client to handle 401 → retry',
+        '=======',
+        '## Teammate\'s approach',
+        '',
+        'Extend the access token TTL to 24 hours.',
+        '',
+        '- Update JWT expiry setting in config',
+        '- Simpler — no refresh token needed',
+        '>>>>>>> feature/auth-v2',
+      ].join('\n');
+
+      await vscode.workspace.fs.writeFile(uri, new TextEncoder().encode(content));
+      vscode.window.showInformationMessage(
+        'DevNotes: simulated conflict written — watch for the ⚠ notification.'
+      );
+    })
+  );
+
+  // Open the conflict resolution panel for a specific note
+  context.subscriptions.push(
+    vscode.commands.registerCommand('devnotes.openConflict', (noteId: string) => {
+      ConflictPanel.show(context, storage, noteId, () => sidebar.push());
+    })
+  );
+
   // Export all notes
   context.subscriptions.push(
     vscode.commands.registerCommand('devnotes.exportAll', () =>
@@ -272,6 +350,23 @@ function refreshProjectIdentity(sidebar: SidebarView): void {
     if (identity) sidebar.setProjectName(identity.displayName);
   } catch (err) {
     console.error('[DevNotes] refreshProjectIdentity error:', err);
+  }
+}
+
+async function notifyConflict(
+  noteId : string,
+  title  : string,
+  context: vscode.ExtensionContext,
+  storage: NoteStorage,
+  sidebar: SidebarView,
+): Promise<void> {
+  const action = await vscode.window.showWarningMessage(
+    `⚠ Conflict in shared note: "${title}"`,
+    'Resolve',
+    'Dismiss',
+  );
+  if (action === 'Resolve') {
+    ConflictPanel.show(context, storage, noteId, () => sidebar.push());
   }
 }
 

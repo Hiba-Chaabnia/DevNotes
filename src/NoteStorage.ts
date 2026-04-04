@@ -27,6 +27,7 @@ export interface Note {
   codeLink?: CodeLink;   // optional link to a specific file:line in the workspace
   branch?: string;       // optional git branch scope — undefined means visible on all branches
   remindAt?: number;     // Unix timestamp (ms) for when a reminder should fire; undefined = no reminder
+  conflicted?: boolean;  // true when the file on disk contains unresolved git conflict markers
   createdAt: number;
   updatedAt: number;
 }
@@ -103,6 +104,30 @@ export const BUILTIN_TEMPLATES: Template[] = [
     content: '## What to Check\n- [ ] \n\n## Findings\n\n## Decision\n',
   },
 ];
+
+export interface ConflictVersions {
+  ours       : Note;
+  theirs     : Note;
+  incomingRef: string; // branch name or commit hash from the >>>>>>> line
+}
+
+// ─── Conflict helpers (module-level) ─────────────────────────────────────────
+
+/** Returns true if the raw string contains git conflict markers. */
+function hasConflict(raw: string): boolean {
+  return raw.includes('<<<<<<<') && raw.includes('=======') && raw.includes('>>>>>>>');
+}
+
+/**
+ * Removes all conflict blocks from a raw file string, keeping either the
+ * "ours" (HEAD) side or the "theirs" (incoming) side of each block.
+ */
+function resolveConflictRaw(raw: string, side: 'ours' | 'theirs'): string {
+  return raw.replace(
+    /^<<<<<<< .+\n([\s\S]*?)^=======\n([\s\S]*?)^>>>>>>> .+$\n?/gm,
+    (_, ours: string, theirs: string) => side === 'ours' ? ours : theirs
+  );
+}
 
 // Legacy Memento keys — used only during one-time migration
 const LEGACY_NOTES_KEY = 'devnotes.v2.notes';
@@ -302,6 +327,121 @@ export class NoteStorage {
     await this.writeTemplates();
   }
 
+  // ── Conflict resolution ───────────────────────────────────────────────────
+
+  /** Returns the VS Code URI for a note file — used to open it in the editor. */
+  getNoteFileUri(id: string): vscode.Uri {
+    return this.noteUri(id);
+  }
+
+  /**
+   * Reads the raw conflicted file and returns both parsed versions.
+   * Returns null if the file is not found or is no longer conflicted.
+   */
+  async getConflictVersions(id: string): Promise<ConflictVersions | null> {
+    try {
+      const raw = dec.decode(await vscode.workspace.fs.readFile(this.noteUri(id)));
+      if (!hasConflict(raw)) return null;
+
+      const refMatch  = raw.match(/>>>>>>> (.+)/);
+      const incoming  = refMatch ? refMatch[1].trim() : 'incoming';
+
+      const oursNote   = this.parseNoteFile(resolveConflictRaw(raw, 'ours'),   `${id}.md`);
+      const theirsNote = this.parseNoteFile(resolveConflictRaw(raw, 'theirs'), `${id}.md`);
+      if (!oursNote || !theirsNote) return null;
+
+      return { ours: oursNote, theirs: theirsNote, incomingRef: incoming };
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Resolves a conflicted note file.
+   *
+   * 'ours'   — keeps the HEAD version entirely.
+   * 'theirs' — keeps the incoming version entirely.
+   * 'both'   — merges: tags are unioned; content is concatenated with a
+   *             divider; all other single-value fields come from 'ours'.
+   */
+  async resolveConflict(id: string, side: 'ours' | 'theirs' | 'both'): Promise<void> {
+    const prev  = this.writeQueues.get(id) ?? Promise.resolve();
+    const next  = prev.then(() =>
+      side === 'both'
+        ? this.doMergeConflict(id)
+        : this.doResolveConflict(id, side)
+    );
+    const entry = next.catch(() => {}).finally(() => {
+      if (this.writeQueues.get(id) === entry) this.writeQueues.delete(id);
+    });
+    this.writeQueues.set(id, entry);
+    return next;
+  }
+
+  private async doResolveConflict(id: string, side: 'ours' | 'theirs'): Promise<void> {
+    const uri = this.noteUri(id);
+    const raw = dec.decode(await vscode.workspace.fs.readFile(uri));
+    if (!hasConflict(raw)) return;
+
+    const resolved = resolveConflictRaw(raw, side);
+    this.selfWrites.add(id);
+    try {
+      await vscode.workspace.fs.writeFile(uri, enc.encode(resolved));
+      const note = this.parseNoteFile(resolved, `${id}.md`);
+      if (!note) return;
+      const idx = this.notes.findIndex(n => n.id === id);
+      if (idx === -1) this.notes.push(note);
+      else            this.notes[idx] = note;
+    } finally {
+      setTimeout(() => this.selfWrites.delete(id), 500);
+    }
+  }
+
+  private async doMergeConflict(id: string): Promise<void> {
+    const uri = this.noteUri(id);
+    const raw = dec.decode(await vscode.workspace.fs.readFile(uri));
+    if (!hasConflict(raw)) return;
+
+    const oursNote   = this.parseNoteFile(resolveConflictRaw(raw, 'ours'),   `${id}.md`);
+    const theirsNote = this.parseNoteFile(resolveConflictRaw(raw, 'theirs'), `${id}.md`);
+    if (!oursNote || !theirsNote) return;
+
+    // Union tags, deduplicated
+    const mergedTags = [...new Set([...oursNote.tags, ...theirsNote.tags])];
+
+    // Concatenate content with a divider — only if both sides have content
+    const oursContent   = oursNote.content.trim();
+    const theirsContent = theirsNote.content.trim();
+    let mergedContent: string;
+    if (!oursContent) {
+      mergedContent = theirsContent;
+    } else if (!theirsContent) {
+      mergedContent = oursContent;
+    } else {
+      mergedContent = `${oursContent}\n\n---\n\n${theirsContent}`;
+    }
+
+    // Single-value fields (color, title, branch, etc.) come from ours
+    const merged: Note = {
+      ...oursNote,
+      tags      : mergedTags,
+      content   : mergedContent,
+      conflicted: undefined,
+      updatedAt : Date.now(),
+    };
+
+    // Write via the normal note serialisation path
+    this.selfWrites.add(id);
+    try {
+      await this.doWriteNote(merged);
+      const idx = this.notes.findIndex(n => n.id === id);
+      if (idx === -1) this.notes.push(merged);
+      else            this.notes[idx] = merged;
+    } finally {
+      // selfWrites is cleared inside doWriteNote's finally block
+    }
+  }
+
   // ── Private: folder setup ─────────────────────────────────────────────────
 
   private async ensureFolder(): Promise<void> {
@@ -350,8 +490,13 @@ export class NoteStorage {
   }
 
   private parseNoteFile(raw: string, fileName = '<unknown>'): Note | null {
+    // Conflict markers break the frontmatter parser — resolve to 'ours' first
+    // so the note remains usable, then flag it for the UI to surface.
+    const isConflicted = hasConflict(raw);
+    const effective    = isConflicted ? resolveConflictRaw(raw, 'ours') : raw;
+
     try {
-      const { meta, body } = parseFrontmatter(raw);
+      const { meta, body } = parseFrontmatter(effective);
       const id = String(meta.id ?? '');
       if (!id) {
         console.warn(`[DevNotes] Skipping "${fileName}": missing id in frontmatter`);
@@ -368,10 +513,11 @@ export class NoteStorage {
         codeLink : (typeof meta.codeLink_file === 'string' && meta.codeLink_file && meta.codeLink_line !== undefined)
           ? { file: meta.codeLink_file, line: Number(meta.codeLink_line) }
           : undefined,
-        branch   : typeof meta.branch === 'string' && meta.branch ? meta.branch : undefined,
-        remindAt : meta.remindAt ? Number(meta.remindAt) : undefined,
-        createdAt: Number(meta.createdAt ?? Date.now()),
-        updatedAt: Number(meta.updatedAt ?? Date.now()),
+        branch     : typeof meta.branch === 'string' && meta.branch ? meta.branch : undefined,
+        remindAt   : meta.remindAt ? Number(meta.remindAt) : undefined,
+        conflicted : isConflicted || undefined,
+        createdAt  : Number(meta.createdAt ?? Date.now()),
+        updatedAt  : Number(meta.updatedAt ?? Date.now()),
       };
     } catch (err) {
       console.warn(`[DevNotes] Failed to parse "${fileName}":`, err);
