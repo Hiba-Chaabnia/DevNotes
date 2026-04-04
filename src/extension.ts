@@ -120,7 +120,30 @@ async function _activate(context: vscode.ExtensionContext): Promise<void> {
       });
       if (!title) return;
 
-      await storage.createNote({ title, codeLink });
+      // Template picker — "Blank" is pre-selected so Enter still creates a note instantly
+      type TplItem = vscode.QuickPickItem & { template?: import('./NoteStorage').Template };
+      const tplItems: TplItem[] = [
+        { label: '$(file) Blank', description: 'No template', picked: true },
+        ...storage.getTemplates().map(t => ({
+          label      : `$(note) ${t.name}`,
+          description: t.content.replace(/#+\s/g, '').replace(/\n/g, ' ').slice(0, 72),
+          template   : t,
+        })),
+      ];
+      const picked = await vscode.window.showQuickPick(tplItems, {
+        placeHolder    : 'Choose a template — Enter to accept Blank',
+        matchOnDescription: true,
+      });
+      if (picked === undefined) return; // Escape cancels
+
+      const tpl = (picked as TplItem).template;
+      await storage.createNote({
+        title,
+        codeLink,
+        content: tpl?.content,
+        color  : tpl?.color,
+        tags   : tpl?.tags,
+      });
       sidebar.push();
       gutterController.refresh();
     })

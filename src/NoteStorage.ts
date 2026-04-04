@@ -8,6 +8,14 @@ export interface CodeLink {
   line: number;   // 1-based line number
 }
 
+export interface Template {
+  id: string;
+  name: string;
+  color?: string;    // key from NOTE_COLORS — pre-selects the color when applied
+  tags?: string[];   // tag IDs — pre-selects tags when applied
+  content: string;   // markdown body
+}
+
 export interface Note {
   id: string;
   title: string;
@@ -47,6 +55,51 @@ export const DEFAULT_TAGS: Tag[] = [
   { id: 'meeting',   label: 'Meeting',   color: '#B5A4E8' },
   { id: 'important', label: 'Important', color: '#C5E17A' },
   { id: 'reference', label: 'Reference', color: '#74B9FF' },
+];
+
+export const BUILTIN_TEMPLATES: Template[] = [
+  {
+    id: 'tpl-bug',
+    name: 'Bug Report',
+    color: 'orange',
+    tags: ['bug'],
+    content: '## Steps to Reproduce\n1. \n\n## Expected Behavior\n\n## Actual Behavior\n\n## Environment\n- OS: \n- Version: ',
+  },
+  {
+    id: 'tpl-adr',
+    name: 'ADR',
+    color: 'purple',
+    tags: ['reference'],
+    content: '## Context\n\n## Decision\n\n## Consequences\n',
+  },
+  {
+    id: 'tpl-meeting',
+    name: 'Meeting Notes',
+    color: 'blue',
+    tags: ['meeting'],
+    content: '## Attendees\n- \n\n## Decisions\n- \n\n## Action Items\n- [ ] ',
+  },
+  {
+    id: 'tpl-standup',
+    name: 'Standup',
+    color: 'green',
+    tags: ['todo'],
+    content: '## Done\n- \n\n## Doing\n- \n\n## Blocked\n- ',
+  },
+  {
+    id: 'tpl-feature',
+    name: 'Feature Spec',
+    color: 'cyan',
+    tags: ['idea'],
+    content: '## Goal\n\n## Acceptance Criteria\n- [ ] \n\n## Notes\n\n## Open Questions\n- ',
+  },
+  {
+    id: 'tpl-review',
+    name: 'Code Review',
+    color: 'yellow',
+    tags: ['reference'],
+    content: '## What to Check\n- [ ] \n\n## Findings\n\n## Decision\n',
+  },
 ];
 
 // Legacy Memento keys — used only during one-time migration
@@ -92,8 +145,9 @@ const dec = new TextDecoder();
  *   (e.g. after a git pull that brings in a teammate's shared notes).
  */
 export class NoteStorage {
-  private notes: Note[] = [];
-  private tags:  Tag[]  = [];
+  private notes:     Note[]     = [];
+  private tags:      Tag[]      = [];
+  private templates: Template[] = []; // custom templates only; BUILTIN_TEMPLATES always prepended
 
   /** Called when the cache is updated due to external file changes (e.g. git pull). */
   onExternalChange?: () => void;
@@ -108,6 +162,9 @@ export class NoteStorage {
 
   // Counter for in-flight tags.json writes — suppresses self-triggered watcher events
   private tagsWriteInflight = 0;
+
+  // Counter for in-flight templates.json writes
+  private templatesWriteInflight = 0;
 
   private readonly folder: vscode.Uri;
 
@@ -126,8 +183,9 @@ export class NoteStorage {
   async init(): Promise<vscode.Disposable> {
     await this.ensureFolder();
     await this.migrate();
-    this.notes = await this.readAllNotes();
-    this.tags  = await this.readTags();
+    this.notes     = await this.readAllNotes();
+    this.tags      = await this.readTags();
+    this.templates = await this.readTemplates();
     return this.setupWatcher();
   }
 
@@ -141,13 +199,16 @@ export class NoteStorage {
 
   getTags(): Tag[] { return this.tags; }
 
+  /** Returns built-in templates followed by any custom ones. */
+  getTemplates(): Template[] { return [...BUILTIN_TEMPLATES, ...this.templates]; }
+
   // ── Notes ─────────────────────────────────────────────────────────────────
 
-  async createNote(partial: { title: string; color?: string; tags?: string[]; codeLink?: CodeLink }): Promise<Note> {
+  async createNote(partial: { title: string; color?: string; tags?: string[]; codeLink?: CodeLink; content?: string }): Promise<Note> {
     const note: Note = {
       id       : generateId(),
       title    : partial.title,
-      content  : '',
+      content  : partial.content ?? '',
       color    : partial.color ?? 'yellow',
       tags     : partial.tags  ?? [],
       starred  : false,
@@ -215,6 +276,27 @@ export class NoteStorage {
         affected.map(n => this.writeNote(this.notes.find(m => m.id === n.id)!))
       );
     }
+  }
+
+  // ── Templates ─────────────────────────────────────────────────────────────
+
+  async addTemplate(partial: { name: string; color?: string; tags?: string[]; content: string }): Promise<Template> {
+    const template: Template = { id: generateId(), ...partial };
+    this.templates = [...this.templates, template];
+    await this.writeTemplates();
+    return template;
+  }
+
+  async updateTemplate(id: string, changes: Partial<Pick<Template, 'name' | 'color' | 'tags' | 'content'>>): Promise<void> {
+    const idx = this.templates.findIndex(t => t.id === id);
+    if (idx === -1) return;
+    this.templates[idx] = { ...this.templates[idx], ...changes };
+    await this.writeTemplates();
+  }
+
+  async deleteTemplate(id: string): Promise<void> {
+    this.templates = this.templates.filter(t => t.id !== id);
+    await this.writeTemplates();
   }
 
   // ── Private: folder setup ─────────────────────────────────────────────────
@@ -363,6 +445,29 @@ export class NoteStorage {
     }
   }
 
+  private async readTemplates(): Promise<Template[]> {
+    try {
+      const raw = await vscode.workspace.fs.readFile(
+        vscode.Uri.joinPath(this.folder, 'templates.json')
+      );
+      return JSON.parse(dec.decode(raw)) as Template[];
+    } catch {
+      return [];
+    }
+  }
+
+  private async writeTemplates(): Promise<void> {
+    this.templatesWriteInflight++;
+    try {
+      await vscode.workspace.fs.writeFile(
+        vscode.Uri.joinPath(this.folder, 'templates.json'),
+        enc.encode(JSON.stringify(this.templates, null, 2))
+      );
+    } finally {
+      setTimeout(() => this.templatesWriteInflight--, 500);
+    }
+  }
+
   // Serialised via gitignoreWriteQueue — each read-modify-write sees the previous result
   private updateGitignore(id: string, shared: boolean): Promise<void> {
     this.gitignoreWriteQueue = this.gitignoreWriteQueue
@@ -456,7 +561,21 @@ export class NoteStorage {
     tagsWatcher.onDidChange(reloadTags);
     tagsWatcher.onDidCreate(reloadTags);
 
-    return vscode.Disposable.from(notesWatcher, tagsWatcher);
+    // ── Templates watcher (.devnotes/templates.json) ─────────────────────
+    const templatesWatcher = vscode.workspace.createFileSystemWatcher(
+      new vscode.RelativePattern(this.folder, 'templates.json')
+    );
+
+    const reloadTemplates = async (): Promise<void> => {
+      if (this.templatesWriteInflight > 0) return;
+      this.templates = await this.readTemplates();
+      this.onExternalChange?.();
+    };
+
+    templatesWatcher.onDidChange(reloadTemplates);
+    templatesWatcher.onDidCreate(reloadTemplates);
+
+    return vscode.Disposable.from(notesWatcher, tagsWatcher, templatesWatcher);
   }
 
   // ── Private: one-time migration from Memento ──────────────────────────────

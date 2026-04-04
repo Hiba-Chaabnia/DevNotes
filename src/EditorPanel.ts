@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { NoteStorage } from './NoteStorage';
+import { NoteStorage, BUILTIN_TEMPLATES } from './NoteStorage';
 
 // ─── Panel ───────────────────────────────────────────────────────────────────
 
@@ -75,6 +75,7 @@ export class EditorPanel {
         if (msg.type === 'save' && msg.content !== undefined) {
           await this.storage.updateNote(this.noteId, { content: msg.content });
           this.onUpdate?.();
+
         } else if (msg.type === 'saveTitle' && msg.title) {
           const trimmed = msg.title.trim();
           if (trimmed) {
@@ -82,6 +83,32 @@ export class EditorPanel {
             this.panel.title = `✏ ${trimmed}`;
             this.onUpdate?.();
           }
+
+        } else if (msg.type === 'applyTemplate') {
+          const templates = this.storage.getTemplates();
+          type TplItem = vscode.QuickPickItem & { templateId?: string };
+          const items: TplItem[] = templates.map(t => ({
+            label      : t.name,
+            description: t.content.replace(/#+\s/g, '').replace(/\n/g, ' ').slice(0, 72),
+            templateId : t.id,
+          }));
+          const picked = await vscode.window.showQuickPick(items, {
+            placeHolder: 'Choose a template to apply',
+          });
+          if (!picked?.templateId) return;
+          const tpl = templates.find(t => t.id === picked.templateId);
+          if (!tpl) return;
+          this.panel.webview.postMessage({ type: 'insertTemplate', content: tpl.content });
+
+        } else if (msg.type === 'saveAsTemplate' && msg.content !== undefined) {
+          const name = await vscode.window.showInputBox({
+            prompt     : 'Template name',
+            placeHolder: 'e.g. My Sprint Note',
+          });
+          if (!name?.trim()) return;
+          await this.storage.addTemplate({ name: name.trim(), content: msg.content });
+          vscode.window.showInformationMessage(`Template "${name.trim()}" saved.`);
+          this.onUpdate?.();
         }
       },
       null,
@@ -280,6 +307,9 @@ export class EditorPanel {
   <div class="tb-sep"></div>
   <button data-action="undo"        title="Undo (Ctrl+Z)">↩</button>
   <button data-action="redo"        title="Redo">↪</button>
+  <div class="tb-sep"></div>
+  <button data-action="applyTemplate"  title="Apply a template to this note" style="font-size:11px;padding:2px 6px">Tpl↓</button>
+  <button data-action="saveAsTemplate" title="Save this note as a custom template" style="font-size:11px;padding:2px 6px">Tpl↑</button>
 </div>
 
 <div id="editor-mount"></div>

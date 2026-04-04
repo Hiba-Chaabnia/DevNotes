@@ -135,6 +135,14 @@ declare const __INITIAL_TITLE__: string;
       case 'codeBlock':   ch.toggleCodeBlock().run();           break;
       case 'undo':        ch.undo().run();                      break;
       case 'redo':        ch.redo().run();                      break;
+      case 'applyTemplate':
+        vscode.postMessage({ type: 'applyTemplate' });
+        break;
+      case 'saveAsTemplate': {
+        const mdStorage = editor.storage as unknown as Record<string, { getMarkdown(): string }>;
+        vscode.postMessage({ type: 'saveAsTemplate', content: mdStorage['markdown'].getMarkdown() });
+        break;
+      }
     }
   });
 
@@ -146,6 +154,11 @@ declare const __INITIAL_TITLE__: string;
       if (titleEl && data.title !== undefined) {
         titleEl.value = data.title;
       }
+    }
+    if (data?.type === 'insertTemplate') {
+      // emitUpdate fires onUpdate → schedules auto-save so the template content persists
+      editor.commands.setContent(data.content ?? '');
+      statusEl.textContent = 'Unsaved…';
     }
   });
 

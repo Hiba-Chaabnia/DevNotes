@@ -7,6 +7,7 @@ A VS Code extension that gives you a **project-scoped note panel** — rich text
 - **Sidebar panel** — quick access to all notes from the activity bar, with inline search and tag filtering
 - **Rich text editor** — click ✏ on any note to open a full Tiptap editor with a formatting toolbar (bold, italic, headings, lists, task lists, code blocks, and more)
 - **Quick Capture** — press `Ctrl+Alt+Q` from anywhere to create a note instantly; auto-links to the current file and line when an editor is focused
+- **Note templates** — six built-in templates for common developer workflows (Bug Report, ADR, Meeting Notes, Standup, Feature Spec, Code Review); save any note as a custom template
 - **Code-linked notes** — attach a note to any file and line number; a gutter icon marks the line and hovering it shows the note title with a clickable link back to the note
 - **Tags** — assign tags to notes for filtering; create custom tags with any color; delete tags you no longer need
 - **Color-coded notes** — eight color options per note, changeable at any time from the card
@@ -40,6 +41,35 @@ Or add it directly to `keybindings.json`:
   "command": "devnotes.quickCapture"
 }
 ```
+
+## Note Templates
+
+Templates let you scaffold a new note with a pre-defined structure, color, and tags in one click. Six templates are built in and ready to use — no setup required.
+
+| Template | Pre-fills | Default color | Default tags |
+|---|---|---|---|
+| **Bug Report** | Steps to Reproduce, Expected, Actual, Environment | Orange | Bug |
+| **ADR** | Context, Decision, Consequences | Purple | Reference |
+| **Meeting Notes** | Attendees, Decisions, Action Items | Blue | Meeting |
+| **Standup** | Done, Doing, Blocked | Green | Todo |
+| **Feature Spec** | Goal, Acceptance Criteria, Notes, Open Questions | Cyan | Idea |
+| **Code Review** | What to Check, Findings, Decision | Yellow | Reference |
+
+### Using a template
+
+**In the sidebar** — when creating a note, template chips appear between the title field and the color strip. Click one to pre-select it; the color and tags update automatically. Click **Blank** to deselect.
+
+**In Quick Capture** (`Ctrl+Alt+Q`) — after typing the note title and pressing `Enter`, a template picker appears. **Blank** is pre-selected so pressing `Enter` again creates a plain note instantly. Arrow down to pick a template.
+
+**In the rich editor** — the toolbar has two new buttons on the right:
+- **`Tpl↓`** — applies a template to the current note (replaces the body; prompts to choose which template)
+- **`Tpl↑`** — saves the current note's content as a new custom template (prompts for a name)
+
+### Custom templates
+
+Any note can become a template via `Tpl↑` in the editor toolbar. Custom templates are stored in `.devnotes/templates.json` and appear alongside the built-ins everywhere — sidebar picker, Quick Capture, and the editor.
+
+To delete a custom template, remove its entry from `.devnotes/templates.json` directly.
 
 ## Getting Started
 
@@ -129,9 +159,10 @@ Storing notes as files in the workspace solves all three: git handles versioning
 
 ```
 .devnotes/
-  .gitignore  — ignores everything by default; updated when notes are shared
-  tags.json   — custom tag definitions for this workspace
-  <id>.md     — one file per note
+  .gitignore      — ignores everything by default; updated when notes are shared
+  tags.json       — custom tag definitions for this workspace
+  templates.json  — custom note templates (built-ins are hardcoded, not stored here)
+  <id>.md         — one file per note
 ```
 
 ### Note format
@@ -164,6 +195,7 @@ updatedAt: 1712349000
 |---|---|---|
 | `<id>.md` | Gitignored | Note marked as Shared |
 | `tags.json` | Gitignored | Added manually by user |
+| `templates.json` | Gitignored | Added manually by user |
 | `.gitignore` | Gitignored | First note is shared |
 
 ## Why the canvas view was removed

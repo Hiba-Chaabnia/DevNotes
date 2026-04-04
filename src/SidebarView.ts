@@ -1,13 +1,13 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
-import { NoteStorage, Note, Tag, NOTE_COLORS, DEFAULT_TAGS } from './NoteStorage';
+import { NoteStorage, Note, Tag, Template, NOTE_COLORS, DEFAULT_TAGS } from './NoteStorage';
 
 // ─── Message types ────────────────────────────────────────────────────────────
 
 type ToExt =
   | { type: 'ready' }
-  | { type: 'createNote'; title: string; color: string; tags: string[] }
+  | { type: 'createNote'; title: string; color: string; tags: string[]; templateId?: string }
   | { type: 'updateNote'; id: string; changes: Partial<Note> }
   | { type: 'deleteNote'; id: string }
   | { type: 'openEditor'; noteId: string }
@@ -66,6 +66,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
       type         : 'init',
       notes,
       tags         : this.storage.getTags(),
+      templates    : this.storage.getTemplates(),
       defaultTagIds: DEFAULT_TAGS.map(t => t.id),
       projectName  : this.projectName,
     });
@@ -79,10 +80,19 @@ export class SidebarView implements vscode.WebviewViewProvider {
         this.push();
         break;
 
-      case 'createNote':
-        await this.storage.createNote({ title: msg.title, color: msg.color, tags: msg.tags });
+      case 'createNote': {
+        const tpl = msg.templateId
+          ? this.storage.getTemplates().find(t => t.id === msg.templateId)
+          : undefined;
+        await this.storage.createNote({
+          title  : msg.title,
+          color  : msg.color,
+          tags   : msg.tags,
+          content: tpl?.content,
+        });
         this.push();
         break;
+      }
 
       case 'updateNote': {
         const prevShared = this.storage.getNote(msg.id)?.shared;
@@ -819,6 +829,29 @@ export class SidebarView implements vscode.WebviewViewProvider {
     width: 100%;
   }
 
+  /* ── Template picker (in new-note form) ─────────────── */
+  .template-row {
+    display: flex;
+    gap: 4px;
+    flex-wrap: wrap;
+  }
+  .tpl-chip {
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 4px;
+    background: var(--vscode-button-secondaryBackground);
+    color: var(--vscode-button-secondaryForeground);
+    border: 1px solid transparent;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: filter .1s;
+  }
+  .tpl-chip:hover { filter: brightness(1.1); }
+  .tpl-chip.active {
+    background: var(--vscode-button-background);
+    color: var(--vscode-button-foreground);
+  }
+
   /* ── Empty state ─────────────────────────────────────── */
   .empty {
     flex: 1;
@@ -909,6 +942,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
 <!-- ── New note form ── -->
 <div class="new-note-form" id="new-note-form">
   <input id="new-title" type="text" placeholder="Note title…" maxlength="120">
+  <div class="template-row" id="new-templates"></div>
   <div class="color-strip" id="new-colors"></div>
   <div class="new-note-tags" id="new-tags"></div>
   <div class="form-actions">
@@ -942,14 +976,16 @@ export class SidebarView implements vscode.WebviewViewProvider {
   const COLORS  = ${colorsJson};
   const COLOR_KEYS = Object.keys(COLORS);
 
-  let notes         = [];
-  let tags          = [];
-  let defaultTagIds = [];
-  let activeTagIds  = [];
-  let searchQuery   = '';
-  let newColor      = COLOR_KEYS[0];
-  let newTags       = [];
-  let tagColor      = '#74B9FF';
+  let notes           = [];
+  let tags            = [];
+  let templates       = [];
+  let defaultTagIds   = [];
+  let activeTagIds    = [];
+  let searchQuery     = '';
+  let newColor        = COLOR_KEYS[0];
+  let newTags         = [];
+  let newTemplateId   = null;
+  let tagColor        = '#74B9FF';
   let openColorPop    = null;
   let openTagPop      = null;
   let isManagingTags  = false;
@@ -965,6 +1001,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
   const newTitleEl     = document.getElementById('new-title');
   const newColorsEl    = document.getElementById('new-colors');
   const newTagsEl      = document.getElementById('new-tags');
+  const newTemplatesEl = document.getElementById('new-templates');
   const addTagForm     = document.getElementById('add-tag-form');
   const tagLabelEl     = document.getElementById('tag-label');
   const tagColorsEl    = document.getElementById('tag-colors');
@@ -976,6 +1013,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
     if (msg.type === 'init') {
       notes         = msg.notes         ?? [];
       tags          = msg.tags          ?? [];
+      templates     = msg.templates     ?? [];
       defaultTagIds = msg.defaultTagIds ?? [];
       if (msg.projectName) projectName.textContent = msg.projectName;
       // Drop filter state for tags that no longer exist
@@ -984,6 +1022,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
       if (isManagingTags) renderTagManager();
       renderCards();
       renderNewNoteTags();
+      renderTemplatePicker();
       buildColorStrip(newColorsEl,  c => { newColor = c; highlightSwatch(newColorsEl, c); });
       buildColorStrip(tagColorsEl, c => { tagColor = c; highlightSwatch(tagColorsEl, c); });
       highlightSwatch(newColorsEl, newColor);
@@ -1030,12 +1069,17 @@ export class SidebarView implements vscode.WebviewViewProvider {
   function closeNewForm() {
     newForm.classList.remove('open');
     newTitleEl.value = '';
-    newTags = [];
+    newTags       = [];
+    newTemplateId = null;
+    newColor      = COLOR_KEYS[0];
+    renderTemplatePicker();
+    highlightSwatch(newColorsEl, newColor);
+    renderNewNoteTags();
   }
   function confirmNewNote() {
     const title = newTitleEl.value.trim();
     if (!title) { newTitleEl.focus(); return; }
-    vscode.postMessage({ type: 'createNote', title, color: newColor, tags: [...newTags] });
+    vscode.postMessage({ type: 'createNote', title, color: newColor, tags: [...newTags], templateId: newTemplateId });
     closeNewForm();
   }
 
@@ -1054,6 +1098,41 @@ export class SidebarView implements vscode.WebviewViewProvider {
         renderNewNoteTags();
       });
       newTagsEl.appendChild(chip);
+    });
+  }
+
+  function renderTemplatePicker() {
+    newTemplatesEl.innerHTML = '';
+
+    const blankChip = mkEl('button', 'tpl-chip' + (!newTemplateId ? ' active' : ''), 'Blank');
+    blankChip.type = 'button';
+    blankChip.addEventListener('click', () => {
+      newTemplateId = null;
+      newColor      = COLOR_KEYS[0];
+      newTags       = [];
+      renderTemplatePicker();
+      highlightSwatch(newColorsEl, newColor);
+      renderNewNoteTags();
+    });
+    newTemplatesEl.appendChild(blankChip);
+
+    templates.forEach(tpl => {
+      const chip = mkEl('button', 'tpl-chip' + (newTemplateId === tpl.id ? ' active' : ''), tpl.name);
+      chip.type = 'button';
+      chip.title = tpl.content.replace(/#+\s/g, '').slice(0, 80);
+      chip.addEventListener('click', () => {
+        newTemplateId = tpl.id;
+        if (tpl.color) {
+          newColor = tpl.color;
+          highlightSwatch(newColorsEl, newColor);
+        }
+        if (tpl.tags && tpl.tags.length > 0) {
+          newTags = [...tpl.tags];
+          renderNewNoteTags();
+        }
+        renderTemplatePicker();
+      });
+      newTemplatesEl.appendChild(chip);
     });
   }
 
