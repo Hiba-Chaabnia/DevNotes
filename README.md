@@ -18,6 +18,7 @@ A VS Code extension that gives you a **project-scoped note panel** — rich text
 - **Project-scoped storage** — notes are tied to the workspace, not a global account
 - **Git-aware** — detects the current repo so notes stay relevant to the project
 - **Opt-in sharing** — share individual notes with teammates through git, with nothing exposed by default
+- **Activity feed** — a live panel showing recent changes to shared notes, grouped by day with owner avatars and clickable titles
 - **Conflict resolution UI** — when a shared note has a git merge conflict, a visual two-column panel lets you keep yours, keep theirs, or merge both versions
 - **Note ownership** — notes are automatically attributed to the git user who created them; filter to your own notes instantly with the "Mine" button
 
@@ -296,6 +297,46 @@ To share a note:
 3. Run the commands and push — teammates pull and the note appears automatically in their DevNotes panel
 
 To un-share, click the share icon again to toggle it off, then commit the updated `.devnotes/.gitignore`.
+
+## Activity Feed
+
+The Activity panel gives your team a live view of what's been changing in the shared knowledge base — without opening a terminal or running `git log`.
+
+### Where to find it
+
+The **Activity** panel lives directly below the **Notes** panel in the DevNotes sidebar. Click it to expand. It refreshes automatically whenever notes change (e.g. after a `git pull`), and a ↺ button in the panel title bar lets you refresh manually.
+
+### What it shows
+
+All shared notes, sorted by most recently updated and grouped by day:
+
+```
+TODAY
+  SM  Sara Morales  updated
+      Onboarding flow ADR · 2h ago
+
+  AT  Alex Turner  created
+      DB migration notes · 5h ago
+
+YESTERDAY
+  ML  Marcus Lee  updated
+      Perf regression in prod · yesterday
+```
+
+Each entry shows:
+- **Owner avatar** — a color-coded initials circle. Each person always gets the same color for easy recognition across sessions.
+- **Owner name** — the git user who created the note. Your own entries are labelled with a small `you` badge.
+- **Action** — `created` when the note was just added, `updated` when it has been edited since creation.
+- **Note title** — click it to open the note directly in the rich editor.
+- **Relative timestamp** — "just now", "2h ago", "yesterday", or a short date.
+
+### Empty state
+
+When no notes have been shared yet, the panel shows a prompt explaining how to share notes to start populating the feed.
+
+### When it updates
+
+The feed refreshes automatically on every external file change — this includes notes arriving after a `git pull`, shared by a teammate, or modified outside the extension. It reflects the current state of all shared notes in the workspace.
 
 ## Note Ownership
 

@@ -4,6 +4,7 @@ import { SidebarView } from './SidebarView';
 import { EditorPanel } from './EditorPanel';
 import { GutterController } from './GutterController';
 import { ReminderController } from './ReminderController';
+import { ActivityFeedView } from './ActivityFeedView';
 import { ConflictPanel } from './ConflictPanel';
 import { runExport } from './ExportController';
 import { detectProjectIdentity, getCurrentBranch, getGitUser } from './GitDetector';
@@ -73,6 +74,23 @@ async function _activate(context: vscode.ExtensionContext): Promise<void> {
   const reminderController = new ReminderController(storage, () => sidebar.push());
   context.subscriptions.push(reminderController);
 
+  // Activity feed — shows recent changes to shared notes
+  const activityFeed = new ActivityFeedView(
+    context,
+    storage,
+    (noteId) => EditorPanel.show(context, storage, noteId, () => sidebar.push()),
+  );
+
+  context.subscriptions.push(
+    vscode.window.registerWebviewViewProvider('devnotesActivityView', activityFeed, {
+      webviewOptions: { retainContextWhenHidden: true },
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('devnotes.refreshActivity', () => activityFeed.push())
+  );
+
   // Track which note IDs have already shown a conflict notification this session
   // so we don't re-notify on every subsequent onExternalChange fire.
   const notifiedConflicts = new Set<string>();
@@ -83,6 +101,7 @@ async function _activate(context: vscode.ExtensionContext): Promise<void> {
     EditorPanel.current?.push();
     gutterController.refresh();
     reminderController.refresh();
+    activityFeed.push();
 
     // Detect newly conflicted notes and show a notification
     const conflicted = storage.getNotes().filter(n => n.conflicted);
@@ -111,6 +130,7 @@ async function _activate(context: vscode.ExtensionContext): Promise<void> {
   refreshBranch(sidebar, workspaceRoot.fsPath);
   const currentUser = getGitUser(workspaceRoot.fsPath);
   sidebar.setCurrentUser(currentUser);
+  activityFeed.setCurrentUser(currentUser);
 
   context.subscriptions.push(
     vscode.workspace.onDidChangeWorkspaceFolders(() => {

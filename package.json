@@ -30,6 +30,11 @@
           "type": "webview",
           "id": "devnotesView",
           "name": "Notes"
+        },
+        {
+          "type": "webview",
+          "id": "devnotesActivityView",
+          "name": "Activity"
         }
       ]
     },
@@ -59,6 +64,12 @@
         "command": "devnotes.exportNote",
         "title": "Export Note",
         "category": "DevNotes"
+      },
+      {
+        "command": "devnotes.refreshActivity",
+        "title": "Refresh Activity Feed",
+        "icon": "$(refresh)",
+        "category": "DevNotes"
       }
     ],
     "keybindings": [
@@ -73,6 +84,11 @@
         {
           "command": "devnotes.refresh",
           "when": "view == devnotesView",
+          "group": "navigation@1"
+        },
+        {
+          "command": "devnotes.refreshActivity",
+          "when": "view == devnotesActivityView",
           "group": "navigation@1"
         }
       ],
