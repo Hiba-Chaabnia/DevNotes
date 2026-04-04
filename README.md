@@ -9,6 +9,7 @@ A VS Code extension that gives you a **project-scoped note panel** — rich text
 - **Quick Capture** — press `Ctrl+Alt+Q` from anywhere to create a note instantly; auto-links to the current file and line when an editor is focused
 - **Branch-scoped notes** — scope any note to a git branch; the sidebar detects your current branch live and lets you filter to branch-relevant notes instantly
 - **Reminders** — set a reminder on any note; VS Code fires a notification when it's due with options to open, snooze, or dismiss
+- **Export** — export a single note, a hand-picked selection, or all notes as Markdown, HTML, or clipboard copy
 - **Note templates** — six built-in templates for common developer workflows (Bug Report, ADR, Meeting Notes, Standup, Feature Spec, Code Review); save any note as a custom template
 - **Code-linked notes** — attach a note to any file and line number; a gutter icon marks the line and hovering it shows the note title with a clickable link back to the note
 - **Tags** — assign tags to notes for filtering; create custom tags with any color; delete tags you no longer need
@@ -241,6 +242,37 @@ updatedAt: 1712349000
 
 Token is never validated before use here.
 ```
+
+## Exporting Notes
+
+Notes can be exported as Markdown files, HTML files, or copied to the clipboard — individually, in bulk, or as a hand-picked selection.
+
+### Export a single note
+
+Open a note in the rich editor (click ✏ on the card), then click the **Export** button in the toolbar. A format picker appears and the file is saved to a location of your choice.
+
+### Export all notes
+
+Open the **Command Palette** (`Ctrl+Shift+P`) and run **DevNotes: Export All Notes**.
+
+### Export selected notes
+
+1. Click the **checklist icon** (☰) in the sidebar top bar to enter selection mode
+2. Click any note cards you want to include — a checkmark appears and the card is highlighted
+3. Click **Export** in the bar that appears at the bottom of the sidebar
+4. Pick a format and save
+
+Click **Cancel** or the toggle button again to exit selection mode without exporting.
+
+### Export formats
+
+| Format | Output | Best for |
+|---|---|---|
+| **Markdown file** | `.md` with frontmatter-style metadata footer | Wikis, GitHub, other editors |
+| **HTML file** | Styled `.html` with note colors preserved | Sharing with non-developers |
+| **Copy to clipboard** | Markdown — ready to paste | Slack, Notion, GitHub issues |
+
+Multiple notes exported to a single file are separated by `---` dividers with a header and timestamp.
 
 ## Working with Tags
 

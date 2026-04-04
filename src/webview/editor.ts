@@ -135,6 +135,9 @@ declare const __INITIAL_TITLE__: string;
       case 'codeBlock':   ch.toggleCodeBlock().run();           break;
       case 'undo':        ch.undo().run();                      break;
       case 'redo':        ch.redo().run();                      break;
+      case 'exportCurrentNote':
+        vscode.postMessage({ type: 'exportCurrentNote' });
+        break;
       case 'applyTemplate':
         vscode.postMessage({ type: 'applyTemplate' });
         break;

@@ -11,6 +11,7 @@ type ToExt =
   | { type: 'setBranchScope'; noteId: string; branch: string | null }
   | { type: 'branchFilterChanged'; active: boolean }
   | { type: 'setReminder'; noteId: string }
+  | { type: 'exportNotes'; noteIds: string[] }
   | { type: 'updateNote'; id: string; changes: Partial<Note> }
   | { type: 'deleteNote'; id: string }
   | { type: 'openEditor'; noteId: string }
@@ -115,6 +116,10 @@ export class SidebarView implements vscode.WebviewViewProvider {
 
       case 'branchFilterChanged':
         this._branchFilterActive = msg.active;
+        break;
+
+      case 'exportNotes':
+        vscode.commands.executeCommand('devnotes.exportSelected', msg.noteIds);
         break;
 
       case 'setReminder': {
@@ -910,6 +915,53 @@ export class SidebarView implements vscode.WebviewViewProvider {
     width: 100%;
   }
 
+  /* ── Selection mode ─────────────────────────────────── */
+  .select-mode .card { cursor: pointer; user-select: none; }
+  .select-mode .card:hover { box-shadow: 0 4px 14px rgba(0,0,0,.2); }
+
+  .card-check {
+    display: none;
+    position: absolute;
+    top: 7px; left: 7px;
+    width: 17px; height: 17px;
+    border-radius: 4px;
+    border: 2px solid rgba(26,26,46,.3);
+    background: rgba(255,255,255,.88);
+    z-index: 5;
+    align-items: center;
+    justify-content: center;
+    font-size: 10px;
+    color: transparent;
+    transition: background .1s, border-color .1s;
+    flex-shrink: 0;
+  }
+  .select-mode .card-check { display: flex; }
+  .card.selected .card-check {
+    background: var(--vscode-button-background);
+    border-color: var(--vscode-button-background);
+    color: var(--vscode-button-foreground);
+  }
+  .card.selected .card-check::after { content: '✓'; }
+  .card.selected { outline: 2px solid var(--vscode-button-background); outline-offset: 1px; }
+
+  /* ── Export bar ──────────────────────────────────────── */
+  .export-bar {
+    padding: 8px 10px;
+    border-top: 1px solid var(--vscode-panel-border);
+    flex-shrink: 0;
+    background: var(--vscode-sideBar-background);
+    display: none;
+    align-items: center;
+    gap: 8px;
+  }
+  .export-bar.visible { display: flex; }
+  .export-count {
+    flex: 1;
+    font-size: 12px;
+    color: var(--vscode-foreground);
+    opacity: .85;
+  }
+
   /* ── Branch indicator & filter ──────────────────────── */
   .branch-pill {
     font-size: 10px;
@@ -1085,6 +1137,14 @@ export class SidebarView implements vscode.WebviewViewProvider {
     <span class="project-name" id="project-name">Loading…</span>
     <span class="branch-pill" id="branch-pill"></span>
     <button class="icon-btn branch-filter-btn" id="btn-branch-filter" title="Show current branch only" style="display:none">⎇</button>
+    <button class="icon-btn" id="btn-select" title="Select notes to export">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
+        <rect x="3" y="5" width="5" height="5" rx="1"/>
+        <line x1="12" y1="7.5" x2="21" y2="7.5"/>
+        <rect x="3" y="14" width="5" height="5" rx="1"/>
+        <line x1="12" y1="16.5" x2="21" y2="16.5"/>
+      </svg>
+    </button>
     <button class="icon-btn" id="btn-new" title="New Note">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
         <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
@@ -1125,6 +1185,13 @@ export class SidebarView implements vscode.WebviewViewProvider {
 <!-- ── Card list ── -->
 <div class="card-list" id="card-list"></div>
 
+<!-- ── Export bar (selection mode) ── -->
+<div class="export-bar" id="export-bar">
+  <span class="export-count" id="export-count">0 notes selected</span>
+  <button class="btn btn-primary" id="btn-export-sel">Export</button>
+  <button class="btn btn-ghost" id="btn-cancel-sel">Cancel</button>
+</div>
+
 <!-- ── Add tag form ── -->
 <div class="add-tag-form" id="add-tag-form">
   <input id="tag-label" type="text" placeholder="Tag name…" maxlength="24">
@@ -1151,8 +1218,10 @@ export class SidebarView implements vscode.WebviewViewProvider {
   let newTags           = [];
   let newTemplateId     = null;
   let tagColor          = '#74B9FF';
-  let currentBranch     = null;
+  let currentBranch      = null;
   let branchFilterActive = false;
+  let selectMode         = false;
+  let selectedIds        = [];
   let openColorPop    = null;
   let openTagPop      = null;
   let isManagingTags  = false;
@@ -1169,6 +1238,9 @@ export class SidebarView implements vscode.WebviewViewProvider {
   const newColorsEl    = document.getElementById('new-colors');
   const newTagsEl      = document.getElementById('new-tags');
   const newTemplatesEl    = document.getElementById('new-templates');
+  const btnSelect         = document.getElementById('btn-select');
+  const exportBar         = document.getElementById('export-bar');
+  const exportCountEl     = document.getElementById('export-count');
   const branchPillEl      = document.getElementById('branch-pill');
   const branchFilterBtn   = document.getElementById('btn-branch-filter');
   const branchScopeLabel  = document.getElementById('branch-scope-label');
@@ -1185,6 +1257,39 @@ export class SidebarView implements vscode.WebviewViewProvider {
     vscode.postMessage({ type: 'branchFilterChanged', active: branchFilterActive });
     renderCards();
   });
+
+  // ── Selection mode ───────────────────────────────────────────────────────
+  function exitSelectMode() {
+    selectMode  = false;
+    selectedIds = [];
+    btnSelect.classList.remove('active');
+    btnSelect.title = 'Select notes to export';
+    cardList.classList.remove('select-mode');
+    exportBar.classList.remove('visible');
+    cardList.querySelectorAll('.card.selected').forEach(c => c.classList.remove('selected'));
+  }
+
+  function updateExportBar() {
+    const n = selectedIds.length;
+    exportCountEl.textContent = n + ' note' + (n !== 1 ? 's' : '') + ' selected';
+    exportBar.classList.toggle('visible', n > 0);
+  }
+
+  btnSelect.addEventListener('click', () => {
+    if (selectMode) { exitSelectMode(); return; }
+    selectMode = true;
+    btnSelect.classList.add('active');
+    btnSelect.title = 'Exit selection mode';
+    cardList.classList.add('select-mode');
+  });
+
+  document.getElementById('btn-export-sel').addEventListener('click', () => {
+    if (selectedIds.length === 0) return;
+    vscode.postMessage({ type: 'exportNotes', noteIds: [...selectedIds] });
+    exitSelectMode();
+  });
+
+  document.getElementById('btn-cancel-sel').addEventListener('click', exitSelectMode);
 
   // ── Init ────────────────────────────────────────────────────────────────
   vscode.postMessage({ type: 'ready' });
@@ -1529,11 +1634,24 @@ export class SidebarView implements vscode.WebviewViewProvider {
   }
 
   function buildCard(note) {
-    const bg        = COLORS[note.color] || COLORS.yellow;
+    const bg          = COLORS[note.color] || COLORS.yellow;
     const isOffBranch = currentBranch && note.branch && note.branch !== currentBranch;
     const card = mkEl('div', 'card' + (note.shared ? ' is-shared' : '') + (isOffBranch ? ' off-branch' : ''));
     card.dataset.id = note.id;
     card.style.background = bg;
+
+    // ── Select checkbox (visible only in selection mode) ──
+    const checkEl = mkEl('div', 'card-check');
+    card.appendChild(checkEl);
+
+    card.addEventListener('click', e => {
+      if (!selectMode) return;
+      if (e.target.closest('.card-actions')) return;
+      const idx = selectedIds.indexOf(note.id);
+      if (idx === -1) { selectedIds.push(note.id); card.classList.add('selected'); }
+      else            { selectedIds.splice(idx, 1); card.classList.remove('selected'); }
+      updateExportBar();
+    });
 
     // ── Header ──
     const hdr = mkEl('div', 'card-header');

@@ -49,6 +49,16 @@
         "command": "devnotes.quickCapture",
         "title": "Add DevNote Here",
         "category": "DevNotes"
+      },
+      {
+        "command": "devnotes.exportAll",
+        "title": "Export All Notes",
+        "category": "DevNotes"
+      },
+      {
+        "command": "devnotes.exportNote",
+        "title": "Export Note",
+        "category": "DevNotes"
       }
     ],
     "keybindings": [

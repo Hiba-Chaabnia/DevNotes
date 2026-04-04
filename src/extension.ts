@@ -4,6 +4,7 @@ import { SidebarView } from './SidebarView';
 import { EditorPanel } from './EditorPanel';
 import { GutterController } from './GutterController';
 import { ReminderController } from './ReminderController';
+import { runExport } from './ExportController';
 import { detectProjectIdentity, getCurrentBranch } from './GitDetector';
 
 // ─── Activation ──────────────────────────────────────────────────────────────
@@ -209,6 +210,30 @@ async function _activate(context: vscode.ExtensionContext): Promise<void> {
       } catch {
         vscode.window.showWarningMessage(`DevNotes: could not open ${file}:${line}`);
       }
+    })
+  );
+
+  // Export all notes
+  context.subscriptions.push(
+    vscode.commands.registerCommand('devnotes.exportAll', () =>
+      runExport(storage.getNotes(), storage.getTags())
+    )
+  );
+
+  // Export a single note by ID (called from editor toolbar and sidebar)
+  context.subscriptions.push(
+    vscode.commands.registerCommand('devnotes.exportNote', (noteId: string) => {
+      const note = storage.getNote(noteId);
+      if (!note) return;
+      return runExport([note], storage.getTags());
+    })
+  );
+
+  // Export a specific set of notes by IDs (called from sidebar selection mode)
+  context.subscriptions.push(
+    vscode.commands.registerCommand('devnotes.exportSelected', (noteIds: string[]) => {
+      const notes = noteIds.map(id => storage.getNote(id)).filter((n): n is import('./NoteStorage').Note => !!n);
+      return runExport(notes, storage.getTags());
     })
   );
 

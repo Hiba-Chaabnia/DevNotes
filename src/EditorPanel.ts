@@ -100,6 +100,9 @@ export class EditorPanel {
           if (!tpl) return;
           this.panel.webview.postMessage({ type: 'insertTemplate', content: tpl.content });
 
+        } else if (msg.type === 'exportCurrentNote') {
+          vscode.commands.executeCommand('devnotes.exportNote', this.noteId);
+
         } else if (msg.type === 'saveAsTemplate' && msg.content !== undefined) {
           const name = await vscode.window.showInputBox({
             prompt     : 'Template name',
@@ -308,8 +311,10 @@ export class EditorPanel {
   <button data-action="undo"        title="Undo (Ctrl+Z)">↩</button>
   <button data-action="redo"        title="Redo">↪</button>
   <div class="tb-sep"></div>
-  <button data-action="applyTemplate"  title="Apply a template to this note" style="font-size:11px;padding:2px 6px">Tpl↓</button>
-  <button data-action="saveAsTemplate" title="Save this note as a custom template" style="font-size:11px;padding:2px 6px">Tpl↑</button>
+  <button data-action="applyTemplate"      title="Apply a template to this note" style="font-size:11px;padding:2px 6px">Tpl↓</button>
+  <button data-action="saveAsTemplate"     title="Save this note as a custom template" style="font-size:11px;padding:2px 6px">Tpl↑</button>
+  <div class="tb-sep"></div>
+  <button data-action="exportCurrentNote"  title="Export this note" style="font-size:11px;padding:2px 6px">Export</button>
 </div>
 
 <div id="editor-mount"></div>
