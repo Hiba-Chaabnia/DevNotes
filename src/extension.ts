@@ -3,7 +3,7 @@ import { NoteStorage } from './NoteStorage';
 import { SidebarView } from './SidebarView';
 import { EditorPanel } from './EditorPanel';
 import { GutterController } from './GutterController';
-import { detectProjectIdentity } from './GitDetector';
+import { detectProjectIdentity, getCurrentBranch } from './GitDetector';
 
 // ─── Activation ──────────────────────────────────────────────────────────────
 
@@ -80,12 +80,23 @@ async function _activate(context: vscode.ExtensionContext): Promise<void> {
     })
   );
 
-  // Detect Git project and label the sidebar / canvas
+  // Detect Git project identity and current branch
   refreshProjectIdentity(sidebar);
+  refreshBranch(sidebar, workspaceRoot.fsPath);
 
   context.subscriptions.push(
-    vscode.workspace.onDidChangeWorkspaceFolders(() => refreshProjectIdentity(sidebar))
+    vscode.workspace.onDidChangeWorkspaceFolders(() => {
+      refreshProjectIdentity(sidebar);
+      refreshBranch(sidebar, workspaceRoot.fsPath);
+    })
   );
+
+  // Watch .git/HEAD for branch switches (checkout, rebase, merge)
+  const headWatcher = vscode.workspace.createFileSystemWatcher(
+    new vscode.RelativePattern(workspaceRoot, '.git/HEAD')
+  );
+  headWatcher.onDidChange(() => refreshBranch(sidebar, workspaceRoot.fsPath));
+  context.subscriptions.push(headWatcher);
 
   // ── Commands ─────────────────────────────────────────────────────────────
 
@@ -137,12 +148,33 @@ async function _activate(context: vscode.ExtensionContext): Promise<void> {
       if (picked === undefined) return; // Escape cancels
 
       const tpl = (picked as TplItem).template;
+
+      // Branch scope step — only shown when on a named git branch
+      let branch: string | undefined;
+      const detectedBranch = getCurrentBranch(workspaceRoot.fsPath);
+      if (detectedBranch) {
+        type ScopeItem = vscode.QuickPickItem & { branch?: string };
+        // Pre-select "Scope to branch" when the sidebar branch filter is active —
+        // the user is already in branch-focused mode so scoping is the likely intent.
+        const filterIsActive = sidebar.isBranchFilterActive();
+        const scopeItems: ScopeItem[] = [
+          { label: '$(globe) Global', description: 'Visible on all branches', picked: !filterIsActive },
+          { label: `$(git-branch) Scope to ${detectedBranch}`, description: 'Only surfaces on this branch', branch: detectedBranch, picked: filterIsActive },
+        ];
+        const scopePicked = await vscode.window.showQuickPick(scopeItems, {
+          placeHolder: 'Branch scope — Enter to keep global',
+        });
+        if (scopePicked === undefined) return; // Escape cancels
+        branch = (scopePicked as ScopeItem).branch;
+      }
+
       await storage.createNote({
         title,
         codeLink,
         content: tpl?.content,
         color  : tpl?.color,
         tags   : tpl?.tags,
+        branch,
       });
       sidebar.push();
       gutterController.refresh();
@@ -206,10 +238,16 @@ export function deactivate(): void {
 function refreshProjectIdentity(sidebar: SidebarView): void {
   try {
     const identity = detectProjectIdentity();
-    if (identity) {
-      sidebar.setProjectName(identity.displayName);
-    }
+    if (identity) sidebar.setProjectName(identity.displayName);
   } catch (err) {
     console.error('[DevNotes] refreshProjectIdentity error:', err);
+  }
+}
+
+function refreshBranch(sidebar: SidebarView, rootPath: string): void {
+  try {
+    sidebar.setCurrentBranch(getCurrentBranch(rootPath));
+  } catch (err) {
+    console.error('[DevNotes] refreshBranch error:', err);
   }
 }

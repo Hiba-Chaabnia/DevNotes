@@ -25,6 +25,7 @@ export interface Note {
   starred: boolean;
   shared?: boolean;      // when true, note file is un-ignored in .devnotes/.gitignore
   codeLink?: CodeLink;   // optional link to a specific file:line in the workspace
+  branch?: string;       // optional git branch scope — undefined means visible on all branches
   createdAt: number;
   updatedAt: number;
 }
@@ -204,7 +205,7 @@ export class NoteStorage {
 
   // ── Notes ─────────────────────────────────────────────────────────────────
 
-  async createNote(partial: { title: string; color?: string; tags?: string[]; codeLink?: CodeLink; content?: string }): Promise<Note> {
+  async createNote(partial: { title: string; color?: string; tags?: string[]; codeLink?: CodeLink; content?: string; branch?: string }): Promise<Note> {
     const note: Note = {
       id       : generateId(),
       title    : partial.title,
@@ -213,6 +214,7 @@ export class NoteStorage {
       tags     : partial.tags  ?? [],
       starred  : false,
       codeLink : partial.codeLink,
+      branch   : partial.branch,
       createdAt: Date.now(),
       updatedAt: Date.now(),
     };
@@ -365,6 +367,7 @@ export class NoteStorage {
         codeLink : (typeof meta.codeLink_file === 'string' && meta.codeLink_file && meta.codeLink_line !== undefined)
           ? { file: meta.codeLink_file, line: Number(meta.codeLink_line) }
           : undefined,
+        branch   : typeof meta.branch === 'string' && meta.branch ? meta.branch : undefined,
         createdAt: Number(meta.createdAt ?? Date.now()),
         updatedAt: Number(meta.updatedAt ?? Date.now()),
       };
@@ -400,7 +403,8 @@ export class NoteStorage {
         createdAt: note.createdAt,
         updatedAt: note.updatedAt,
       };
-      if (note.shared) meta.shared = true;
+      if (note.shared)  meta.shared  = true;
+      if (note.branch)  meta.branch  = note.branch;
       if (note.codeLink) {
         meta.codeLink_file = note.codeLink.file;
         meta.codeLink_line = note.codeLink.line;

@@ -7,7 +7,9 @@ import { NoteStorage, Note, Tag, Template, NOTE_COLORS, DEFAULT_TAGS } from './N
 
 type ToExt =
   | { type: 'ready' }
-  | { type: 'createNote'; title: string; color: string; tags: string[]; templateId?: string }
+  | { type: 'createNote'; title: string; color: string; tags: string[]; templateId?: string; branch?: string }
+  | { type: 'setBranchScope'; noteId: string; branch: string | null }
+  | { type: 'branchFilterChanged'; active: boolean }
   | { type: 'updateNote'; id: string; changes: Partial<Note> }
   | { type: 'deleteNote'; id: string }
   | { type: 'openEditor'; noteId: string }
@@ -22,7 +24,11 @@ type ToExt =
 
 export class SidebarView implements vscode.WebviewViewProvider {
   private view?: vscode.WebviewView;
-  private projectName = 'DevNotes';
+  private projectName      = 'DevNotes';
+  private currentBranch: string | undefined;
+  private _branchFilterActive = false;
+
+  isBranchFilterActive(): boolean { return this._branchFilterActive; }
 
   constructor(
     private readonly context: vscode.ExtensionContext,
@@ -33,6 +39,11 @@ export class SidebarView implements vscode.WebviewViewProvider {
 
   setProjectName(name: string): void {
     this.projectName = name;
+    this.push();
+  }
+
+  setCurrentBranch(branch: string | undefined): void {
+    this.currentBranch = branch;
     this.push();
   }
 
@@ -63,12 +74,13 @@ export class SidebarView implements vscode.WebviewViewProvider {
       return { ...n, codeLinkStale: !fs.existsSync(absPath) };
     });
     this.view.webview.postMessage({
-      type         : 'init',
+      type          : 'init',
       notes,
-      tags         : this.storage.getTags(),
-      templates    : this.storage.getTemplates(),
-      defaultTagIds: DEFAULT_TAGS.map(t => t.id),
-      projectName  : this.projectName,
+      tags          : this.storage.getTags(),
+      templates     : this.storage.getTemplates(),
+      defaultTagIds : DEFAULT_TAGS.map(t => t.id),
+      projectName   : this.projectName,
+      currentBranch : this.currentBranch ?? null,
     });
   }
 
@@ -89,10 +101,20 @@ export class SidebarView implements vscode.WebviewViewProvider {
           color  : msg.color,
           tags   : msg.tags,
           content: tpl?.content,
+          branch : msg.branch,
         });
         this.push();
         break;
       }
+
+      case 'setBranchScope':
+        await this.storage.updateNote(msg.noteId, { branch: msg.branch ?? undefined });
+        this.push();
+        break;
+
+      case 'branchFilterChanged':
+        this._branchFilterActive = msg.active;
+        break;
 
       case 'updateNote': {
         const prevShared = this.storage.getNote(msg.id)?.shared;
@@ -829,6 +851,63 @@ export class SidebarView implements vscode.WebviewViewProvider {
     width: 100%;
   }
 
+  /* ── Branch indicator & filter ──────────────────────── */
+  .branch-pill {
+    font-size: 10px;
+    padding: 1px 6px;
+    border-radius: 10px;
+    background: var(--vscode-badge-background);
+    color: var(--vscode-badge-foreground);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 110px;
+    flex-shrink: 1;
+    display: none;
+  }
+  .branch-pill.visible { display: inline-block; }
+
+  .branch-filter-btn.active { color: var(--vscode-button-background) !important; opacity: 1; }
+
+  /* Off-branch card — dimmed but still accessible */
+  .card.off-branch { opacity: .42; }
+  .card.off-branch:hover { opacity: .75; }
+
+  /* Branch badge in card footer */
+  .branch-badge {
+    font-size: 10px;
+    padding: 1px 5px;
+    border-radius: 10px;
+    background: rgba(0,0,0,.1);
+    color: var(--card-text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100px;
+    opacity: .7;
+  }
+
+  /* Branch scope toggle in new-note form */
+  .branch-scope-label {
+    display: none;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    color: var(--vscode-foreground);
+    opacity: .8;
+    cursor: pointer;
+    user-select: none;
+  }
+  .branch-scope-label.visible { display: flex; }
+  .branch-scope-label input { cursor: pointer; }
+  .branch-scope-label code {
+    font-family: var(--vscode-editor-font-family, monospace);
+    font-size: 10px;
+    background: rgba(128,128,128,.15);
+    padding: 1px 4px;
+    border-radius: 3px;
+  }
+
   /* ── Template picker (in new-note form) ─────────────── */
   .template-row {
     display: flex;
@@ -924,6 +1003,8 @@ export class SidebarView implements vscode.WebviewViewProvider {
 <div class="topbar">
   <div class="topbar-row">
     <span class="project-name" id="project-name">Loading…</span>
+    <span class="branch-pill" id="branch-pill"></span>
+    <button class="icon-btn branch-filter-btn" id="btn-branch-filter" title="Show current branch only" style="display:none">⎇</button>
     <button class="icon-btn" id="btn-new" title="New Note">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
         <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
@@ -943,6 +1024,10 @@ export class SidebarView implements vscode.WebviewViewProvider {
 <div class="new-note-form" id="new-note-form">
   <input id="new-title" type="text" placeholder="Note title…" maxlength="120">
   <div class="template-row" id="new-templates"></div>
+  <label class="branch-scope-label" id="branch-scope-label">
+    <input type="checkbox" id="new-branch-scope">
+    <span>Scope to <code id="branch-scope-name"></code></span>
+  </label>
   <div class="color-strip" id="new-colors"></div>
   <div class="new-note-tags" id="new-tags"></div>
   <div class="form-actions">
@@ -976,16 +1061,18 @@ export class SidebarView implements vscode.WebviewViewProvider {
   const COLORS  = ${colorsJson};
   const COLOR_KEYS = Object.keys(COLORS);
 
-  let notes           = [];
-  let tags            = [];
-  let templates       = [];
-  let defaultTagIds   = [];
-  let activeTagIds    = [];
-  let searchQuery     = '';
-  let newColor        = COLOR_KEYS[0];
-  let newTags         = [];
-  let newTemplateId   = null;
-  let tagColor        = '#74B9FF';
+  let notes             = [];
+  let tags              = [];
+  let templates         = [];
+  let defaultTagIds     = [];
+  let activeTagIds      = [];
+  let searchQuery       = '';
+  let newColor          = COLOR_KEYS[0];
+  let newTags           = [];
+  let newTemplateId     = null;
+  let tagColor          = '#74B9FF';
+  let currentBranch     = null;
+  let branchFilterActive = false;
   let openColorPop    = null;
   let openTagPop      = null;
   let isManagingTags  = false;
@@ -1001,10 +1088,23 @@ export class SidebarView implements vscode.WebviewViewProvider {
   const newTitleEl     = document.getElementById('new-title');
   const newColorsEl    = document.getElementById('new-colors');
   const newTagsEl      = document.getElementById('new-tags');
-  const newTemplatesEl = document.getElementById('new-templates');
+  const newTemplatesEl    = document.getElementById('new-templates');
+  const branchPillEl      = document.getElementById('branch-pill');
+  const branchFilterBtn   = document.getElementById('btn-branch-filter');
+  const branchScopeLabel  = document.getElementById('branch-scope-label');
+  const branchScopeNameEl = document.getElementById('branch-scope-name');
   const addTagForm     = document.getElementById('add-tag-form');
   const tagLabelEl     = document.getElementById('tag-label');
   const tagColorsEl    = document.getElementById('tag-colors');
+
+  // ── Branch filter toggle ─────────────────────────────────────────────────
+  branchFilterBtn.addEventListener('click', () => {
+    branchFilterActive = !branchFilterActive;
+    branchFilterBtn.classList.toggle('active', branchFilterActive);
+    branchFilterBtn.title = branchFilterActive ? 'Show all branches' : 'Show current branch only';
+    vscode.postMessage({ type: 'branchFilterChanged', active: branchFilterActive });
+    renderCards();
+  });
 
   // ── Init ────────────────────────────────────────────────────────────────
   vscode.postMessage({ type: 'ready' });
@@ -1015,9 +1115,11 @@ export class SidebarView implements vscode.WebviewViewProvider {
       tags          = msg.tags          ?? [];
       templates     = msg.templates     ?? [];
       defaultTagIds = msg.defaultTagIds ?? [];
+      currentBranch = msg.currentBranch ?? null;
       if (msg.projectName) projectName.textContent = msg.projectName;
       // Drop filter state for tags that no longer exist
       activeTagIds = activeTagIds.filter(id => tags.some(t => t.id === id));
+      renderBranchIndicator();
       renderTagBar();
       if (isManagingTags) renderTagManager();
       renderCards();
@@ -1056,6 +1158,10 @@ export class SidebarView implements vscode.WebviewViewProvider {
   document.getElementById('btn-new').addEventListener('click', () => {
     newTags = [];
     renderNewNoteTags();
+    // If the branch filter is active, pre-check the scope toggle so the new
+    // note defaults to the current branch — consistent with the user's focus mode.
+    const scopeCheckbox = document.getElementById('new-branch-scope');
+    if (scopeCheckbox) scopeCheckbox.checked = branchFilterActive && !!currentBranch;
     newForm.classList.add('open');
     newTitleEl.focus();
   });
@@ -1072,6 +1178,8 @@ export class SidebarView implements vscode.WebviewViewProvider {
     newTags       = [];
     newTemplateId = null;
     newColor      = COLOR_KEYS[0];
+    const scopeCheckbox = document.getElementById('new-branch-scope');
+    if (scopeCheckbox) scopeCheckbox.checked = false;
     renderTemplatePicker();
     highlightSwatch(newColorsEl, newColor);
     renderNewNoteTags();
@@ -1079,7 +1187,9 @@ export class SidebarView implements vscode.WebviewViewProvider {
   function confirmNewNote() {
     const title = newTitleEl.value.trim();
     if (!title) { newTitleEl.focus(); return; }
-    vscode.postMessage({ type: 'createNote', title, color: newColor, tags: [...newTags], templateId: newTemplateId });
+    const scopeCheckbox = document.getElementById('new-branch-scope');
+    const branch = scopeCheckbox?.checked && currentBranch ? currentBranch : undefined;
+    vscode.postMessage({ type: 'createNote', title, color: newColor, tags: [...newTags], templateId: newTemplateId, branch });
     closeNewForm();
   }
 
@@ -1099,6 +1209,20 @@ export class SidebarView implements vscode.WebviewViewProvider {
       });
       newTagsEl.appendChild(chip);
     });
+  }
+
+  function renderBranchIndicator() {
+    if (currentBranch) {
+      branchPillEl.textContent = '⎇ ' + currentBranch;
+      branchPillEl.classList.add('visible');
+      branchFilterBtn.style.display = '';
+      branchScopeLabel.classList.add('visible');
+      branchScopeNameEl.textContent = currentBranch;
+    } else {
+      branchPillEl.classList.remove('visible');
+      branchFilterBtn.style.display = 'none';
+      branchScopeLabel.classList.remove('visible');
+    }
   }
 
   function renderTemplatePicker() {
@@ -1294,6 +1418,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
   // ── Cards ────────────────────────────────────────────────────────────────
   function visibleNotes() {
     return notes.filter(n => {
+      if (branchFilterActive && currentBranch && n.branch && n.branch !== currentBranch) return false;
       if (searchQuery) {
         const tagText = n.tags.map(tid => { const t = tags.find(t => t.id === tid); return t ? t.label : ''; }).join(' ').toLowerCase();
         if (!n.title.toLowerCase().includes(searchQuery) &&
@@ -1324,8 +1449,9 @@ export class SidebarView implements vscode.WebviewViewProvider {
   }
 
   function buildCard(note) {
-    const bg   = COLORS[note.color] || COLORS.yellow;
-    const card = mkEl('div', 'card' + (note.shared ? ' is-shared' : ''));
+    const bg        = COLORS[note.color] || COLORS.yellow;
+    const isOffBranch = currentBranch && note.branch && note.branch !== currentBranch;
+    const card = mkEl('div', 'card' + (note.shared ? ' is-shared' : '') + (isOffBranch ? ' off-branch' : ''));
     card.dataset.id = note.id;
     card.style.background = bg;
 
@@ -1397,6 +1523,26 @@ export class SidebarView implements vscode.WebviewViewProvider {
       vscode.postMessage({ type: 'linkToEditor', noteId: note.id });
     });
 
+    // ── Branch scope button ──
+    const branchBtn = mkEl('button', 'card-btn' + (note.branch ? ' is-active' : ''));
+    branchBtn.textContent = '⎇';
+    if (!currentBranch) {
+      branchBtn.style.display = 'none';
+    } else if (note.branch) {
+      branchBtn.title = note.branch === currentBranch
+        ? 'Scoped to this branch — click to make global'
+        : 'Scoped to ' + note.branch + ' — click to make global';
+    } else {
+      branchBtn.title = 'Scope to current branch (' + currentBranch + ')';
+    }
+    branchBtn.addEventListener('click', () => {
+      if (note.branch) {
+        vscode.postMessage({ type: 'setBranchScope', noteId: note.id, branch: null });
+      } else if (currentBranch) {
+        vscode.postMessage({ type: 'setBranchScope', noteId: note.id, branch: currentBranch });
+      }
+    });
+
     // ── Share toggle button ──
     const shareBtn = mkEl('button', 'card-btn' + (note.shared ? ' is-active' : ''));
     shareBtn.title = note.shared ? 'Unshare note' : 'Share note (opt into git)';
@@ -1445,7 +1591,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
       vscode.postMessage({ type: 'deleteNote', id: note.id });
     });
 
-    actions.append(tagBtn, linkBtn, shareBtn, colorBtn, editBtn, delBtn);
+    actions.append(tagBtn, linkBtn, branchBtn, shareBtn, colorBtn, editBtn, delBtn);
     hdr.append(starBtn, title, actions);
     card.append(hdr, colorPop, tagPop);
 
@@ -1549,8 +1695,13 @@ export class SidebarView implements vscode.WebviewViewProvider {
     card.appendChild(contentWrap);
 
     // ── Footer ──
-    const footer = mkEl('div', 'card-footer');
-    footer.innerHTML = '<span></span>';
+    const footer  = mkEl('div', 'card-footer');
+    const leftEl  = mkEl('span', '');
+    if (note.branch) {
+      const badge = mkEl('span', 'branch-badge', '⎇ ' + note.branch);
+      leftEl.appendChild(badge);
+    }
+    footer.appendChild(leftEl);
     const dateEl = mkEl('span', 'card-date', formatDate(note.updatedAt));
     footer.appendChild(dateEl);
     card.appendChild(footer);

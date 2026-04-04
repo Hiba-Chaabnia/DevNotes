@@ -12,6 +12,23 @@ export interface ProjectIdentity {
 }
 
 /**
+ * Reads the current branch from `.git/HEAD`.
+ * Returns `undefined` when not on a named branch (detached HEAD) or no git repo.
+ */
+export function getCurrentBranch(workspaceRootPath: string): string | undefined {
+  const headPath = path.join(workspaceRootPath, '.git', 'HEAD');
+  try {
+    const content = fs.readFileSync(headPath, 'utf8').trim();
+    if (content.startsWith('ref: refs/heads/')) {
+      return content.slice('ref: refs/heads/'.length);
+    }
+    return undefined; // detached HEAD
+  } catch {
+    return undefined;
+  }
+}
+
+/**
  * Reads the first workspace folder's `.git/config` to find the `origin` remote.
  * Falls back to the workspace folder name when no Git remote is found.
  * Returns `undefined` when no workspace is open.

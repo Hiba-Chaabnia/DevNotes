@@ -7,6 +7,7 @@ A VS Code extension that gives you a **project-scoped note panel** — rich text
 - **Sidebar panel** — quick access to all notes from the activity bar, with inline search and tag filtering
 - **Rich text editor** — click ✏ on any note to open a full Tiptap editor with a formatting toolbar (bold, italic, headings, lists, task lists, code blocks, and more)
 - **Quick Capture** — press `Ctrl+Alt+Q` from anywhere to create a note instantly; auto-links to the current file and line when an editor is focused
+- **Branch-scoped notes** — scope any note to a git branch; the sidebar detects your current branch live and lets you filter to branch-relevant notes instantly
 - **Note templates** — six built-in templates for common developer workflows (Bug Report, ADR, Meeting Notes, Standup, Feature Spec, Code Review); save any note as a custom template
 - **Code-linked notes** — attach a note to any file and line number; a gutter icon marks the line and hovering it shows the note title with a clickable link back to the note
 - **Tags** — assign tags to notes for filtering; create custom tags with any color; delete tags you no longer need
@@ -40,6 +41,65 @@ Or add it directly to `keybindings.json`:
   "key": "ctrl+shift+`",
   "command": "devnotes.quickCapture"
 }
+```
+
+## Branch-Scoped Notes
+
+Notes are global by default — visible regardless of which branch you're on. You can optionally scope any note to a specific branch so it surfaces only in that context and recedes everywhere else.
+
+### Branch indicator
+
+When you're inside a git repository, a `⎇ branch-name` pill appears in the sidebar top bar next to the project name. It updates live whenever you switch branches — no restart needed.
+
+### Filtering to the current branch
+
+Click the `⎇` button in the top bar to toggle **branch filter mode**. When active:
+
+- Notes scoped to the **current branch** show normally
+- Notes scoped to **other branches** are hidden
+- **Global notes** (no branch set) always remain visible
+
+Click the button again to return to the full list.
+
+### Scoping a note to a branch
+
+**From the card** — hover any note card to reveal the action buttons. Click the `⎇` branch button to scope that note to your current branch. The button highlights when the note is scoped. Click it again to make the note global.
+
+**At creation (sidebar form)** — the new-note form shows a "Scope to current branch" checkbox when a branch is detected. If the branch filter is active when you open the form, the checkbox is pre-checked automatically.
+
+**Via Quick Capture** (`Ctrl+Alt+Q`) — after the template step, a branch scope picker appears:
+
+```
+○ Global — visible on all branches      ← pre-selected by default
+○ Scope to feature/auth                 ← pre-selected if filter is active
+```
+
+Press `Enter` to accept the default, or arrow to change it.
+
+### Visual treatment of off-branch notes
+
+When the branch filter is **inactive**, notes scoped to other branches remain visible but are dimmed to 42% opacity so they don't compete for attention. A small `⎇ branch-name` badge in the card footer shows which branch they belong to.
+
+### How branch detection works
+
+The current branch is read directly from `.git/HEAD` — no git commands or shell processes are involved. A file watcher on `.git/HEAD` detects branch switches instantly so the sidebar always reflects your current context.
+
+Detached HEAD state (e.g. during a rebase or when checking out a commit directly) is handled gracefully — the branch indicator is hidden and no scoping options are offered.
+
+### Note format with a branch scope
+
+```markdown
+---
+id: lp9k3fab
+title: Auth refactor plan
+color: purple
+tags: idea
+branch: feature/auth-v2
+createdAt: 1712345678
+updatedAt: 1712349000
+---
+
+Notes specific to this feature branch.
 ```
 
 ## Note Templates
@@ -187,7 +247,7 @@ updatedAt: 1712349000
 2. Make any API call → 401
 ```
 
-`codeLink_file` and `codeLink_line` are optional — notes without a code link simply omit them. Notes are readable and editable in any text editor, even without the extension installed.
+`codeLink_file`, `codeLink_line`, and `branch` are all optional — notes without these fields simply omit them. Notes are readable and editable in any text editor, even without the extension installed.
 
 ### Personal vs. shared data
 
