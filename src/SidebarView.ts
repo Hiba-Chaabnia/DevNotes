@@ -1,4 +1,6 @@
 import * as vscode from 'vscode';
+import * as fs from 'fs';
+import * as path from 'path';
 import { NoteStorage, Note, Tag, NOTE_COLORS, DEFAULT_TAGS } from './NoteStorage';
 
 // ─── Message types ────────────────────────────────────────────────────────────
@@ -11,7 +13,10 @@ type ToExt =
   | { type: 'openEditor'; noteId: string }
   | { type: 'addTag'; label: string; color: string }
   | { type: 'deleteTag'; id: string }
-  | { type: 'updateTag'; id: string; changes: Partial<Pick<Tag, 'label' | 'color'>> };
+  | { type: 'updateTag'; id: string; changes: Partial<Pick<Tag, 'label' | 'color'>> }
+  | { type: 'jumpToLink'; file: string; line: number }
+  | { type: 'linkToEditor'; noteId: string }
+  | { type: 'removeCodeLink'; noteId: string };
 
 // ─── Provider ────────────────────────────────────────────────────────────────
 
@@ -23,6 +28,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
     private readonly context: vscode.ExtensionContext,
     private readonly storage: NoteStorage,
     private readonly onOpenEditor: (noteId: string) => void,
+    private readonly onNoteLinkChanged: () => void = () => {},
   ) {}
 
   setProjectName(name: string): void {
@@ -50,9 +56,15 @@ export class SidebarView implements vscode.WebviewViewProvider {
   /** Call this after any storage mutation to sync the sidebar. */
   push(): void {
     if (!this.view?.visible) return;
+    const wsRoot = vscode.workspace.workspaceFolders?.[0]?.uri;
+    const notes = this.storage.getNotes().map(n => {
+      if (!n.codeLink || !wsRoot) return n;
+      const absPath = path.join(wsRoot.fsPath, n.codeLink.file);
+      return { ...n, codeLinkStale: !fs.existsSync(absPath) };
+    });
     this.view.webview.postMessage({
       type         : 'init',
-      notes        : this.storage.getNotes(),
+      notes,
       tags         : this.storage.getTags(),
       defaultTagIds: DEFAULT_TAGS.map(t => t.id),
       projectName  : this.projectName,
@@ -143,6 +155,34 @@ export class SidebarView implements vscode.WebviewViewProvider {
         this.push();
         break;
       }
+
+      case 'jumpToLink':
+        vscode.commands.executeCommand('devnotes.jumpToLink', msg.file, msg.line);
+        break;
+
+      case 'linkToEditor': {
+        const editor = vscode.window.activeTextEditor;
+        if (!editor) {
+          vscode.window.showInformationMessage('DevNotes: open a file and place your cursor on the line you want to link.');
+          break;
+        }
+        const filePath = vscode.workspace.asRelativePath(editor.document.uri, false);
+        if (filePath === editor.document.uri.fsPath) {
+          vscode.window.showWarningMessage('DevNotes: file is outside the current workspace.');
+          break;
+        }
+        const line = editor.selection.active.line + 1;
+        await this.storage.updateNote(msg.noteId, { codeLink: { file: filePath, line } });
+        this.push();
+        this.onNoteLinkChanged();
+        break;
+      }
+
+      case 'removeCodeLink':
+        await this.storage.updateNote(msg.noteId, { codeLink: undefined });
+        this.push();
+        this.onNoteLinkChanged();
+        break;
     }
   }
 
@@ -793,6 +833,56 @@ export class SidebarView implements vscode.WebviewViewProvider {
   }
   .empty-icon { font-size: 2.4em; }
   .empty p { font-size: 12px; line-height: 1.5; }
+
+  /* ── Code link chip ──────────────────────────────────── */
+  .code-link-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-family: var(--vscode-editor-font-family, monospace);
+    font-size: 10px;
+    padding: 2px 7px;
+    border-radius: 4px;
+    background: rgba(0,0,0,.12);
+    border: 1px solid rgba(0,0,0,.18);
+    color: var(--card-text);
+    cursor: pointer;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 200px;
+    flex-shrink: 0;
+    opacity: .75;
+    transition: opacity .12s, background .12s;
+    align-self: flex-start;
+  }
+  .code-link-chip::before {
+    content: '{}';
+    font-size: 9px;
+    opacity: .55;
+    flex-shrink: 0;
+  }
+  .code-link-chip:hover {
+    opacity: 1;
+    background: rgba(0,0,0,.2);
+  }
+  .code-link-chip.stale {
+    opacity: .35;
+    text-decoration: line-through;
+    cursor: default;
+    pointer-events: none;
+  }
+  .code-link-remove {
+    opacity: 0;
+    font-size: 8px;
+    padding: 0 1px;
+    border-radius: 2px;
+    line-height: 1;
+    flex-shrink: 0;
+    transition: opacity .1s;
+  }
+  .code-link-chip:hover .code-link-remove { opacity: .55; }
+  .code-link-remove:hover { opacity: 1 !important; }
 </style>
 </head>
 <body>
@@ -1217,6 +1307,17 @@ export class SidebarView implements vscode.WebviewViewProvider {
       if (!wasOpen) { tagPop.classList.add('open'); openTagPop = note.id; }
     });
 
+    // ── Code link button ──
+    const linkBtn = mkEl('button', 'card-btn' + (note.codeLink ? ' is-active' : ''));
+    linkBtn.title = note.codeLink ? 'Update link to current cursor position' : 'Link to current cursor position';
+    linkBtn.innerHTML = \`<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+      <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+    </svg>\`;
+    linkBtn.addEventListener('click', () => {
+      vscode.postMessage({ type: 'linkToEditor', noteId: note.id });
+    });
+
     // ── Share toggle button ──
     const shareBtn = mkEl('button', 'card-btn' + (note.shared ? ' is-active' : ''));
     shareBtn.title = note.shared ? 'Unshare note' : 'Share note (opt into git)';
@@ -1265,7 +1366,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
       vscode.postMessage({ type: 'deleteNote', id: note.id });
     });
 
-    actions.append(tagBtn, shareBtn, colorBtn, editBtn, delBtn);
+    actions.append(tagBtn, linkBtn, shareBtn, colorBtn, editBtn, delBtn);
     hdr.append(starBtn, title, actions);
     card.append(hdr, colorPop, tagPop);
 
@@ -1288,6 +1389,35 @@ export class SidebarView implements vscode.WebviewViewProvider {
         tagRow.appendChild(pill);
       });
       card.appendChild(tagRow);
+    }
+
+    // ── Code link chip ──
+    if (note.codeLink) {
+      const chip = mkEl('button', 'code-link-chip' + (note.codeLinkStale ? ' stale' : ''));
+      const shortName = note.codeLink.file.split('/').pop() || note.codeLink.file;
+      chip.title = note.codeLinkStale
+        ? note.codeLink.file + ':' + note.codeLink.line + ' (file not found)'
+        : note.codeLink.file + ':' + note.codeLink.line + ' — click to jump';
+
+      const chipLabel = mkEl('span', '', shortName + ':' + note.codeLink.line);
+      chip.appendChild(chipLabel);
+
+      if (!note.codeLinkStale) {
+        chip.addEventListener('click', e => {
+          e.stopPropagation();
+          vscode.postMessage({ type: 'jumpToLink', file: note.codeLink.file, line: note.codeLink.line });
+        });
+
+        const removeBtn = mkEl('span', 'code-link-remove', '✕');
+        removeBtn.title = 'Remove code link';
+        removeBtn.addEventListener('click', e => {
+          e.stopPropagation();
+          vscode.postMessage({ type: 'removeCodeLink', noteId: note.id });
+        });
+        chip.appendChild(removeBtn);
+      }
+
+      card.appendChild(chip);
     }
 
     // ── Content ──

@@ -6,6 +6,7 @@ A VS Code extension that gives you a **project-scoped note panel** — rich text
 
 - **Sidebar panel** — quick access to all notes from the activity bar, with inline search and tag filtering
 - **Rich text editor** — click ✏ on any note to open a full Tiptap editor with a formatting toolbar (bold, italic, headings, lists, task lists, code blocks, and more)
+- **Code-linked notes** — attach a note to any file and line number; a gutter icon marks the line and hovering it shows the note title with a clickable link back to the note
 - **Tags** — assign tags to notes for filtering; create custom tags with any color; delete tags you no longer need
 - **Color-coded notes** — eight color options per note, changeable at any time from the card
 - **Starred notes** — star important notes to pin them to the top of the list
@@ -19,6 +20,50 @@ A VS Code extension that gives you a **project-scoped note panel** — rich text
 2. Click the **DevNotes** icon in the activity bar
 3. Hit **+** to create a note — pick a title, color, and any tags upfront
 4. Click the note content to edit inline, or press **✏** to open the full rich text editor
+
+## Code-Linked Notes
+
+Code-linked notes let you attach a note to a specific file and line number. The link is stored in the note's frontmatter and persists across sessions.
+
+### Creating a link
+
+There are two ways to link a note to a line:
+
+**From the editor (new note):** right-click any line → **Add DevNote Here**. An input box pre-labelled with the file and line appears; enter a title and the note is created already linked.
+
+**From the sidebar (existing note):** click the chain-link icon (🔗) on any note card. The note is linked to wherever your cursor currently sits in the active editor. Clicking 🔗 on an already-linked note updates the link to the new position.
+
+### Navigating from a note
+
+Each linked note card shows a `{} filename:line` chip below its tags. Click the chip to open that file and jump directly to the linked line.
+
+To remove a link, hover the chip and click the **✕** that appears on the right.
+
+### Navigating from the editor
+
+When you open a file that has notes linked to it, a small sticky-note icon appears in the left gutter on each linked line. Hovering the line text shows a tooltip with the note title as a clickable link — clicking it opens the note in the rich editor.
+
+### Automatic link maintenance
+
+When you rename or move a file using VS Code's Explorer or refactoring tools, all notes linked to the old path are updated automatically. Links to files moved outside of VS Code (e.g. via a terminal `mv` or `git mv`) are not updated automatically — the chip will appear greyed out with strikethrough to indicate the link is stale.
+
+### Note format with a code link
+
+```markdown
+---
+id: lp9k3fab
+title: Null check missing
+color: orange
+tags: bug
+starred: false
+codeLink_file: src/auth/tokenService.ts
+codeLink_line: 42
+createdAt: 1712345678
+updatedAt: 1712349000
+---
+
+Token is never validated before use here.
+```
 
 ## Working with Tags
 
@@ -73,6 +118,8 @@ title: Auth token expiry bug
 color: orange
 tags: bug,important
 starred: true
+codeLink_file: src/auth/tokenService.ts
+codeLink_line: 42
 createdAt: 1712345678
 updatedAt: 1712349000
 ---
@@ -82,7 +129,7 @@ updatedAt: 1712349000
 2. Make any API call → 401
 ```
 
-Notes are readable and editable in any text editor, even without the extension installed.
+`codeLink_file` and `codeLink_line` are optional — notes without a code link simply omit them. Notes are readable and editable in any text editor, even without the extension installed.
 
 ### Personal vs. shared data
 

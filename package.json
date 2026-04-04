@@ -39,6 +39,16 @@
         "title": "Refresh",
         "icon": "$(refresh)",
         "category": "DevNotes"
+      },
+      {
+        "command": "devnotes.addNoteHere",
+        "title": "Add DevNote Here",
+        "category": "DevNotes"
+      },
+      {
+        "command": "devnotes.jumpToLink",
+        "title": "Jump to Linked File",
+        "category": "DevNotes"
       }
     ],
     "menus": {
@@ -47,6 +57,13 @@
           "command": "devnotes.refresh",
           "when": "view == devnotesView",
           "group": "navigation@1"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "devnotes.addNoteHere",
+          "when": "editorTextFocus",
+          "group": "devnotes@1"
         }
       ]
     }

@@ -3,6 +3,11 @@ import { parseFrontmatter, serializeFrontmatter } from './Frontmatter';
 
 // ─── Data model ──────────────────────────────────────────────────────────────
 
+export interface CodeLink {
+  file: string;   // workspace-relative path, e.g. "src/utils.ts"
+  line: number;   // 1-based line number
+}
+
 export interface Note {
   id: string;
   title: string;
@@ -11,6 +16,7 @@ export interface Note {
   tags: string[];        // array of Tag ids
   starred: boolean;
   shared?: boolean;      // when true, note file is un-ignored in .devnotes/.gitignore
+  codeLink?: CodeLink;   // optional link to a specific file:line in the workspace
   createdAt: number;
   updatedAt: number;
 }
@@ -137,7 +143,7 @@ export class NoteStorage {
 
   // ── Notes ─────────────────────────────────────────────────────────────────
 
-  async createNote(partial: { title: string; color?: string; tags?: string[] }): Promise<Note> {
+  async createNote(partial: { title: string; color?: string; tags?: string[]; codeLink?: CodeLink }): Promise<Note> {
     const note: Note = {
       id       : generateId(),
       title    : partial.title,
@@ -145,6 +151,7 @@ export class NoteStorage {
       color    : partial.color ?? 'yellow',
       tags     : partial.tags  ?? [],
       starred  : false,
+      codeLink : partial.codeLink,
       createdAt: Date.now(),
       updatedAt: Date.now(),
     };
@@ -273,6 +280,9 @@ export class NoteStorage {
         tags     : meta.tags ? String(meta.tags).split(',').filter(Boolean) : [],
         starred  : meta.starred  === true,
         shared   : meta.shared   === true,
+        codeLink : (typeof meta.codeLink_file === 'string' && meta.codeLink_file && meta.codeLink_line !== undefined)
+          ? { file: meta.codeLink_file, line: Number(meta.codeLink_line) }
+          : undefined,
         createdAt: Number(meta.createdAt ?? Date.now()),
         updatedAt: Number(meta.updatedAt ?? Date.now()),
       };
@@ -309,6 +319,10 @@ export class NoteStorage {
         updatedAt: note.updatedAt,
       };
       if (note.shared) meta.shared = true;
+      if (note.codeLink) {
+        meta.codeLink_file = note.codeLink.file;
+        meta.codeLink_line = note.codeLink.line;
+      }
       await vscode.workspace.fs.writeFile(
         this.noteUri(note.id),
         enc.encode(serializeFrontmatter(meta, note.content))
