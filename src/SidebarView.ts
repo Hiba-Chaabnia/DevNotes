@@ -10,6 +10,7 @@ type ToExt =
   | { type: 'createNote'; title: string; color: string; tags: string[]; templateId?: string; branch?: string }
   | { type: 'setBranchScope'; noteId: string; branch: string | null }
   | { type: 'branchFilterChanged'; active: boolean }
+  | { type: 'setReminder'; noteId: string }
   | { type: 'updateNote'; id: string; changes: Partial<Note> }
   | { type: 'deleteNote'; id: string }
   | { type: 'openEditor'; noteId: string }
@@ -115,6 +116,64 @@ export class SidebarView implements vscode.WebviewViewProvider {
       case 'branchFilterChanged':
         this._branchFilterActive = msg.active;
         break;
+
+      case 'setReminder': {
+        const note = this.storage.getNote(msg.noteId);
+        if (!note) break;
+
+        const now  = new Date();
+        const make = (offsetDays: number, hour = 9): Date => {
+          const d = new Date(now);
+          d.setDate(d.getDate() + offsetDays);
+          d.setHours(hour, 0, 0, 0);
+          return d;
+        };
+        const fmt = (d: Date) => d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+
+        type RItem = vscode.QuickPickItem & { ts: number | null | undefined };
+        const items: RItem[] = [];
+
+        if (note.remindAt) {
+          items.push({ label: '$(bell-slash) Remove reminder', description: 'Clear the current reminder', ts: null });
+          items.push({ kind: vscode.QuickPickItemKind.Separator, label: '', ts: undefined });
+        }
+        items.push(
+          { label: '$(bell) Tomorrow morning',  description: fmt(make(1)),  ts: make(1).getTime()  },
+          { label: '$(bell) In 2 days',         description: fmt(make(2)),  ts: make(2).getTime()  },
+          { label: '$(bell) Next week',         description: fmt(make(7)),  ts: make(7).getTime()  },
+          { label: '$(bell) Next month',        description: fmt(make(30)), ts: make(30).getTime() },
+          { label: '$(calendar) Custom date…',  description: 'Enter a specific date', ts: undefined },
+        );
+
+        const picked = await vscode.window.showQuickPick(items, { placeHolder: 'Set a reminder for this note' });
+        if (!picked) break;
+
+        let remindAt: number | undefined;
+
+        if (picked.ts === null) {
+          remindAt = undefined; // remove
+        } else if (picked.ts === undefined) {
+          // Custom date input
+          const input = await vscode.window.showInputBox({
+            prompt      : 'Reminder date',
+            placeHolder : new Date().toISOString().slice(0, 10),
+            validateInput: v => {
+              const d = new Date(v);
+              return isNaN(d.getTime()) ? 'Use YYYY-MM-DD format' : undefined;
+            },
+          });
+          if (!input) break;
+          const d = new Date(input);
+          d.setHours(9, 0, 0, 0);
+          remindAt = d.getTime();
+        } else {
+          remindAt = picked.ts;
+        }
+
+        await this.storage.updateNote(msg.noteId, { remindAt });
+        this.push();
+        break;
+      }
 
       case 'updateNote': {
         const prevShared = this.storage.getNote(msg.id)?.shared;
@@ -908,6 +967,27 @@ export class SidebarView implements vscode.WebviewViewProvider {
     border-radius: 3px;
   }
 
+  /* ── Reminder badge ─────────────────────────────────── */
+  .reminder-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    font-size: 10px;
+    padding: 2px 7px;
+    border-radius: 4px;
+    background: rgba(0,0,0,.1);
+    border: 1px solid rgba(0,0,0,.1);
+    color: var(--card-text);
+    opacity: .75;
+    align-self: flex-start;
+    white-space: nowrap;
+  }
+  .reminder-badge.overdue {
+    background: rgba(239,108,87,.22);
+    border-color: rgba(239,108,87,.35);
+    opacity: 1;
+  }
+
   /* ── Template picker (in new-note form) ─────────────── */
   .template-row {
     display: flex;
@@ -1543,6 +1623,14 @@ export class SidebarView implements vscode.WebviewViewProvider {
       }
     });
 
+    // ── Reminder button ──
+    const bellBtn = mkEl('button', 'card-btn' + (note.remindAt ? ' is-active' : ''));
+    bellBtn.textContent = '🔔';
+    bellBtn.title = note.remindAt ? 'Edit reminder' : 'Set a reminder';
+    bellBtn.addEventListener('click', () => {
+      vscode.postMessage({ type: 'setReminder', noteId: note.id });
+    });
+
     // ── Share toggle button ──
     const shareBtn = mkEl('button', 'card-btn' + (note.shared ? ' is-active' : ''));
     shareBtn.title = note.shared ? 'Unshare note' : 'Share note (opt into git)';
@@ -1591,7 +1679,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
       vscode.postMessage({ type: 'deleteNote', id: note.id });
     });
 
-    actions.append(tagBtn, linkBtn, branchBtn, shareBtn, colorBtn, editBtn, delBtn);
+    actions.append(tagBtn, linkBtn, branchBtn, bellBtn, shareBtn, colorBtn, editBtn, delBtn);
     hdr.append(starBtn, title, actions);
     card.append(hdr, colorPop, tagPop);
 
@@ -1614,6 +1702,15 @@ export class SidebarView implements vscode.WebviewViewProvider {
         tagRow.appendChild(pill);
       });
       card.appendChild(tagRow);
+    }
+
+    // ── Reminder badge ──
+    if (note.remindAt) {
+      const isOverdue = note.remindAt <= Date.now();
+      const badge = mkEl('span', 'reminder-badge' + (isOverdue ? ' overdue' : ''));
+      badge.textContent = '🔔 ' + formatReminder(note.remindAt);
+      badge.title = isOverdue ? 'Overdue — click 🔔 to reschedule' : new Date(note.remindAt).toLocaleString();
+      card.appendChild(badge);
     }
 
     // ── Code link chip ──
@@ -1759,6 +1856,16 @@ export class SidebarView implements vscode.WebviewViewProvider {
     container.querySelectorAll('.color-swatch').forEach(sw => {
       sw.classList.toggle('selected', sw.dataset.colorKey === key);
     });
+  }
+
+  function formatReminder(ts) {
+    const now  = new Date();
+    const d    = new Date(ts);
+    if (ts <= Date.now()) return 'Overdue';
+    if (d.toDateString() === now.toDateString()) return 'Today';
+    const tomorrow = new Date(now); tomorrow.setDate(now.getDate() + 1);
+    if (d.toDateString() === tomorrow.toDateString()) return 'Tomorrow';
+    return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
   }
 
   function formatDate(ts) {

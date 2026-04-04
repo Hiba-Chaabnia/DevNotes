@@ -8,6 +8,7 @@ A VS Code extension that gives you a **project-scoped note panel** — rich text
 - **Rich text editor** — click ✏ on any note to open a full Tiptap editor with a formatting toolbar (bold, italic, headings, lists, task lists, code blocks, and more)
 - **Quick Capture** — press `Ctrl+Alt+Q` from anywhere to create a note instantly; auto-links to the current file and line when an editor is focused
 - **Branch-scoped notes** — scope any note to a git branch; the sidebar detects your current branch live and lets you filter to branch-relevant notes instantly
+- **Reminders** — set a reminder on any note; VS Code fires a notification when it's due with options to open, snooze, or dismiss
 - **Note templates** — six built-in templates for common developer workflows (Bug Report, ADR, Meeting Notes, Standup, Feature Spec, Code Review); save any note as a custom template
 - **Code-linked notes** — attach a note to any file and line number; a gutter icon marks the line and hovering it shows the note title with a clickable link back to the note
 - **Tags** — assign tags to notes for filtering; create custom tags with any color; delete tags you no longer need
@@ -101,6 +102,65 @@ updatedAt: 1712349000
 
 Notes specific to this feature branch.
 ```
+
+## Reminders
+
+Set a reminder on any note so it surfaces at the right time — useful for follow-ups, deferred bugs, or anything you want to revisit later.
+
+### Setting a reminder
+
+Hover any note card to reveal its action buttons, then click **🔔**. A picker appears with preset options:
+
+| Option | When it fires |
+|---|---|
+| Tomorrow morning | Next day at 9:00 AM |
+| In 2 days | Two days from now at 9:00 AM |
+| Next week | Seven days from now at 9:00 AM |
+| Next month | Thirty days from now at 9:00 AM |
+| Custom date… | Any date you enter (YYYY-MM-DD), fires at 9:00 AM |
+
+If the note already has a reminder, a **Remove reminder** option appears at the top of the picker.
+
+### Reminder badge
+
+Once set, a `🔔 Tomorrow`, `🔔 Apr 28`, or similar badge appears on the card — always visible, not just on hover. Overdue reminders display in a distinct reddish style so they stand out.
+
+### Notification
+
+When a reminder comes due, VS Code fires a notification:
+
+```
+🔔 DevNote: "Fix auth token expiry"
+[Open]  [Snooze 1h]  [Snooze tomorrow]  [Dismiss]
+```
+
+| Action | What happens |
+|---|---|
+| **Open** | Opens the note in the rich editor; reminder stays set |
+| **Snooze 1h** | Pushes the reminder forward by one hour |
+| **Snooze tomorrow** | Reschedules to 9:00 AM the next day |
+| **Dismiss** | Clears the reminder entirely |
+| *(close popup)* | Auto-snoozed 1 hour to prevent re-firing immediately |
+
+Reminders are checked every 60 seconds. If multiple notes are due simultaneously, notifications are shown concurrently — one per note.
+
+### Note format with a reminder
+
+```markdown
+---
+id: lp9k3fab
+title: Fix auth token expiry
+color: orange
+tags: bug
+remindAt: 1745226000000
+createdAt: 1712345678
+updatedAt: 1712349000
+---
+
+Token TTL is 1 hour — needs refresh token flow.
+```
+
+`remindAt` is a Unix timestamp in milliseconds. It is omitted from the frontmatter when no reminder is set.
 
 ## Note Templates
 
@@ -247,7 +307,7 @@ updatedAt: 1712349000
 2. Make any API call → 401
 ```
 
-`codeLink_file`, `codeLink_line`, and `branch` are all optional — notes without these fields simply omit them. Notes are readable and editable in any text editor, even without the extension installed.
+`codeLink_file`, `codeLink_line`, `branch`, and `remindAt` are all optional — notes without these fields simply omit them. Notes are readable and editable in any text editor, even without the extension installed.
 
 ### Personal vs. shared data
 

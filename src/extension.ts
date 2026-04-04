@@ -3,6 +3,7 @@ import { NoteStorage } from './NoteStorage';
 import { SidebarView } from './SidebarView';
 import { EditorPanel } from './EditorPanel';
 import { GutterController } from './GutterController';
+import { ReminderController } from './ReminderController';
 import { detectProjectIdentity, getCurrentBranch } from './GitDetector';
 
 // ─── Activation ──────────────────────────────────────────────────────────────
@@ -66,11 +67,16 @@ async function _activate(context: vscode.ExtensionContext): Promise<void> {
   gutterController = new GutterController(context, storage);
   context.subscriptions.push(gutterController);
 
+  // Reminder system — checks due remindAt timestamps every minute
+  const reminderController = new ReminderController(storage, () => sidebar.push());
+  context.subscriptions.push(reminderController);
+
   // Sync all surfaces when notes change due to external file edits (e.g. git pull)
   storage.onExternalChange = () => {
     sidebar.push();
     EditorPanel.current?.push();
     gutterController.refresh();
+    reminderController.refresh();
   };
 
   // Register the WebviewView in the sidebar

@@ -26,6 +26,7 @@ export interface Note {
   shared?: boolean;      // when true, note file is un-ignored in .devnotes/.gitignore
   codeLink?: CodeLink;   // optional link to a specific file:line in the workspace
   branch?: string;       // optional git branch scope — undefined means visible on all branches
+  remindAt?: number;     // Unix timestamp (ms) for when a reminder should fire; undefined = no reminder
   createdAt: number;
   updatedAt: number;
 }
@@ -368,6 +369,7 @@ export class NoteStorage {
           ? { file: meta.codeLink_file, line: Number(meta.codeLink_line) }
           : undefined,
         branch   : typeof meta.branch === 'string' && meta.branch ? meta.branch : undefined,
+        remindAt : meta.remindAt ? Number(meta.remindAt) : undefined,
         createdAt: Number(meta.createdAt ?? Date.now()),
         updatedAt: Number(meta.updatedAt ?? Date.now()),
       };
@@ -403,8 +405,9 @@ export class NoteStorage {
         createdAt: note.createdAt,
         updatedAt: note.updatedAt,
       };
-      if (note.shared)  meta.shared  = true;
-      if (note.branch)  meta.branch  = note.branch;
+      if (note.shared)   meta.shared   = true;
+      if (note.branch)   meta.branch   = note.branch;
+      if (note.remindAt) meta.remindAt = note.remindAt;
       if (note.codeLink) {
         meta.codeLink_file = note.codeLink.file;
         meta.codeLink_line = note.codeLink.line;
