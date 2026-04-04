@@ -221,6 +221,9 @@ export class NoteStorage {
 
   getNotes(): Note[] { return this.notes; }
 
+  /** The URI of the .devnotes/ folder — used by EditorPanel for asset management. */
+  get folderUri(): vscode.Uri { return this.folder; }
+
   getNote(id: string): Note | undefined {
     return this.notes.find(n => n.id === id);
   }

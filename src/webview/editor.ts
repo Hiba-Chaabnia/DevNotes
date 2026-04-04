@@ -13,6 +13,7 @@ import { Editor } from '@tiptap/core';
 import StarterKit from '@tiptap/starter-kit';
 import TaskList from '@tiptap/extension-task-list';
 import TaskItem from '@tiptap/extension-task-item';
+import Image from '@tiptap/extension-image';
 import { Markdown } from 'tiptap-markdown';
 
 // ── Globals injected by EditorPanel.ts before this script loads ──────────────
@@ -52,6 +53,7 @@ declare const __INITIAL_TITLE__: string;
       }),
       TaskList,
       TaskItem.configure({ nested: true }),
+      Image.configure({ inline: false, allowBase64: true }),
       Markdown.configure({
         html: false,
         linkify: true,
@@ -65,6 +67,25 @@ declare const __INITIAL_TITLE__: string;
       attributes: {
         class: 'prose',
         spellcheck: 'true',
+      },
+      handlePaste(_, event) {
+        const items = Array.from(event.clipboardData?.items ?? []);
+        const imageItem = items.find(item => item.type.startsWith('image/'));
+        if (!imageItem) return false; // let Tiptap handle non-image pastes normally
+
+        event.preventDefault();
+        const file = imageItem.getAsFile();
+        if (!file) return true;
+
+        const reader = new FileReader();
+        reader.onload = () => {
+          const dataUrl = reader.result as string;
+          const base64  = dataUrl.split(',')[1] ?? '';
+          const ext     = imageItem.type.split('/')[1]?.split('+')[0] ?? 'png';
+          vscode.postMessage({ type: 'pasteImage', base64, mimeType: imageItem.type, ext });
+        };
+        reader.readAsDataURL(file);
+        return true; // we handled it — Tiptap should do nothing further
       },
     },
     onUpdate() {
@@ -162,6 +183,9 @@ declare const __INITIAL_TITLE__: string;
       // emitUpdate fires onUpdate → schedules auto-save so the template content persists
       editor.commands.setContent(data.content ?? '');
       statusEl.textContent = 'Unsaved…';
+    }
+    if (data?.type === 'insertImage') {
+      editor.chain().focus().setImage({ src: data.src as string, alt: 'image' }).run();
     }
   });
 

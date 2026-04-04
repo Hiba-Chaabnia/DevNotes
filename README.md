@@ -10,6 +10,7 @@ A VS Code extension that gives you a **project-scoped note panel** — rich text
 - **Branch-scoped notes** — scope any note to a git branch; the sidebar detects your current branch live and lets you filter to branch-relevant notes instantly
 - **Reminders** — set a reminder on any note; VS Code fires a notification when it's due with options to open, snooze, or dismiss
 - **Export** — export a single note, a hand-picked selection, or all notes as Markdown, HTML, or clipboard copy
+- **Image paste** — paste screenshots and images directly into the rich editor; images are saved to `.devnotes/assets/` and embedded inline
 - **Note templates** — six built-in templates for common developer workflows (Bug Report, ADR, Meeting Notes, Standup, Feature Spec, Code Review); save any note as a custom template
 - **Code-linked notes** — attach a note to any file and line number; a gutter icon marks the line and hovering it shows the note title with a clickable link back to the note
 - **Tags** — assign tags to notes for filtering; create custom tags with any color; delete tags you no longer need
@@ -246,6 +247,47 @@ updatedAt: 1712349000
 Token is never validated before use here.
 ```
 
+## Image Paste
+
+Paste any image directly into the rich editor — screenshots, diagrams, browser captures — and it appears inline in the note body, right where your cursor is.
+
+### How to paste an image
+
+1. Copy an image to your clipboard (`Print Screen`, `Ctrl+Shift+S`, snipping tool, or copy from a browser)
+2. Open a note in the rich editor (click ✏ on a card)
+3. Place your cursor where you want the image
+4. Press `Ctrl+V`
+
+The image appears immediately. The note auto-saves after one second, as usual.
+
+### Where images are stored
+
+Images are written to `.devnotes/assets/<note-id>-<timestamp>.png` on paste. The markdown stores a workspace-relative path:
+
+```markdown
+## Bug reproduction
+
+Here is the error state I am seeing:
+
+![image](.devnotes/assets/lp9k3fab-1712345678.png)
+
+The modal appears before the data loads.
+```
+
+The `.devnotes/assets/` folder is gitignored by default — the same privacy model as notes. To share images alongside a shared note, add `!assets/` to `.devnotes/.gitignore`:
+
+```
+*
+!.gitignore
+!tags.json
+!assets/
+!<note-id>.md
+```
+
+### Supported formats
+
+Any image format the clipboard provides — PNG, JPEG, GIF, WebP. The file extension is detected from the clipboard MIME type.
+
 ## Exporting Notes
 
 Notes can be exported as Markdown files, HTML files, or copied to the clipboard — individually, in bulk, or as a hand-picked selection.
@@ -449,6 +491,7 @@ Storing notes as files in the workspace solves all three: git handles versioning
   .gitignore      — ignores everything by default; updated when notes are shared
   tags.json       — custom tag definitions for this workspace
   templates.json  — custom note templates (built-ins are hardcoded, not stored here)
+  assets/         — images pasted into notes (gitignored by default)
   <id>.md         — one file per note
 ```
 

@@ -10,6 +10,11 @@ export class EditorPanel {
   private readonly disposables: vscode.Disposable[] = [];
   readonly noteId: string;
 
+  // Maps webview-safe image URIs → workspace-relative storage paths.
+  // Populated when images are pasted or when a note with images is loaded.
+  // Used to convert URIs back to paths before writing markdown to disk.
+  private readonly imageUriMap = new Map<string, string>();
+
   // ── Static factory ──────────────────────────────────────────────────────
 
   static show(
@@ -35,7 +40,11 @@ export class EditorPanel {
   push(): void {
     const note = this.storage.getNote(this.noteId);
     if (!note) return;
-    this.panel.webview.postMessage({ type: 'setContent', content: note.content, title: note.title });
+    this.panel.webview.postMessage({
+      type   : 'setContent',
+      content: this.toDisplayContent(note.content),
+      title  : note.title,
+    });
     this.panel.title = `✏ ${note.title}`;
   }
 
@@ -59,21 +68,29 @@ export class EditorPanel {
       {
         enableScripts          : true,
         retainContextWhenHidden: true,
-        localResourceRoots     : [vscode.Uri.joinPath(context.extensionUri, 'media')],
+        localResourceRoots     : [
+          vscode.Uri.joinPath(context.extensionUri, 'media'),
+          vscode.Uri.joinPath(storage.folderUri, 'assets'),
+        ],
       }
     );
+
+    // Convert stored image paths to webview URIs for display
+    const displayContent = this.toDisplayContent(note.content);
 
     this.panel.webview.html = this.buildHtml(
       this.panel.webview.asWebviewUri(editorJsUri),
       this.panel.webview.cspSource,
-      note.content,
+      displayContent,
       note.title
     );
 
     this.panel.webview.onDidReceiveMessage(
-      async (msg: { type: string; content?: string; title?: string }) => {
+      async (msg: { type: string; content?: string; title?: string; base64?: string; mimeType?: string; ext?: string }) => {
         if (msg.type === 'save' && msg.content !== undefined) {
-          await this.storage.updateNote(this.noteId, { content: msg.content });
+          // Convert webview image URIs back to storage-relative paths before saving
+          const content = this.toStorageContent(msg.content);
+          await this.storage.updateNote(this.noteId, { content });
           this.onUpdate?.();
 
         } else if (msg.type === 'saveTitle' && msg.title) {
@@ -99,6 +116,9 @@ export class EditorPanel {
           const tpl = templates.find(t => t.id === picked.templateId);
           if (!tpl) return;
           this.panel.webview.postMessage({ type: 'insertTemplate', content: tpl.content });
+
+        } else if (msg.type === 'pasteImage' && msg.base64) {
+          await this.handlePasteImage(msg.base64, msg.ext ?? 'png');
 
         } else if (msg.type === 'exportCurrentNote') {
           vscode.commands.executeCommand('devnotes.exportNote', this.noteId);
@@ -126,6 +146,60 @@ export class EditorPanel {
     EditorPanel.current = this;
   }
 
+  // ── Image helpers ───────────────────────────────────────────────────────
+
+  /** Writes a pasted image to .devnotes/assets/ and inserts it into the editor. */
+  private async handlePasteImage(base64: string, rawExt: string): Promise<void> {
+    const ext       = rawExt.replace(/[^a-z0-9]/gi, '').slice(0, 8) || 'png';
+    const filename  = `${this.noteId}-${Date.now()}.${ext}`;
+    const assetUri  = vscode.Uri.joinPath(this.storage.folderUri, 'assets', filename);
+
+    // Ensure .devnotes/assets/ exists
+    try {
+      await vscode.workspace.fs.createDirectory(
+        vscode.Uri.joinPath(this.storage.folderUri, 'assets')
+      );
+    } catch { /* already exists */ }
+
+    // Write image bytes decoded from base64
+    await vscode.workspace.fs.writeFile(assetUri, Buffer.from(base64, 'base64'));
+
+    // Register the webview URI → storage path mapping
+    const webviewUri = this.panel.webview.asWebviewUri(assetUri).toString();
+    this.imageUriMap.set(webviewUri, `.devnotes/assets/${filename}`);
+
+    this.panel.webview.postMessage({ type: 'insertImage', src: webviewUri });
+  }
+
+  /**
+   * Converts stored image paths (.devnotes/assets/...) to webview-safe URIs
+   * so the editor can display images. Also populates imageUriMap.
+   */
+  private toDisplayContent(markdown: string): string {
+    return markdown.replace(
+      /!\[([^\]]*)\]\(\.devnotes\/assets\/([^)]+)\)/g,
+      (_, alt: string, filename: string) => {
+        const assetUri   = vscode.Uri.joinPath(this.storage.folderUri, 'assets', filename);
+        const webviewUri = this.panel.webview.asWebviewUri(assetUri).toString();
+        this.imageUriMap.set(webviewUri, `.devnotes/assets/${filename}`);
+        return `![${alt}](${webviewUri})`;
+      }
+    );
+  }
+
+  /**
+   * Converts webview image URIs back to storage-relative paths before saving
+   * to disk. Uses the imageUriMap built up during paste and load operations.
+   */
+  private toStorageContent(markdown: string): string {
+    let content = markdown;
+    for (const [webviewUri, storagePath] of this.imageUriMap) {
+      // split/join avoids regex issues with special characters in webview URIs
+      content = content.split(webviewUri).join(storagePath);
+    }
+    return content;
+  }
+
   // ── HTML ────────────────────────────────────────────────────────────────
 
   private buildHtml(editorJsUri: vscode.Uri, cspSource: string, initialContent: string, initialTitle: string): string {
@@ -138,7 +212,7 @@ export class EditorPanel {
 <head>
 <meta charset="UTF-8">
 <meta http-equiv="Content-Security-Policy"
-  content="default-src 'none'; script-src 'nonce-${nonce}' ${cspSource}; style-src 'unsafe-inline';">
+  content="default-src 'none'; script-src 'nonce-${nonce}' ${cspSource}; style-src 'unsafe-inline'; img-src ${cspSource} data:;">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -262,6 +336,20 @@ export class EditorPanel {
   .ProseMirror ul[data-type="taskList"] { list-style: none; padding-left: 0; }
   .ProseMirror ul[data-type="taskList"] li { display: flex; align-items: flex-start; gap: 8px; }
   .ProseMirror ul[data-type="taskList"] li > label { margin-top: 3px; flex-shrink: 0; }
+
+  /* ── Images ── */
+  .ProseMirror img {
+    max-width: 100%;
+    height: auto;
+    border-radius: 5px;
+    display: block;
+    margin: .75em 0;
+    cursor: default;
+  }
+  .ProseMirror img.ProseMirror-selectednode {
+    outline: 2px solid var(--vscode-focusBorder, #0078d4);
+    border-radius: 5px;
+  }
 
   /* ── Status bar ── */
   #save-status {
