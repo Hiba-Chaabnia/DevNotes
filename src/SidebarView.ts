@@ -29,6 +29,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
   private view?: vscode.WebviewView;
   private projectName      = 'DevNotes';
   private currentBranch: string | undefined;
+  private currentUser:   string | undefined;
   private _branchFilterActive = false;
 
   isBranchFilterActive(): boolean { return this._branchFilterActive; }
@@ -47,6 +48,11 @@ export class SidebarView implements vscode.WebviewViewProvider {
 
   setCurrentBranch(branch: string | undefined): void {
     this.currentBranch = branch;
+    this.push();
+  }
+
+  setCurrentUser(user: string | undefined): void {
+    this.currentUser = user;
     this.push();
   }
 
@@ -84,6 +90,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
       defaultTagIds : DEFAULT_TAGS.map(t => t.id),
       projectName   : this.projectName,
       currentBranch : this.currentBranch ?? null,
+      currentUser   : this.currentUser   ?? null,
     });
   }
 
@@ -105,6 +112,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
           tags   : msg.tags,
           content: tpl?.content,
           branch : msg.branch,
+          owner  : this.currentUser,
         });
         this.push();
         break;
@@ -1024,6 +1032,36 @@ export class SidebarView implements vscode.WebviewViewProvider {
     border-radius: 3px;
   }
 
+  /* ── Owner badge ────────────────────────────────────── */
+  .owner-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    color: var(--card-text);
+    opacity: .6;
+    max-width: 80px;
+  }
+  .owner-initials {
+    width: 15px; height: 15px;
+    border-radius: 50%;
+    background: rgba(0,0,0,.2);
+    font-size: 8px;
+    font-weight: 700;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    letter-spacing: -.5px;
+  }
+  .owner-name {
+    font-size: 10px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 56px;
+  }
+  .mine-filter-btn.active { color: var(--vscode-button-background) !important; opacity: 1; }
+
   /* ── Conflict indicator ─────────────────────────────── */
   .card.conflict::after {
     content: '';
@@ -1168,6 +1206,12 @@ export class SidebarView implements vscode.WebviewViewProvider {
     <span class="project-name" id="project-name">Loading…</span>
     <span class="branch-pill" id="branch-pill"></span>
     <button class="icon-btn branch-filter-btn" id="btn-branch-filter" title="Show current branch only" style="display:none">⎇</button>
+    <button class="icon-btn mine-filter-btn" id="btn-mine-filter" title="Show only my notes" style="display:none">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
+        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+        <circle cx="12" cy="7" r="4"/>
+      </svg>
+    </button>
     <button class="icon-btn" id="btn-select" title="Select notes to export">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
         <rect x="3" y="5" width="5" height="5" rx="1"/>
@@ -1250,7 +1294,9 @@ export class SidebarView implements vscode.WebviewViewProvider {
   let newTemplateId     = null;
   let tagColor          = '#74B9FF';
   let currentBranch      = null;
+  let currentUser        = null;
   let branchFilterActive = false;
+  let mineFilterActive   = false;
   let selectMode         = false;
   let selectedIds        = [];
   let openColorPop    = null;
@@ -1269,6 +1315,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
   const newColorsEl    = document.getElementById('new-colors');
   const newTagsEl      = document.getElementById('new-tags');
   const newTemplatesEl    = document.getElementById('new-templates');
+  const btnMineFilter     = document.getElementById('btn-mine-filter');
   const btnSelect         = document.getElementById('btn-select');
   const exportBar         = document.getElementById('export-bar');
   const exportCountEl     = document.getElementById('export-count');
@@ -1286,6 +1333,14 @@ export class SidebarView implements vscode.WebviewViewProvider {
     branchFilterBtn.classList.toggle('active', branchFilterActive);
     branchFilterBtn.title = branchFilterActive ? 'Show all branches' : 'Show current branch only';
     vscode.postMessage({ type: 'branchFilterChanged', active: branchFilterActive });
+    renderCards();
+  });
+
+  // ── Mine filter ──────────────────────────────────────────────────────────
+  btnMineFilter.addEventListener('click', () => {
+    mineFilterActive = !mineFilterActive;
+    btnMineFilter.classList.toggle('active', mineFilterActive);
+    btnMineFilter.title = mineFilterActive ? 'Show all notes' : 'Show only my notes';
     renderCards();
   });
 
@@ -1332,7 +1387,10 @@ export class SidebarView implements vscode.WebviewViewProvider {
       templates     = msg.templates     ?? [];
       defaultTagIds = msg.defaultTagIds ?? [];
       currentBranch = msg.currentBranch ?? null;
+      currentUser   = msg.currentUser   ?? null;
       if (msg.projectName) projectName.textContent = msg.projectName;
+      // Show mine-filter button only when a git user is detected
+      btnMineFilter.style.display = currentUser ? '' : 'none';
       // Drop filter state for tags that no longer exist
       activeTagIds = activeTagIds.filter(id => tags.some(t => t.id === id));
       renderBranchIndicator();
@@ -1634,6 +1692,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
   // ── Cards ────────────────────────────────────────────────────────────────
   function visibleNotes() {
     return notes.filter(n => {
+      if (mineFilterActive && currentUser && n.owner && n.owner !== currentUser) return false;
       if (branchFilterActive && currentBranch && n.branch && n.branch !== currentBranch) return false;
       if (searchQuery) {
         const tagText = n.tags.map(tid => { const t = tags.find(t => t.id === tid); return t ? t.label : ''; }).join(' ').toLowerCase();
@@ -1961,6 +2020,18 @@ export class SidebarView implements vscode.WebviewViewProvider {
       const badge = mkEl('span', 'branch-badge', '⎇ ' + note.branch);
       leftEl.appendChild(badge);
     }
+    const INVALID_OWNERS = ['undefined', 'null', 'unknown', ''];
+    if (note.owner && typeof note.owner === 'string' && !INVALID_OWNERS.includes(note.owner.trim())) {
+      const owner    = note.owner.trim();
+      const ownerEl  = mkEl('span', 'owner-badge');
+      ownerEl.title  = owner;
+      const circle   = mkEl('span', 'owner-initials', initials(owner));
+      const firstName = owner.split(/\s+/)[0] || owner;
+      const nameEl   = mkEl('span', 'owner-name', firstName);
+      ownerEl.appendChild(circle);
+      ownerEl.appendChild(nameEl);
+      leftEl.appendChild(ownerEl);
+    }
     footer.appendChild(leftEl);
     const dateEl = mkEl('span', 'card-date', formatDate(note.updatedAt));
     footer.appendChild(dateEl);
@@ -2019,6 +2090,16 @@ export class SidebarView implements vscode.WebviewViewProvider {
     container.querySelectorAll('.color-swatch').forEach(sw => {
       sw.classList.toggle('selected', sw.dataset.colorKey === key);
     });
+  }
+
+  function initials(name) {
+    if (typeof name !== 'string' || !name.trim()) return '?';
+    const parts = name.trim().split(/\s+/).filter(p => p.length > 0);
+    if (parts.length === 0) return '?';
+    if (parts.length === 1) return (parts[0][0] || '?').toUpperCase();
+    const first = parts[0][0] || '';
+    const last  = parts[parts.length - 1][0] || '';
+    return (first + last).toUpperCase() || '?';
   }
 
   function formatReminder(ts) {

@@ -6,7 +6,7 @@ import { GutterController } from './GutterController';
 import { ReminderController } from './ReminderController';
 import { ConflictPanel } from './ConflictPanel';
 import { runExport } from './ExportController';
-import { detectProjectIdentity, getCurrentBranch } from './GitDetector';
+import { detectProjectIdentity, getCurrentBranch, getGitUser } from './GitDetector';
 
 // ─── Activation ──────────────────────────────────────────────────────────────
 
@@ -106,9 +106,11 @@ async function _activate(context: vscode.ExtensionContext): Promise<void> {
     })
   );
 
-  // Detect Git project identity and current branch
+  // Detect Git project identity, current branch, and git user
   refreshProjectIdentity(sidebar);
   refreshBranch(sidebar, workspaceRoot.fsPath);
+  const currentUser = getGitUser(workspaceRoot.fsPath);
+  sidebar.setCurrentUser(currentUser);
 
   context.subscriptions.push(
     vscode.workspace.onDidChangeWorkspaceFolders(() => {
@@ -201,6 +203,7 @@ async function _activate(context: vscode.ExtensionContext): Promise<void> {
         color  : tpl?.color,
         tags   : tpl?.tags,
         branch,
+        owner  : currentUser,
       });
       sidebar.push();
       gutterController.refresh();
@@ -229,6 +232,99 @@ async function _activate(context: vscode.ExtensionContext): Promise<void> {
       } catch {
         vscode.window.showWarningMessage(`DevNotes: could not open ${file}:${line}`);
       }
+    })
+  );
+
+  // ── Debug: simulate notes from multiple team members ─────────────────────
+  // Creates a set of shared notes owned by different users so the ownership
+  // badge and Mine filter can be tested without needing real teammates.
+  context.subscriptions.push(
+    vscode.commands.registerCommand('devnotes.simulateOwnership', async () => {
+      const enc = new TextEncoder();
+      const now = Date.now();
+
+      const teamNotes = [
+        {
+          owner  : (currentUser && currentUser !== 'undefined') ? currentUser : 'Me',
+          title  : 'My auth refactor plan',
+          color  : 'cyan',
+          tags   : 'idea',
+          content: '## Goal\n\nRefactor the JWT flow to use refresh tokens.\n\n- [ ] Add `/auth/refresh` endpoint\n- [ ] Update client interceptor\n- [ ] Write integration tests',
+        },
+        {
+          owner  : (currentUser && currentUser !== 'undefined') ? currentUser : 'Me',
+          title  : 'Token TTL investigation',
+          color  : 'yellow',
+          tags   : 'bug,important',
+          content: '## Finding\n\nAccess tokens expire after 1h but the client never retries.\n\nSee `src/api/client.ts:42`.',
+        },
+        {
+          owner  : 'Alex Turner',
+          title  : 'DB migration notes',
+          color  : 'orange',
+          tags   : 'reference',
+          content: '## Steps\n\n1. Run `npm run migrate`\n2. Verify row counts in `users` table\n3. Smoke-test login flow\n\n**Do not run on prod until QA signs off.**',
+        },
+        {
+          owner  : 'Alex Turner',
+          title  : 'Standup 2026-04-15',
+          color  : 'green',
+          tags   : 'meeting',
+          content: '## Done\n- Finished index on `sessions` table\n\n## Doing\n- Reviewing PR #214\n\n## Blocked\n- Waiting on design review for new onboarding flow',
+        },
+        {
+          owner  : 'Sara Morales',
+          title  : 'Onboarding flow ADR',
+          color  : 'purple',
+          tags   : 'reference',
+          content: '## Context\n\nCurrent onboarding is 7 steps and has a 34% drop-off.\n\n## Decision\n\nReduce to 3 steps — defer optional profile info.\n\n## Consequences\n\nProfile completeness will drop initially; re-engage via email.',
+        },
+        {
+          owner  : 'Sara Morales',
+          title  : 'Code review: auth PR #198',
+          color  : 'pink',
+          tags   : 'reference',
+          content: '## What to Check\n- [ ] Error handling on 401 retry\n- [ ] No secrets in logs\n- [ ] Test coverage > 80%\n\n## Findings\n\nMissing retry limit — could loop indefinitely on persistent 401.\n\n## Decision\n\nRequest changes.',
+        },
+        {
+          owner  : 'Marcus Lee',
+          title  : 'Perf regression in prod',
+          color  : 'orange',
+          tags   : 'bug',
+          content: '## Symptom\n\nP95 latency on `/api/feed` jumped from 120ms to 890ms after deploy.\n\n## Suspected cause\n\nMissing index on `created_at` after the migration.\n\n## Status\n\nHotfix deployed, monitoring.',
+        },
+      ];
+
+      for (const n of teamNotes) {
+        const id      = 'sim-owner-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+        const content = [
+          '---',
+          `id: ${id}`,
+          `title: ${n.title}`,
+          `color: ${n.color}`,
+          `tags: ${n.tags}`,
+          `owner: ${n.owner}`,
+          'starred: false',
+          'shared: true',
+          `createdAt: ${now - Math.floor(Math.random() * 7 * 24 * 60 * 60 * 1000)}`,
+          `updatedAt: ${now}`,
+          '---',
+          '',
+          n.content,
+        ].join('\n');
+
+        await vscode.workspace.fs.writeFile(
+          vscode.Uri.joinPath(workspaceRoot, '.devnotes', `${id}.md`),
+          enc.encode(content)
+        );
+
+        // Small delay so the watcher processes each file cleanly
+        await new Promise(r => setTimeout(r, 80));
+      }
+
+      vscode.window.showInformationMessage(
+        `DevNotes: created ${teamNotes.length} simulated notes from ${new Set(teamNotes.map(n => n.owner)).size} team members.`
+      );
     })
   );
 

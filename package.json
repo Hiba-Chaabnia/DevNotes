@@ -64,6 +64,11 @@
         "command": "devnotes.simulateConflict",
         "title": "Simulate Shared Note Conflict (Debug)",
         "category": "DevNotes"
+      },
+      {
+        "command": "devnotes.simulateOwnership",
+        "title": "Simulate Team Notes with Ownership (Debug)",
+        "category": "DevNotes"
       }
     ],
     "keybindings": [

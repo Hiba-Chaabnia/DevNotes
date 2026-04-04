@@ -27,6 +27,7 @@ export interface Note {
   codeLink?: CodeLink;   // optional link to a specific file:line in the workspace
   branch?: string;       // optional git branch scope — undefined means visible on all branches
   remindAt?: number;     // Unix timestamp (ms) for when a reminder should fire; undefined = no reminder
+  owner?: string;        // git user name (or email) of whoever created this note
   conflicted?: boolean;  // true when the file on disk contains unresolved git conflict markers
   createdAt: number;
   updatedAt: number;
@@ -231,7 +232,7 @@ export class NoteStorage {
 
   // ── Notes ─────────────────────────────────────────────────────────────────
 
-  async createNote(partial: { title: string; color?: string; tags?: string[]; codeLink?: CodeLink; content?: string; branch?: string }): Promise<Note> {
+  async createNote(partial: { title: string; color?: string; tags?: string[]; codeLink?: CodeLink; content?: string; branch?: string; owner?: string }): Promise<Note> {
     const note: Note = {
       id       : generateId(),
       title    : partial.title,
@@ -241,6 +242,7 @@ export class NoteStorage {
       starred  : false,
       codeLink : partial.codeLink,
       branch   : partial.branch,
+      owner    : partial.owner,
       createdAt: Date.now(),
       updatedAt: Date.now(),
     };
@@ -514,6 +516,7 @@ export class NoteStorage {
           ? { file: meta.codeLink_file, line: Number(meta.codeLink_line) }
           : undefined,
         branch     : typeof meta.branch === 'string' && meta.branch ? meta.branch : undefined,
+        owner      : typeof meta.owner  === 'string' && meta.owner  ? meta.owner  : undefined,
         remindAt   : meta.remindAt ? Number(meta.remindAt) : undefined,
         conflicted : isConflicted || undefined,
         createdAt  : Number(meta.createdAt ?? Date.now()),
@@ -553,6 +556,7 @@ export class NoteStorage {
       };
       if (note.shared)   meta.shared   = true;
       if (note.branch)   meta.branch   = note.branch;
+      if (note.owner)    meta.owner    = note.owner;
       if (note.remindAt) meta.remindAt = note.remindAt;
       if (note.codeLink) {
         meta.codeLink_file = note.codeLink.file;

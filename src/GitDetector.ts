@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 
 export interface ProjectIdentity {
@@ -9,6 +10,32 @@ export interface ProjectIdentity {
   displayName: string;
   /** The raw remote URL, if one was found. */
   remoteUrl?: string;
+}
+
+/**
+ * Resolves the current git user's display name.
+ * Checks the local `.git/config` first, then falls back to `~/.gitconfig`.
+ * Returns the `name` field if present, otherwise `email`, otherwise undefined.
+ */
+export function getGitUser(workspaceRootPath: string): string | undefined {
+  const candidates = [
+    path.join(workspaceRootPath, '.git', 'config'),
+    path.join(os.homedir(), '.gitconfig'),
+  ];
+  // Values that must never be returned as a user identity
+  const INVALID = new Set(['', 'undefined', 'null', 'unknown']);
+
+  for (const configPath of candidates) {
+    try {
+      const content     = fs.readFileSync(configPath, 'utf8');
+      const userSection = content.match(/\[user\]([^\[]*)/)?.[1] ?? '';
+      const name        = userSection.match(/name\s*=\s*(.+)/)?.[1]?.trim() ?? '';
+      if (name && !INVALID.has(name))  return name;
+      const email = userSection.match(/email\s*=\s*(.+)/)?.[1]?.trim() ?? '';
+      if (email && !INVALID.has(email)) return email;
+    } catch { /* file missing or unreadable — try next */ }
+  }
+  return undefined;
 }
 
 /**

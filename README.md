@@ -19,6 +19,7 @@ A VS Code extension that gives you a **project-scoped note panel** — rich text
 - **Git-aware** — detects the current repo so notes stay relevant to the project
 - **Opt-in sharing** — share individual notes with teammates through git, with nothing exposed by default
 - **Conflict resolution UI** — when a shared note has a git merge conflict, a visual two-column panel lets you keep yours, keep theirs, or merge both versions
+- **Note ownership** — notes are automatically attributed to the git user who created them; filter to your own notes instantly with the "Mine" button
 
 ## Quick Capture
 
@@ -296,6 +297,53 @@ To share a note:
 
 To un-share, click the share icon again to toggle it off, then commit the updated `.devnotes/.gitignore`.
 
+## Note Ownership
+
+Every note is automatically attributed to the git user who created it, read from the local `.git/config` (with `~/.gitconfig` as a fallback). Ownership makes shared notes more useful — teammates can see at a glance who to ask about a given note.
+
+### Owner badge
+
+Each note with an owner shows a small circular initials badge and first name in the card footer. Hovering the badge shows the full name.
+
+For example, a note created by **Jane Smith** shows `JS Jane` in the footer.
+
+### Mine filter
+
+Click the **person icon** (👤) in the sidebar top bar to activate the Mine filter. When active:
+
+- Notes owned by **you** are shown normally
+- Notes owned by **teammates** are hidden
+- Notes with **no owner** (created before this feature) are always shown
+
+Click the button again to return to the full list.
+
+### How ownership is detected
+
+On activation, DevNotes reads the `name` field from the `[user]` section in your `.git/config`. If not found there, it falls back to `~/.gitconfig`, then to the `email` field. If neither is set, the feature is silently disabled — the Mine filter button is hidden and no owner is assigned to new notes.
+
+You can verify your git identity by running:
+
+```bash
+git config user.name
+git config user.email
+```
+
+### Note format with ownership
+
+```markdown
+---
+id: lp9k3fab
+title: Auth token expiry bug
+color: orange
+tags: bug
+owner: Jane Smith
+createdAt: 1712345678
+updatedAt: 1712349000
+---
+```
+
+Ownership is stored as a plain string — the name or email, exactly as set in git config.
+
 ## Conflict Resolution
 
 When two teammates edit the same shared note and one pulls after the other has pushed, git writes conflict markers into the `.devnotes/<id>.md` file. DevNotes detects this automatically and handles it without requiring any raw file editing.
@@ -385,7 +433,7 @@ updatedAt: 1712349000
 2. Make any API call → 401
 ```
 
-`codeLink_file`, `codeLink_line`, `branch`, and `remindAt` are all optional — notes without these fields simply omit them. Notes are readable and editable in any text editor, even without the extension installed.
+`codeLink_file`, `codeLink_line`, `branch`, `owner`, and `remindAt` are all optional — notes without these fields simply omit them. Notes are readable and editable in any text editor, even without the extension installed.
 
 ### Personal vs. shared data
 
