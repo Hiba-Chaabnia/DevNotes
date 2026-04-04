@@ -41,14 +41,21 @@
         "category": "DevNotes"
       },
       {
-        "command": "devnotes.addNoteHere",
-        "title": "Add DevNote Here",
-        "category": "DevNotes"
-      },
-      {
         "command": "devnotes.jumpToLink",
         "title": "Jump to Linked File",
         "category": "DevNotes"
+      },
+      {
+        "command": "devnotes.quickCapture",
+        "title": "Add DevNote Here",
+        "category": "DevNotes"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "devnotes.quickCapture",
+        "key": "ctrl+alt+q",
+        "mac": "cmd+alt+q"
       }
     ],
     "menus": {
@@ -61,7 +68,7 @@
       ],
       "editor/context": [
         {
-          "command": "devnotes.addNoteHere",
+          "command": "devnotes.quickCapture",
           "when": "editorTextFocus",
           "group": "devnotes@1"
         }

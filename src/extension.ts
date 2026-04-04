@@ -95,27 +95,32 @@ async function _activate(context: vscode.ExtensionContext): Promise<void> {
     })
   );
 
-  // Add a DevNote linked to the current cursor position
+  // Quick Capture — Ctrl+Alt+Q (Cmd+Alt+Q on Mac)
+  // Works from anywhere: auto-links to current file:line when an editor is
+  // focused, falls back to a plain note when no editor is open.
   context.subscriptions.push(
-    vscode.commands.registerCommand('devnotes.addNoteHere', async () => {
+    vscode.commands.registerCommand('devnotes.quickCapture', async () => {
       const editor = vscode.window.activeTextEditor;
-      if (!editor) return;
 
-      const filePath = vscode.workspace.asRelativePath(editor.document.uri, false);
-      // If asRelativePath returns the fsPath unchanged, the file is outside the workspace
-      if (filePath === editor.document.uri.fsPath) {
-        vscode.window.showWarningMessage('DevNotes: file is outside the current workspace.');
-        return;
+      let prompt    = 'New note';
+      let codeLink: import('./NoteStorage').CodeLink | undefined;
+
+      if (editor) {
+        const filePath = vscode.workspace.asRelativePath(editor.document.uri, false);
+        if (filePath !== editor.document.uri.fsPath) {
+          const line = editor.selection.active.line + 1;
+          codeLink = { file: filePath, line };
+          prompt = `Note linked to ${filePath}:${line}`;
+        }
       }
 
-      const line = editor.selection.active.line + 1; // store as 1-based
       const title = await vscode.window.showInputBox({
-        prompt: `New DevNote linked to ${filePath}:${line}`,
+        prompt,
         placeHolder: 'Note title…',
       });
       if (!title) return;
 
-      await storage.createNote({ title, codeLink: { file: filePath, line } });
+      await storage.createNote({ title, codeLink });
       sidebar.push();
       gutterController.refresh();
     })

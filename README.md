@@ -6,6 +6,7 @@ A VS Code extension that gives you a **project-scoped note panel** — rich text
 
 - **Sidebar panel** — quick access to all notes from the activity bar, with inline search and tag filtering
 - **Rich text editor** — click ✏ on any note to open a full Tiptap editor with a formatting toolbar (bold, italic, headings, lists, task lists, code blocks, and more)
+- **Quick Capture** — press `Ctrl+Alt+Q` from anywhere to create a note instantly; auto-links to the current file and line when an editor is focused
 - **Code-linked notes** — attach a note to any file and line number; a gutter icon marks the line and hovering it shows the note title with a clickable link back to the note
 - **Tags** — assign tags to notes for filtering; create custom tags with any color; delete tags you no longer need
 - **Color-coded notes** — eight color options per note, changeable at any time from the card
@@ -13,6 +14,32 @@ A VS Code extension that gives you a **project-scoped note panel** — rich text
 - **Project-scoped storage** — notes are tied to the workspace, not a global account
 - **Git-aware** — detects the current repo so notes stay relevant to the project
 - **Opt-in sharing** — share individual notes with teammates through git, with nothing exposed by default
+
+## Quick Capture
+
+Press **`Ctrl+Alt+Q`** (Mac: **`Cmd+Alt+Q`**) from anywhere in VS Code to capture a note instantly without touching the mouse.
+
+- **Editor open** — the note is automatically linked to your current file and cursor line. No extra steps needed.
+- **No editor open** — a plain unlinked note is created.
+
+In both cases a single input box appears, you type a title, and press `Enter`. The note lands in the sidebar immediately.
+
+### Changing the keybinding
+
+Every VS Code keybinding is user-overridable:
+
+1. Open **Keyboard Shortcuts** with `Ctrl+K Ctrl+S`
+2. Search for **DevNotes: Quick Capture Note**
+3. Click the pencil icon and press your preferred combination
+
+Or add it directly to `keybindings.json`:
+
+```json
+{
+  "key": "ctrl+shift+`",
+  "command": "devnotes.quickCapture"
+}
+```
 
 ## Getting Started
 
@@ -29,7 +56,7 @@ Code-linked notes let you attach a note to a specific file and line number. The 
 
 There are two ways to link a note to a line:
 
-**From the editor (new note):** right-click any line → **Add DevNote Here**. An input box pre-labelled with the file and line appears; enter a title and the note is created already linked.
+**From the editor (new note):** right-click any line → **Add DevNote Here**, or press `Ctrl+Alt+Q`. An input box pre-labelled with the file and line appears; enter a title and the note is created already linked.
 
 **From the sidebar (existing note):** click the chain-link icon (🔗) on any note card. The note is linked to wherever your cursor currently sits in the active editor. Clicking 🔗 on an already-linked note updates the link to the new position.
 
