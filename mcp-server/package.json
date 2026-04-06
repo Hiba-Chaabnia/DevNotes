@@ -1,0 +1,24 @@
+{
+  "name": "devnotes-mcp",
+  "version": "1.0.0",
+  "description": "MCP server for DevNotes — note tools for Claude Code",
+  "main": "dist/index.js",
+  "bin": {
+    "devnotes-mcp": "dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "start": "node dist/index.js",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.3.0",
+    "vitest": "^4.1.4"
+  }
+}

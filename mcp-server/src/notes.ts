@@ -1,0 +1,271 @@
+/**
+ * notes.ts — note I/O layer for the DevNotes MCP server.
+ *
+ * Replicates the frontmatter format used by the VS Code extension
+ * (NoteStorage.ts + Frontmatter.ts) without any VS Code dependencies,
+ * so the MCP server can read and write notes as plain files.
+ */
+
+import * as fs from 'fs';
+import * as path from 'path';
+import { execSync } from 'child_process';
+
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+export interface CodeLink {
+  file: string;
+  line: number;
+}
+
+export interface Note {
+  id: string;
+  title: string;
+  content: string;
+  color: string;
+  tags: string[];
+  starred: boolean;
+  shared?: boolean;
+  codeLink?: CodeLink;
+  branch?: string;
+  remindAt?: number;
+  owner?: string;
+  conflicted?: boolean;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface Tag {
+  id: string;
+  label: string;
+  color: string;
+}
+
+export const DEFAULT_TAGS: Tag[] = [
+  { id: 'idea',      label: 'Idea',      color: '#FFD166' },
+  { id: 'todo',      label: 'Todo',      color: '#06D6D6' },
+  { id: 'bug',       label: 'Bug',       color: '#EF6C57' },
+  { id: 'meeting',   label: 'Meeting',   color: '#B5A4E8' },
+  { id: 'important', label: 'Important', color: '#C5E17A' },
+  { id: 'reference', label: 'Reference', color: '#74B9FF' },
+];
+
+// ─── Frontmatter (mirrors Frontmatter.ts exactly) ────────────────────────────
+
+function parseFrontmatter(raw: string): { meta: Record<string, unknown>; body: string } {
+  const match = raw.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/);
+  if (!match) return { meta: {}, body: raw };
+
+  const meta: Record<string, unknown> = {};
+  for (const line of match[1].split(/\r?\n/)) {
+    const colon = line.indexOf(':');
+    if (colon === -1) continue;
+    const key = line.slice(0, colon).trim();
+    const val = line.slice(colon + 1).trim();
+    if (!key) continue;
+    if (val === 'true')  { meta[key] = true;  continue; }
+    if (val === 'false') { meta[key] = false; continue; }
+    if (val === '')      { meta[key] = '';    continue; }
+    const num = Number(val);
+    meta[key] = Number.isNaN(num) ? val : num;
+  }
+
+  return { meta, body: match[2] };
+}
+
+function serializeFrontmatter(meta: Record<string, unknown>, body: string): string {
+  const lines = Object.entries(meta).map(([key, val]) => {
+    const safe = typeof val === 'string' ? val.replace(/\r?\n/g, ' ') : val;
+    return `${key}: ${safe}`;
+  });
+  return `---\n${lines.join('\n')}\n---\n${body}`;
+}
+
+// ─── Parse a raw .md file into a Note ────────────────────────────────────────
+
+function parseNoteFile(raw: string, fileName: string): Note | null {
+  const isConflicted =
+    raw.includes('<<<<<<<') &&
+    raw.includes('=======') &&
+    raw.includes('>>>>>>>');
+
+  // Strip conflict markers, keeping the HEAD (ours) side so the note stays readable
+  const effective = isConflicted
+    ? raw.replace(
+        /^<<<<<<< .+\n([\s\S]*?)^=======\n[\s\S]*?^>>>>>>> .+$\n?/gm,
+        (_, ours: string) => ours
+      )
+    : raw;
+
+  try {
+    const { meta, body } = parseFrontmatter(effective);
+    const id = String(meta.id ?? '');
+    if (!id) return null;
+
+    return {
+      id,
+      title    : String(meta.title  ?? 'Untitled'),
+      content  : body,
+      color    : String(meta.color  ?? 'yellow'),
+      tags     : meta.tags ? String(meta.tags).split(',').filter(Boolean) : [],
+      starred  : meta.starred === true,
+      shared   : meta.shared  === true || undefined,
+      codeLink : (typeof meta.codeLink_file === 'string' && meta.codeLink_file && meta.codeLink_line !== undefined)
+        ? { file: meta.codeLink_file, line: Number(meta.codeLink_line) }
+        : undefined,
+      branch   : typeof meta.branch === 'string' && meta.branch ? meta.branch : undefined,
+      owner    : typeof meta.owner  === 'string' && meta.owner  ? meta.owner  : undefined,
+      remindAt : meta.remindAt ? Number(meta.remindAt) : undefined,
+      conflicted: isConflicted || undefined,
+      createdAt: Number(meta.createdAt ?? Date.now()),
+      updatedAt: Number(meta.updatedAt ?? Date.now()),
+    };
+  } catch {
+    console.error(`[devnotes-mcp] Failed to parse "${fileName}"`);
+    return null;
+  }
+}
+
+// ─── Public I/O ──────────────────────────────────────────────────────────────
+
+export function readAllNotes(devnotesDir: string): Note[] {
+  if (!fs.existsSync(devnotesDir)) return [];
+  const notes: Note[] = [];
+  for (const entry of fs.readdirSync(devnotesDir)) {
+    if (!entry.endsWith('.md')) continue;
+    try {
+      const raw = fs.readFileSync(path.join(devnotesDir, entry), 'utf-8');
+      const note = parseNoteFile(raw, entry);
+      if (note) notes.push(note);
+    } catch { /* skip unreadable files */ }
+  }
+  return notes;
+}
+
+export function readNote(devnotesDir: string, id: string): Note | null {
+  const filePath = path.join(devnotesDir, `${id}.md`);
+  if (!fs.existsSync(filePath)) return null;
+  try {
+    return parseNoteFile(fs.readFileSync(filePath, 'utf-8'), `${id}.md`);
+  } catch {
+    return null;
+  }
+}
+
+export function writeNote(devnotesDir: string, note: Note): void {
+  fs.mkdirSync(devnotesDir, { recursive: true });
+
+  const meta: Record<string, unknown> = {
+    id       : note.id,
+    title    : note.title,
+    color    : note.color,
+    tags     : note.tags.join(','),
+    starred  : note.starred,
+    createdAt: note.createdAt,
+    updatedAt: note.updatedAt,
+  };
+  if (note.shared)   meta.shared          = true;
+  if (note.branch)   meta.branch          = note.branch;
+  if (note.owner)    meta.owner           = note.owner;
+  if (note.remindAt) meta.remindAt        = note.remindAt;
+  if (note.codeLink) {
+    meta.codeLink_file = note.codeLink.file;
+    meta.codeLink_line = note.codeLink.line;
+  }
+
+  fs.writeFileSync(
+    path.join(devnotesDir, `${note.id}.md`),
+    serializeFrontmatter(meta, note.content),
+    'utf-8'
+  );
+}
+
+export function readTags(devnotesDir: string): Tag[] {
+  const tagsPath = path.join(devnotesDir, 'tags.json');
+  if (!fs.existsSync(tagsPath)) return [...DEFAULT_TAGS];
+  try {
+    const custom: Tag[] = JSON.parse(fs.readFileSync(tagsPath, 'utf-8'));
+    const customIds = new Set(custom.map(t => t.id));
+    return [...DEFAULT_TAGS.filter(t => !customIds.has(t.id)), ...custom];
+  } catch {
+    return [...DEFAULT_TAGS];
+  }
+}
+
+export function generateId(): string {
+  return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+}
+
+// ─── Search helpers ───────────────────────────────────────────────────────────
+
+/** Find a note by exact ID, exact title, or fuzzy title (contains). */
+export function findNote(notes: Note[], query: string): Note | null {
+  const lower = query.toLowerCase();
+  return (
+    notes.find(n => n.id === query) ??
+    notes.find(n => n.title.toLowerCase() === lower) ??
+    notes.find(n => n.title.toLowerCase().includes(lower)) ??
+    null
+  );
+}
+
+/** Extract every unchecked `- [ ] …` line from a note body. */
+export function extractTodos(content: string): string[] {
+  const matches = content.match(/^[ \t]*- \[ \] .+/gm);
+  return matches ? matches.map(l => l.replace(/^[ \t]*- \[ \] /, '').trim()) : [];
+}
+
+// ─── Git helpers ──────────────────────────────────────────────────────────────
+
+export function getCurrentBranch(workspaceRoot: string): string | null {
+  try {
+    return execSync('git rev-parse --abbrev-ref HEAD', {
+      cwd: workspaceRoot,
+      stdio: ['pipe', 'pipe', 'pipe'],
+    }).toString().trim();
+  } catch {
+    return null;
+  }
+}
+
+export function getNoteHistory(workspaceRoot: string, devnotesDir: string, noteId: string): string {
+  const relPath = path.relative(workspaceRoot, path.join(devnotesDir, `${noteId}.md`)).replace(/\\/g, '/');
+  try {
+    return execSync(
+      `git log --follow --pretty=format:"%h %ad %an: %s" --date=short -- "${relPath}"`,
+      { cwd: workspaceRoot, stdio: ['pipe', 'pipe', 'pipe'] }
+    ).toString().trim();
+  } catch {
+    return '';
+  }
+}
+
+// ─── Workspace detection ──────────────────────────────────────────────────────
+
+/**
+ * Resolves the workspace root by checking (in order):
+ *   1. DEVNOTES_WORKSPACE environment variable
+ *   2. --workspace <path> CLI argument
+ *   3. Walk up from CWD looking for an existing .devnotes/ folder
+ *   4. Fall back to CWD
+ */
+export function resolveWorkspace(): string {
+  if (process.env.DEVNOTES_WORKSPACE) {
+    return path.resolve(process.env.DEVNOTES_WORKSPACE);
+  }
+
+  const wsIdx = process.argv.indexOf('--workspace');
+  if (wsIdx !== -1 && process.argv[wsIdx + 1]) {
+    return path.resolve(process.argv[wsIdx + 1]);
+  }
+
+  // Walk up from CWD
+  let dir = process.cwd();
+  while (true) {
+    if (fs.existsSync(path.join(dir, '.devnotes'))) return dir;
+    const parent = path.dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+
+  return process.cwd();
+}

@@ -22,6 +22,7 @@ A VS Code extension that gives you a **project-scoped note panel** — rich text
 - **Activity feed** — a live panel showing recent changes to shared notes, grouped by day with owner avatars and clickable titles
 - **Conflict resolution UI** — when a shared note has a git merge conflict, a visual two-column panel lets you keep yours, keep theirs, or merge both versions
 - **Note ownership** — notes are automatically attributed to the git user who created them; filter to your own notes instantly with the "Mine" button
+- **Claude Code integration** — an MCP server lets Claude Code create notes, read them, append solutions, query todos, and generate standups or PR handoffs — all talking to the same `.devnotes/` files the extension uses
 
 ## Quick Capture
 
@@ -536,6 +537,127 @@ An earlier version included a freeform canvas — a separate VS Code panel where
 - **State fragmentation.** The extension had to keep two panels in sync — any note mutation in the sidebar had to be pushed to the canvas and vice versa. This introduced subtle race conditions and made the message-passing logic harder to follow.
 - **Personal layout, no sharing value.** Canvas positions were intentionally never committed to git, making the spatial arrangement purely personal. Given that notes themselves are the shareable artifact, the canvas added friction without adding collaboration value.
 - **The sidebar covers the same need more simply.** The sidebar has inline search, tag filtering, starred sorting, and per-card editing — the same information the canvas displayed, without the overhead of a free-form layout engine.
+
+## Claude Code Integration (MCP Server)
+
+DevNotes ships a companion MCP (Model Context Protocol) server that connects Claude Code directly to your notes. Once registered, Claude can create notes mid-conversation, read them back, append solutions, query your open todos, and generate standups or PR handoffs — all reading and writing the same `.devnotes/` files the VS Code extension uses. Notes you create via Claude appear instantly in the sidebar, and notes you write in the editor are immediately visible to Claude.
+
+### Setup
+
+**1. Build the server**
+
+```bash
+cd mcp-server
+npm install
+npm run build
+```
+
+**2. Register it with Claude Code**
+
+Add the following to `~/.claude/mcp.json` (create the file if it doesn't exist):
+
+```json
+{
+  "mcpServers": {
+    "devnotes": {
+      "command": "node",
+      "args": ["/absolute/path/to/DevNotes/mcp-server/dist/index.js"]
+    }
+  }
+}
+```
+
+**3. Restart Claude Code** — the `devnotes` server will be available in every session from that point on.
+
+### Workspace detection
+
+The server finds your `.devnotes/` folder automatically — it walks up from the current working directory looking for one. You can override this with an environment variable if needed:
+
+```json
+{
+  "mcpServers": {
+    "devnotes": {
+      "command": "node",
+      "args": ["/path/to/mcp-server/dist/index.js"],
+      "env": { "DEVNOTES_WORKSPACE": "/path/to/your/project" }
+    }
+  }
+}
+```
+
+### Tools
+
+Claude can call these tools at any point in a conversation:
+
+| Tool | What it does |
+|---|---|
+| `create_note` | Creates a new note with title, content, tags, color, and an optional code link |
+| `get_note` | Retrieves a note by ID or title (fuzzy match). Returns the full content and metadata |
+| `list_notes` | Lists notes with optional filters: tag, search text, branch, or starred status |
+| `append_to_note` | Appends a new section to an existing note — preserves the original body |
+| `update_note` | Updates metadata: title, tags, color, starred, or shared status |
+| `get_todos` | Extracts every unchecked `- [ ]` item across all notes into a unified list |
+| `get_stale_notes` | Finds notes not updated in N days that still have open todos or a bug tag |
+| `note_history` | Shows the git commit history for a shared note file |
+| `log_session` | Appends a timestamped Done / In-progress / Blocked entry to a persistent session log |
+
+### Resources
+
+Resources are data Claude can read passively — without you asking — as background context:
+
+| Resource URI | What it contains |
+|---|---|
+| `devnotes://todos` | All unchecked `- [ ]` items across every note |
+| `devnotes://recent` | Notes created or updated in the last 48 hours |
+| `devnotes://session-log` | The last 5 session log entries (what was worked on in previous Claude Code sessions) |
+| `devnotes://branch` | All notes scoped to the current git branch |
+
+### Prompts
+
+Prompts are pre-built workflows. Invoke them with `/mcp__devnotes__<name>` in Claude Code, or ask Claude to run them by name:
+
+| Prompt | What it does |
+|---|---|
+| `solve` | Loads a note and its linked source file into context, then asks Claude to diagnose and fix the problem. Saves the solution back as an appended `## Solution` section. |
+| `standup` | Reads notes updated in the last 24 hours and writes a Done / Doing / Blocked standup update |
+| `handoff` | Generates a PR description from all shared and branch-scoped notes — ready to paste |
+
+### Example conversations
+
+```
+"I found a null pointer in parseConfig when the input is empty — make a bug note"
+→ Claude calls create_note with the title, tags: ["bug"], color: "orange",
+  and links it to the current file if one is open.
+
+"What are my open todos?"
+→ Claude calls get_todos and returns a grouped list across all notes.
+
+"Look at my 'Auth bug' note and suggest a fix"
+→ Claude calls get_note, reads the content and linked code file,
+  reasons about it, and calls append_to_note to save the solution.
+
+"Generate my standup for today"
+→ Claude runs the standup prompt against notes updated in the last 24 hours.
+
+"Write a PR description for this branch"
+→ Claude runs the handoff prompt using shared and branch-scoped notes.
+```
+
+### Session log
+
+The `log_session` tool writes timestamped entries to a special `session-log` note (`session-log.md` in `.devnotes/`). Over time this becomes a searchable engineering diary — and since the last 5 entries are included as a resource in every session, Claude always starts with context about what you were working on previously.
+
+```
+"We're done for today — log what we did"
+→ Claude calls log_session with a summary of the session's work,
+  what's still in progress, and any blockers.
+```
+
+### Sync with the VS Code extension
+
+The MCP server reads and writes `.devnotes/*.md` files directly. Notes created by Claude appear in the sidebar within a second (the extension's file watcher picks them up automatically). If you want to see them immediately, click the **↻ Refresh** button in the DevNotes sidebar.
+
+---
 
 ## Development
 
