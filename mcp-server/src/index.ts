@@ -37,6 +37,7 @@ import {
   readAllNotes,
   readNote,
   writeNote,
+  deleteNote,
   readTags,
   findNote,
   extractTodos,
@@ -185,6 +186,30 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
         required: ['done'],
       },
     },
+    {
+      name       : 'complete_todo',
+      description: 'Mark one or more todo items as done (- [ ] → - [x]) inside a note. Matches by substring — all unchecked items whose text contains the given string are completed.',
+      inputSchema: {
+        type      : 'object',
+        properties: {
+          query: { type: 'string', description: 'Note ID or title' },
+          item : { type: 'string', description: 'Substring of the todo text to match (case-insensitive)' },
+        },
+        required: ['query', 'item'],
+      },
+    },
+    {
+      name       : 'delete_note',
+      description: 'Permanently delete a note from the workspace. Use only when explicitly asked to remove or delete a note. This action cannot be undone.',
+      inputSchema: {
+        type      : 'object',
+        properties: {
+          query  : { type: 'string',  description: 'Note ID or title' },
+          confirm: { type: 'boolean', description: 'Must be true to proceed (safety guard)' },
+        },
+        required: ['query', 'confirm'],
+      },
+    },
   ],
 }));
 
@@ -293,7 +318,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           const starStr   = n.starred ? ' ★' : '';
           const branchStr = n.branch  ? ` (${n.branch})` : '';
           const date      = new Date(n.updatedAt).toLocaleDateString();
-          const preview   = n.content.replace(/^---[\s\S]*?---\n?/, '').trim().split('\n')[0]?.slice(0, 60) ?? '';
+          const preview   = n.content.trim().split('\n')[0]?.slice(0, 60) ?? '';
           return `• **${n.title}**${starStr}${tagStr}${branchStr} — ${date}\n  ID: ${n.id}${preview ? `\n  ${preview}` : ''}`;
         });
 
@@ -463,6 +488,56 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         writeNote(DEVNOTES_DIR, logNote);
 
         return { content: [{ type: 'text', text: `Session logged (${dateStr}).` }] };
+      }
+
+      // ── complete_todo ────────────────────────────────────────────────────────
+      case 'complete_todo': {
+        const { query, item } = args as { query: string; item: string };
+
+        const notes = readAllNotes(DEVNOTES_DIR);
+        const note  = findNote(notes, query);
+        if (!note) {
+          return { content: [{ type: 'text', text: `No note found matching "${query}".` }], isError: true };
+        }
+
+        const lower   = item.toLowerCase();
+        let completed = 0;
+        note.content  = note.content.replace(/^([ \t]*- \[ \] )(.+)$/gm, (match, prefix, text) => {
+          if (text.toLowerCase().includes(lower)) {
+            completed++;
+            return `${prefix.replace('[ ]', '[x]')}${text}`;
+          }
+          return match;
+        });
+
+        if (completed === 0) {
+          return { content: [{ type: 'text', text: `No open todo matching "${item}" found in "${note.title}".` }], isError: true };
+        }
+
+        note.updatedAt = Date.now();
+        writeNote(DEVNOTES_DIR, note);
+
+        return {
+          content: [{ type: 'text', text: `Marked ${completed} todo(s) as done in "${note.title}".` }],
+        };
+      }
+
+      // ── delete_note ──────────────────────────────────────────────────────────
+      case 'delete_note': {
+        const { query, confirm } = args as { query: string; confirm?: boolean };
+
+        if (!confirm) {
+          return { content: [{ type: 'text', text: 'Set confirm: true to delete a note. This cannot be undone.' }], isError: true };
+        }
+
+        const notes = readAllNotes(DEVNOTES_DIR);
+        const note  = findNote(notes, query);
+        if (!note) {
+          return { content: [{ type: 'text', text: `No note found matching "${query}".` }], isError: true };
+        }
+
+        deleteNote(DEVNOTES_DIR, note.id);
+        return { content: [{ type: 'text', text: `Deleted note "${note.title}" (ID: ${note.id}).` }] };
       }
 
       default:
@@ -731,9 +806,10 @@ server.setRequestHandler(GetPromptRequestSchema, async (request) => {
 
     // ── handoff ──────────────────────────────────────────────────────────────
     case 'handoff': {
-      const branch  = getCurrentBranch(WORKSPACE);
-      const shared  = readAllNotes(DEVNOTES_DIR).filter(n => n.shared);
-      const scoped  = branch ? readAllNotes(DEVNOTES_DIR).filter(n => n.branch === branch) : [];
+      const branch   = getCurrentBranch(WORKSPACE);
+      const allNotes = readAllNotes(DEVNOTES_DIR);
+      const shared   = allNotes.filter(n => n.shared);
+      const scoped   = branch ? allNotes.filter(n => n.branch === branch) : [];
 
       const relevant = [...new Map([...shared, ...scoped].map(n => [n.id, n])).values()];
 

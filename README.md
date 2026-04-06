@@ -596,6 +596,8 @@ Claude can call these tools at any point in a conversation:
 | `list_notes` | Lists notes with optional filters: tag, search text, branch, or starred status |
 | `append_to_note` | Appends a new section to an existing note — preserves the original body |
 | `update_note` | Updates metadata: title, tags, color, starred, or shared status |
+| `complete_todo` | Marks matching `- [ ]` items as done (`- [x]`) inside a note — matched by substring |
+| `delete_note` | Permanently deletes a note. Requires `confirm: true` as a safety guard |
 | `get_todos` | Extracts every unchecked `- [ ]` item across all notes into a unified list |
 | `get_stale_notes` | Finds notes not updated in N days that still have open todos or a bug tag |
 | `note_history` | Shows the git commit history for a shared note file |
@@ -631,6 +633,12 @@ Prompts are pre-built workflows. Invoke them with `/mcp__devnotes__<name>` in Cl
 
 "What are my open todos?"
 → Claude calls get_todos and returns a grouped list across all notes.
+
+"Mark 'write tests' as done in my Auth bug note"
+→ Claude calls complete_todo, ticking off the matching - [ ] item in place.
+
+"Delete the scratch note from yesterday"
+→ Claude calls delete_note with confirm: true after locating the note by title.
 
 "Look at my 'Auth bug' note and suggest a fix"
 → Claude calls get_note, reads the content and linked code file,

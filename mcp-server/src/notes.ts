@@ -125,9 +125,17 @@ function parseNoteFile(raw: string, fileName: string): Note | null {
   }
 }
 
+// ─── In-memory TTL cache ──────────────────────────────────────────────────────
+
+const CACHE_TTL_MS = 500;
+const _cache = new Map<string, { notes: Note[]; expiresAt: number }>();
+
 // ─── Public I/O ──────────────────────────────────────────────────────────────
 
 export function readAllNotes(devnotesDir: string): Note[] {
+  const cached = _cache.get(devnotesDir);
+  if (cached && Date.now() < cached.expiresAt) return cached.notes;
+
   if (!fs.existsSync(devnotesDir)) return [];
   const notes: Note[] = [];
   for (const entry of fs.readdirSync(devnotesDir)) {
@@ -138,7 +146,13 @@ export function readAllNotes(devnotesDir: string): Note[] {
       if (note) notes.push(note);
     } catch { /* skip unreadable files */ }
   }
+
+  _cache.set(devnotesDir, { notes, expiresAt: Date.now() + CACHE_TTL_MS });
   return notes;
+}
+
+function invalidateCache(devnotesDir: string): void {
+  _cache.delete(devnotesDir);
 }
 
 export function readNote(devnotesDir: string, id: string): Note | null {
@@ -177,6 +191,15 @@ export function writeNote(devnotesDir: string, note: Note): void {
     serializeFrontmatter(meta, note.content),
     'utf-8'
   );
+  invalidateCache(devnotesDir);
+}
+
+export function deleteNote(devnotesDir: string, id: string): boolean {
+  const filePath = path.join(devnotesDir, `${id}.md`);
+  if (!fs.existsSync(filePath)) return false;
+  fs.unlinkSync(filePath);
+  invalidateCache(devnotesDir);
+  return true;
 }
 
 export function readTags(devnotesDir: string): Tag[] {
