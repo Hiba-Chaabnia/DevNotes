@@ -1,13 +1,16 @@
 import * as vscode from 'vscode';
-import { NoteStorage } from './NoteStorage';
+import { NoteStorage, Note } from './NoteStorage';
 
 // ─── Entry model ─────────────────────────────────────────────────────────────
+
+const CLAUDE_OWNER = 'Claude Code';
 
 interface ActivityEntry {
   noteId   : string;
   title    : string;
   owner    : string | null;
   isYou    : boolean;     // true when owner matches the detected git user
+  isClaude : boolean;     // true when note was created/modified by the MCP server
   action   : 'created' | 'updated';
   timestamp: number;      // updatedAt Unix ms
 }
@@ -52,18 +55,31 @@ export class ActivityFeedView implements vscode.WebviewViewProvider {
   // ── Entry generation ──────────────────────────────────────────────────────
 
   private generateEntries(): ActivityEntry[] {
-    return this.storage.getNotes()
-      .filter(n => n.shared)
-      .sort((a, b) => b.updatedAt - a.updatedAt)
-      .slice(0, 40)
-      .map(n => ({
-        noteId   : n.id,
-        title    : n.title,
-        owner    : n.owner ?? null,
-        isYou    : !!n.owner && n.owner === this.currentUser,
-        action   : (n.updatedAt - n.createdAt) < 10_000 ? 'created' : 'updated',
-        timestamp: n.updatedAt,
-      }));
+    const notes = this.storage.getNotes();
+
+    // Collect shared notes and Claude-authored notes, deduplicated by ID
+    const seen = new Set<string>();
+    const toEntry = (n: Note): ActivityEntry => ({
+      noteId   : n.id,
+      title    : n.title,
+      owner    : n.owner ?? null,
+      isYou    : !!n.owner && n.owner === this.currentUser,
+      isClaude : n.owner === CLAUDE_OWNER,
+      action   : (n.updatedAt - n.createdAt) < 10_000 ? 'created' : 'updated',
+      timestamp: n.updatedAt,
+    });
+
+    const entries: ActivityEntry[] = [];
+    for (const n of notes) {
+      if (!n.shared && n.owner !== CLAUDE_OWNER) continue;
+      if (seen.has(n.id)) continue;
+      seen.add(n.id);
+      entries.push(toEntry(n));
+    }
+
+    return entries
+      .sort((a, b) => b.timestamp - a.timestamp)
+      .slice(0, 40);
   }
 
   // ── HTML ──────────────────────────────────────────────────────────────────
@@ -144,6 +160,19 @@ export class ActivityFeedView implements vscode.WebviewViewProvider {
     background: var(--vscode-badge-background);
     color: var(--vscode-badge-foreground);
     flex-shrink: 0;
+  }
+  .ai-badge {
+    font-size: 9px;
+    font-weight: 700;
+    padding: 1px 5px;
+    border-radius: 3px;
+    background: #7B61FF;
+    color: #fff;
+    flex-shrink: 0;
+    letter-spacing: .02em;
+  }
+  .avatar-claude {
+    background: #7B61FF !important;
   }
   .action-label {
     font-size: 11px;
@@ -238,7 +267,7 @@ export class ActivityFeedView implements vscode.WebviewViewProvider {
       empty.className = 'empty';
       empty.innerHTML =
         '<div class="empty-icon">📡</div>' +
-        '<p>No shared note activity yet.<br>Share notes with teammates to see their updates here.</p>';
+        '<p>No activity yet.<br>Share notes with teammates or ask Claude Code to create notes to see activity here.</p>';
       feedEl.appendChild(empty);
       footerEl.textContent = '';
       return;
@@ -258,7 +287,12 @@ export class ActivityFeedView implements vscode.WebviewViewProvider {
       feedEl.appendChild(buildEntry(entry, currentUser));
     });
 
-    footerEl.textContent = entries.length + ' shared note' + (entries.length !== 1 ? 's' : '');
+    const sharedCount = entries.filter(e => !e.isClaude).length;
+    const claudeCount = entries.filter(e => e.isClaude).length;
+    const parts = [];
+    if (sharedCount > 0) parts.push(sharedCount + ' shared note' + (sharedCount !== 1 ? 's' : ''));
+    if (claudeCount > 0) parts.push(claudeCount + ' from Claude');
+    footerEl.textContent = parts.join(' · ');
   }
 
   function buildEntry(entry, currentUser) {
@@ -266,11 +300,10 @@ export class ActivityFeedView implements vscode.WebviewViewProvider {
     el.className = 'entry';
 
     // Avatar
-    const owner  = entry.isYou ? (currentUser || 'You') : (entry.owner || 'Unknown');
     const avatar = document.createElement('div');
-    avatar.className = 'avatar';
-    avatar.style.background = ownerColor(owner);
-    avatar.textContent = initials(owner);
+    avatar.className = entry.isClaude ? 'avatar avatar-claude' : 'avatar';
+    if (!entry.isClaude) avatar.style.background = ownerColor(entry.isYou ? (currentUser || 'You') : (entry.owner || 'Unknown'));
+    avatar.textContent = entry.isClaude ? 'CC' : initials(entry.isYou ? (currentUser || 'You') : (entry.owner || 'Unknown'));
     el.appendChild(avatar);
 
     // Body
@@ -282,10 +315,15 @@ export class ActivityFeedView implements vscode.WebviewViewProvider {
     who.className = 'entry-who';
 
     const nameSpan = document.createElement('span');
-    nameSpan.textContent = entry.isYou ? 'You' : (entry.owner || 'Unknown');
+    nameSpan.textContent = entry.isClaude ? 'Claude Code' : (entry.isYou ? 'You' : (entry.owner || 'Unknown'));
     who.appendChild(nameSpan);
 
-    if (entry.isYou) {
+    if (entry.isClaude) {
+      const badge = document.createElement('span');
+      badge.className = 'ai-badge';
+      badge.textContent = 'AI';
+      who.appendChild(badge);
+    } else if (entry.isYou) {
       const badge = document.createElement('span');
       badge.className = 'you-badge';
       badge.textContent = 'you';

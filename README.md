@@ -351,7 +351,7 @@ The **Activity** panel lives directly below the **Notes** panel in the DevNotes 
 
 ### What it shows
 
-All shared notes, sorted by most recently updated and grouped by day:
+All shared notes and notes created by Claude Code, sorted by most recently updated and grouped by day:
 
 ```
 TODAY
@@ -367,8 +367,8 @@ YESTERDAY
 ```
 
 Each entry shows:
-- **Owner avatar** — a color-coded initials circle. Each person always gets the same color for easy recognition across sessions.
-- **Owner name** — the git user who created the note. Your own entries are labelled with a small `you` badge.
+- **Owner avatar** — a color-coded initials circle. Each person always gets the same color for easy recognition across sessions. Claude Code entries show a purple **CC** avatar.
+- **Owner name** — the git user who created the note. Your own entries are labelled with a small `you` badge. Claude Code entries show an **AI** badge.
 - **Action** — `created` when the note was just added, `updated` when it has been edited since creation.
 - **Note title** — click it to open the note directly in the rich editor.
 - **Relative timestamp** — "just now", "2h ago", "yesterday", or a short date.
@@ -662,6 +662,12 @@ The `log_session` tool writes timestamped entries to a special `session-log` not
 → Claude calls log_session with a summary of the session's work,
   what's still in progress, and any blockers.
 ```
+
+### Claude Code activity in the feed
+
+Every note the MCP server creates is automatically attributed to **Claude Code** (`owner: 'Claude Code'`). The Activity feed panel surfaces these notes alongside shared teammate notes — Claude's entries appear with a purple **CC** avatar and an **AI** badge so they're immediately distinguishable.
+
+The footer of the activity feed shows a split count: `3 shared notes · 2 from Claude`.
 
 ### Sync with the VS Code extension
 

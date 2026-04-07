@@ -233,6 +233,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           color,
           tags,
           starred  : false,
+          owner    : 'Claude Code',
           branch,
           codeLink : codeLink_file ? { file: codeLink_file, line: codeLink_line ?? 1 } : undefined,
           createdAt: Date.now(),
@@ -465,6 +466,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             color    : 'blue',
             tags     : ['reference'],
             starred  : true,
+            owner    : 'Claude Code',
             createdAt: Date.now(),
             updatedAt: Date.now(),
           };
