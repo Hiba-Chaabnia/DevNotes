@@ -70,6 +70,11 @@
         "title": "Refresh Activity Feed",
         "icon": "$(refresh)",
         "category": "DevNotes"
+      },
+      {
+        "command": "devnotes.registerMcp",
+        "title": "Connect to Claude Code (Register MCP Server)",
+        "category": "DevNotes"
       }
     ],
     "keybindings": [

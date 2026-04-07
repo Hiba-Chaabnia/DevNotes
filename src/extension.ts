@@ -1,4 +1,6 @@
 import * as vscode from 'vscode';
+import * as fs      from 'fs';
+import * as path    from 'path';
 import { NoteStorage } from './NoteStorage';
 import { SidebarView } from './SidebarView';
 import { EditorPanel } from './EditorPanel';
@@ -8,6 +10,7 @@ import { ActivityFeedView } from './ActivityFeedView';
 import { ConflictPanel } from './ConflictPanel';
 import { runExport } from './ExportController';
 import { detectProjectIdentity, getCurrentBranch, getGitUser } from './GitDetector';
+import { registerDevNotesMcp, isClaudeCodeInstalled } from './McpRegistration';
 
 // ─── Activation ──────────────────────────────────────────────────────────────
 
@@ -283,6 +286,48 @@ async function _activate(context: vscode.ExtensionContext): Promise<void> {
     vscode.commands.registerCommand('devnotes.exportSelected', (noteIds: string[]) => {
       const notes = noteIds.map(id => storage.getNote(id)).filter((n): n is import('./NoteStorage').Note => !!n);
       return runExport(notes, storage.getTags());
+    })
+  );
+
+  // Register the DevNotes MCP server with Claude Code (~/.claude/mcp.json)
+  context.subscriptions.push(
+    vscode.commands.registerCommand('devnotes.registerMcp', async () => {
+      if (!isClaudeCodeInstalled()) {
+        const action = await vscode.window.showWarningMessage(
+          'Claude Code does not appear to be installed — ~/.claude/ was not found.',
+          'Install Claude Code'
+        );
+        if (action === 'Install Claude Code') {
+          vscode.env.openExternal(vscode.Uri.parse('https://claude.ai/download'));
+        }
+        return;
+      }
+
+      const serverDistPath = path.join(context.extensionPath, 'mcp-server', 'dist', 'index.js');
+
+      if (!fs.existsSync(serverDistPath)) {
+        const action = await vscode.window.showWarningMessage(
+          'DevNotes MCP server is not built yet. Run `npm install && npm run build` inside the mcp-server/ folder.',
+          'Open Terminal'
+        );
+        if (action === 'Open Terminal') {
+          vscode.commands.executeCommand('workbench.action.terminal.new');
+        }
+        return;
+      }
+
+      const result = registerDevNotesMcp(serverDistPath);
+
+      if (!result.success) {
+        vscode.window.showErrorMessage(`DevNotes MCP: ${result.message}`);
+        return;
+      }
+
+      const label = result.alreadyRegistered
+        ? 'DevNotes MCP server is up to date in Claude Code.'
+        : 'DevNotes MCP server registered with Claude Code.';
+
+      vscode.window.showInformationMessage(`${label} Restart Claude Code to apply.`);
     })
   );
 

@@ -21,7 +21,8 @@ type ToExt =
   | { type: 'updateTag'; id: string; changes: Partial<Pick<Tag, 'label' | 'color'>> }
   | { type: 'jumpToLink'; file: string; line: number }
   | { type: 'linkToEditor'; noteId: string }
-  | { type: 'removeCodeLink'; noteId: string };
+  | { type: 'removeCodeLink'; noteId: string }
+  | { type: 'registerMcp' };
 
 // ─── Provider ────────────────────────────────────────────────────────────────
 
@@ -291,6 +292,10 @@ export class SidebarView implements vscode.WebviewViewProvider {
         await this.storage.updateNote(msg.noteId, { codeLink: undefined });
         this.push();
         this.onNoteLinkChanged();
+        break;
+
+      case 'registerMcp':
+        vscode.commands.executeCommand('devnotes.registerMcp');
         break;
     }
   }
@@ -1220,6 +1225,16 @@ export class SidebarView implements vscode.WebviewViewProvider {
         <line x1="12" y1="16.5" x2="21" y2="16.5"/>
       </svg>
     </button>
+    <button class="icon-btn" id="btn-register-mcp" title="Connect to Claude Code (register MCP server)">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="3" y="8" width="18" height="13" rx="2"/>
+        <circle cx="9" cy="14" r="1" fill="currentColor" stroke="none"/>
+        <circle cx="15" cy="14" r="1" fill="currentColor" stroke="none"/>
+        <line x1="9" y1="18" x2="15" y2="18"/>
+        <line x1="12" y1="8" x2="12" y2="4"/>
+        <circle cx="12" cy="3" r="1.5"/>
+      </svg>
+    </button>
     <button class="icon-btn" id="btn-new" title="New Note">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
         <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
@@ -1342,6 +1357,11 @@ export class SidebarView implements vscode.WebviewViewProvider {
     btnMineFilter.classList.toggle('active', mineFilterActive);
     btnMineFilter.title = mineFilterActive ? 'Show all notes' : 'Show only my notes';
     renderCards();
+  });
+
+  // ── Register MCP ─────────────────────────────────────────────────────────
+  document.getElementById('btn-register-mcp').addEventListener('click', () => {
+    vscode.postMessage({ type: 'registerMcp' });
   });
 
   // ── Selection mode ───────────────────────────────────────────────────────
