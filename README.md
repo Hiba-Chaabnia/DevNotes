@@ -554,7 +554,9 @@ npm run build
 
 **2. Register it with Claude Code**
 
-Add the following to `~/.claude/mcp.json` (create the file if it doesn't exist):
+Click the **bot icon** (🤖) in the DevNotes sidebar top bar. The button reads your extension path, writes the correct entry into `~/.claude/mcp.json`, and confirms with a notification. If Claude Code is not installed it tells you so and links to the download page.
+
+Alternatively, add the entry manually to `~/.claude/mcp.json`:
 
 ```json
 {
