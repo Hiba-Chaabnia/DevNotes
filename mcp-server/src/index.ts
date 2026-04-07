@@ -6,14 +6,9 @@
  * Notes are read directly from the .devnotes/ folder in the workspace,
  * using the same frontmatter format as the VS Code extension.
  *
- * Registration (add to ~/.claude/settings.json):
+ * Registration — click the bot icon button in the DevNotes sidebar, or run:
  *
- *   "mcpServers": {
- *     "devnotes": {
- *       "command": "node",
- *       "args": ["/path/to/DevNotes/mcp-server/dist/index.js"]
- *     }
- *   }
+ *   claude mcp add --scope user devnotes node /path/to/mcp-server/dist/index.js
  *
  * The server auto-detects the workspace by walking up from the CWD.
  * Override with: DEVNOTES_WORKSPACE=/path/to/project or --workspace flag.

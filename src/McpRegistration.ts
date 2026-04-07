@@ -1,6 +1,4 @@
-import * as fs   from 'fs';
-import * as path from 'path';
-import * as os   from 'os';
+import { execSync } from 'child_process';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -12,54 +10,45 @@ export interface McpRegistrationResult {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-/** Default path to Claude Code's MCP configuration file. */
-export function getMcpJsonPath(): string {
-  return path.join(os.homedir(), '.claude', 'mcp.json');
+/** Returns true when the `claude` CLI is available in PATH. */
+export function isClaudeCodeInstalled(): boolean {
+  try {
+    execSync('claude --version', { stdio: 'pipe' });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /**
- * Register (or update) the DevNotes MCP server entry in ~/.claude/mcp.json.
+ * Register (or update) the DevNotes MCP server using the Claude Code CLI.
  *
- * Pure function — no VS Code dependencies. Safe to import in tests.
+ * Runs: claude mcp add --scope user devnotes node "<serverDistPath>"
+ * If a previous entry exists it is removed first so the path is always current.
  *
- * @param serverDistPath  Absolute path to mcp-server/dist/index.js
- * @param mcpJsonPath     Target config file — defaults to ~/.claude/mcp.json
+ * Pure function — only depends on child_process. Safe to import in tests.
  */
-export function isClaudeCodeInstalled(): boolean {
-  return fs.existsSync(path.join(os.homedir(), '.claude'));
-}
+export function registerDevNotesMcp(serverDistPath: string): McpRegistrationResult {
+  const normalizedPath = serverDistPath.replace(/\\/g, '/');
+  let alreadyRegistered = false;
 
-export function registerDevNotesMcp(
-  serverDistPath: string,
-  mcpJsonPath   : string = getMcpJsonPath(),
-): McpRegistrationResult {
-  // Read existing config or start with an empty object
-  let config: { mcpServers?: Record<string, unknown> } = {};
+  // Remove any existing entry so re-registration always uses the latest path
+  try {
+    execSync('claude mcp remove devnotes', { stdio: 'pipe' });
+    alreadyRegistered = true;
+  } catch { /* not registered yet — fine */ }
 
-  if (fs.existsSync(mcpJsonPath)) {
-    try {
-      config = JSON.parse(fs.readFileSync(mcpJsonPath, 'utf-8'));
-    } catch {
-      return {
-        success          : false,
-        message          : `Could not parse ${path.basename(mcpJsonPath)} — check it for JSON syntax errors.`,
-        alreadyRegistered: false,
-      };
-    }
+  try {
+    execSync(
+      `claude mcp add --scope user devnotes node "${normalizedPath}"`,
+      { stdio: 'pipe' },
+    );
+    return { success: true, message: '', alreadyRegistered };
+  } catch (err) {
+    return {
+      success          : false,
+      message          : `claude mcp add failed: ${err instanceof Error ? err.message : String(err)}`,
+      alreadyRegistered: false,
+    };
   }
-
-  config.mcpServers = config.mcpServers ?? {};
-  const alreadyRegistered = 'devnotes' in config.mcpServers;
-
-  // Write / overwrite the devnotes entry (forward slashes for cross-platform compat)
-  config.mcpServers['devnotes'] = {
-    command: 'node',
-    args   : [serverDistPath.replace(/\\/g, '/')],
-  };
-
-  // Ensure ~/.claude/ exists before writing
-  fs.mkdirSync(path.dirname(mcpJsonPath), { recursive: true });
-  fs.writeFileSync(mcpJsonPath, JSON.stringify(config, null, 2) + '\n', 'utf-8');
-
-  return { success: true, message: '', alreadyRegistered };
 }

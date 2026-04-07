@@ -556,18 +556,13 @@ npm run build
 
 Click the **bot icon** (🤖) in the DevNotes sidebar top bar. The button reads your extension path, writes the correct entry into `~/.claude/mcp.json`, and confirms with a notification. If Claude Code is not installed it tells you so and links to the download page.
 
-Alternatively, add the entry manually to `~/.claude/mcp.json`:
+Alternatively, register it from the terminal using the Claude Code CLI:
 
-```json
-{
-  "mcpServers": {
-    "devnotes": {
-      "command": "node",
-      "args": ["/absolute/path/to/DevNotes/mcp-server/dist/index.js"]
-    }
-  }
-}
+```bash
+claude mcp add --scope user devnotes node /absolute/path/to/DevNotes/mcp-server/dist/index.js
 ```
+
+The `--scope user` flag registers the server globally across all projects. Claude Code stores the config in its own location per platform — the CLI handles this automatically.
 
 **3. Restart Claude Code** — the `devnotes` server will be available in every session from that point on.
 
