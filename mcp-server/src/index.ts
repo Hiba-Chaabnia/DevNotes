@@ -181,7 +181,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     },
     {
       name       : 'log_session',
-      description: 'Append a timestamped entry to the persistent session log note. Call at the end of a work session to record what was accomplished, what\'s in progress, and what\'s blocked. This creates an engineering diary that persists across Claude Code sessions.',
+      description: 'Append a timestamped entry to the persistent session log note. Call this automatically at the end of every work session — or whenever the user says goodbye, wraps up, or asks to stop — to record what was accomplished, what\'s in progress, and what\'s blocked.',
       inputSchema: {
         type      : 'object',
         properties: {
@@ -455,7 +455,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
         const history = getNoteHistory(WORKSPACE, DEVNOTES_DIR, note.id);
         if (!history) {
-          return { content: [{ type: 'text', text: `No git history found for "${note.title}". Is this workspace a git repository? Is the note shared (tracked by git)?` }] };
+          return { content: [{ type: 'text', text: `No git history found for "${note.title}". Is this workspace a git repository? Is the note file tracked by git (committed at least once)?` }] };
         }
 
         return {
@@ -479,7 +479,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             content  : '# Session Log\n\n*A running diary of Claude Code work sessions.*\n',
             color    : 'blue',
             tags     : ['reference'],
-            starred  : true,
+            starred  : false,
             owner    : 'Claude Code',
             createdAt: Date.now(),
             updatedAt: Date.now(),
@@ -582,7 +582,7 @@ server.setRequestHandler(ListResourcesRequestSchema, async () => ({
     {
       uri        : 'devnotes://recent',
       name       : 'Recent Notes',
-      description: 'Notes created or updated in the last 48 hours.',
+      description: 'Notes created or updated in the last 72 hours.',
       mimeType   : 'text/plain',
     },
     {
@@ -626,17 +626,17 @@ server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
 
     // ── devnotes://recent ────────────────────────────────────────────────────
     case 'devnotes://recent': {
-      const cutoff = Date.now() - 48 * 60 * 60 * 1000;
+      const cutoff = Date.now() - 72 * 60 * 60 * 1000;
       const recent = readAllNotes(DEVNOTES_DIR)
         .filter(n => n.updatedAt > cutoff)
         .sort((a, b) => b.updatedAt - a.updatedAt);
 
       const text = recent.length
-        ? `RECENT NOTES (last 48h):\n\n${recent.map(n => {
+        ? `RECENT NOTES (last 72h):\n\n${recent.map(n => {
             const preview = n.content.trim().split('\n')[0]?.slice(0, 80) ?? '';
             return `• ${n.title} [${n.tags.join(', ')}] — ${new Date(n.updatedAt).toLocaleDateString()}\n  ${preview}`;
           }).join('\n\n')}`
-        : 'No notes updated in the last 48 hours.';
+        : 'No notes updated in the last 72 hours.';
 
       return { contents: [{ uri, mimeType: 'text/plain', text }] };
     }
@@ -689,7 +689,7 @@ server.setRequestHandler(ListPromptsRequestSchema, async () => ({
   prompts: [
     {
       name       : 'solve',
-      description: 'Load a note and its linked source file into context, then ask Claude to diagnose the problem and suggest a fix. Saves the solution back as an appended section.',
+      description: 'Analyse a note and its linked code, then save the fix back as a Solution section.',
       arguments  : [
         { name: 'note', description: 'Note ID or title (fuzzy match)', required: true },
       ],
@@ -697,11 +697,6 @@ server.setRequestHandler(ListPromptsRequestSchema, async () => ({
     {
       name       : 'standup',
       description: 'Generate a standup update (Done / Doing / Blocked) from notes updated in the last 24 hours.',
-      arguments  : [],
-    },
-    {
-      name       : 'handoff',
-      description: 'Generate a PR handoff summary from all shared notes on the current branch. Ready to paste into a PR description.',
       arguments  : [],
     },
   ],
@@ -816,47 +811,6 @@ server.setRequestHandler(GetPromptRequestSchema, async (request) => {
 
       return {
         description: 'Generate standup from recent notes',
-        messages   : [{ role: 'user', content: { type: 'text', text } }],
-      };
-    }
-
-    // ── handoff ──────────────────────────────────────────────────────────────
-    case 'handoff': {
-      const branch   = getCurrentBranch(WORKSPACE);
-      const allNotes = readAllNotes(DEVNOTES_DIR);
-      const shared   = allNotes.filter(n => n.shared);
-      const scoped   = branch ? allNotes.filter(n => n.branch === branch) : [];
-
-      const relevant = [...new Map([...shared, ...scoped].map(n => [n.id, n])).values()];
-
-      if (relevant.length === 0) {
-        return {
-          messages: [{
-            role: 'user',
-            content: { type: 'text', text: `No shared or branch-scoped notes found${branch ? ` for branch "${branch}"` : ''}. Nothing to generate a handoff from.` },
-          }],
-        };
-      }
-
-      const noteSections = relevant.map(n =>
-        `### ${n.title} [${n.tags.join(', ') || 'no tags'}]\n${n.content.trim()}`
-      ).join('\n\n');
-
-      const text = [
-        `Generate a PR description / handoff summary based on the following notes${branch ? ` for branch "${branch}"` : ''}.`,
-        'Format as:',
-        '## Summary (3-5 bullets)',
-        '## Changes Made',
-        '## Test Plan',
-        '## Open Questions (if any)',
-        '',
-        '## Notes:',
-        '',
-        noteSections,
-      ].join('\n');
-
-      return {
-        description: `PR handoff${branch ? ` for ${branch}` : ''}`,
         messages   : [{ role: 'user', content: { type: 'text', text } }],
       };
     }

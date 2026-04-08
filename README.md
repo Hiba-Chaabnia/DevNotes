@@ -554,7 +554,7 @@ npm run build
 
 **2. Register it with Claude Code**
 
-Click the **bot icon** (🤖) in the DevNotes sidebar top bar. The button reads your extension path, writes the correct entry into `~/.claude/mcp.json`, and confirms with a notification. If Claude Code is not installed it tells you so and links to the download page.
+Click the **bot icon** (🤖) in the DevNotes sidebar top bar. The button detects your extension path and runs `claude mcp add --scope user` to register the server, then confirms with a notification. If Claude Code is not installed it tells you so and links to the download page.
 
 Alternatively, register it from the terminal using the Claude Code CLI:
 
@@ -597,8 +597,8 @@ Claude can call these tools at any point in a conversation:
 | `delete_note` | Permanently deletes a note. Requires `confirm: true` as a safety guard |
 | `get_todos` | Extracts every unchecked `- [ ]` item across all notes into a unified list |
 | `get_stale_notes` | Finds notes not updated in N days that still have open todos or a bug tag |
-| `note_history` | Shows the git commit history for a shared note file |
-| `log_session` | Appends a timestamped Done / In-progress / Blocked entry to a persistent session log |
+| `note_history` | Shows the git commit history for a note file. Requires the workspace to be a git repo and the note to be tracked by git. |
+| `log_session` | Appends a timestamped Done / In-progress / Blocked entry to a persistent session log. Called automatically at the end of every work session. |
 
 ### Resources
 
@@ -607,7 +607,7 @@ Resources are data Claude can read passively — without you asking — as backg
 | Resource URI | What it contains |
 |---|---|
 | `devnotes://todos` | All unchecked `- [ ]` items across every note |
-| `devnotes://recent` | Notes created or updated in the last 48 hours |
+| `devnotes://recent` | Notes created or updated in the last 72 hours |
 | `devnotes://session-log` | The last 5 session log entries (what was worked on in previous Claude Code sessions) |
 | `devnotes://branch` | All notes scoped to the current git branch |
 
@@ -619,7 +619,6 @@ Prompts are pre-built workflows. Invoke them with `/mcp__devnotes__<name>` in Cl
 |---|---|
 | `solve` | Loads a note and its linked source file into context, then asks Claude to diagnose and fix the problem. Saves the solution back as an appended `## Solution` section. |
 | `standup` | Reads notes updated in the last 24 hours and writes a Done / Doing / Blocked standup update |
-| `handoff` | Generates a PR description from all shared and branch-scoped notes — ready to paste |
 
 ### Example conversations
 
@@ -644,8 +643,6 @@ Prompts are pre-built workflows. Invoke them with `/mcp__devnotes__<name>` in Cl
 "Generate my standup for today"
 → Claude runs the standup prompt against notes updated in the last 24 hours.
 
-"Write a PR description for this branch"
-→ Claude runs the handoff prompt using shared and branch-scoped notes.
 ```
 
 ### Session log
