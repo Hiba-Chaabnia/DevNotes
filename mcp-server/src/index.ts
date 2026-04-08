@@ -42,6 +42,15 @@ import {
   resolveWorkspace,
 } from './notes.js';
 
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+/** Parse an ISO date string (YYYY-MM-DD) into a 9:00 AM Unix timestamp in ms. */
+function parseRemindAt(dateStr: string): number {
+  const d = new Date(dateStr);
+  d.setHours(9, 0, 0, 0);
+  return d.getTime();
+}
+
 // ─── Workspace setup ──────────────────────────────────────────────────────────
 
 const WORKSPACE    = resolveWorkspace();
@@ -79,6 +88,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
           codeLink_file  : { type: 'string',  description: 'Workspace-relative file path to link this note to (e.g. "src/auth.ts")' },
           codeLink_line  : { type: 'number',  description: '1-based line number for the code link' },
           branch         : { type: 'string',  description: 'Scope this note to a specific git branch. Omit for all-branch visibility.' },
+          remindAt       : { type: 'string',  description: 'ISO 8601 date string for a reminder (e.g. "2026-04-20"). Fires at 9:00 AM on that date.' },
         },
         required: ['title'],
       },
@@ -130,8 +140,10 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
           title  : { type: 'string',  description: 'New title' },
           tags   : { type: 'array', items: { type: 'string' }, description: 'Replace tag list' },
           color  : { type: 'string',  description: 'New color', enum: ['yellow','orange','purple','cyan','green','pink','blue','white'] },
-          starred: { type: 'boolean', description: 'Set starred status' },
-          shared : { type: 'boolean', description: 'Set shared status (makes note visible to teammates via git)' },
+          starred  : { type: 'boolean', description: 'Set starred status' },
+          shared   : { type: 'boolean', description: 'Set shared status (makes note visible to teammates via git)' },
+          owner    : { type: 'string',  description: 'Assign ownership (e.g. a teammate\'s name)' },
+          remindAt : { type: 'string',  description: 'ISO 8601 date string for a reminder (e.g. "2026-04-20"). Set to empty string to clear.' },
         },
         required: ['query'],
       },
@@ -216,10 +228,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       // ── create_note ─────────────────────────────────────────────────────────
       case 'create_note': {
-        const { title, content = '', tags = [], color = 'yellow', codeLink_file, codeLink_line, branch } = args as {
+        const { title, content = '', tags = [], color = 'yellow', codeLink_file, codeLink_line, branch, remindAt: remindAtStr } = args as {
           title: string; content?: string; tags?: string[]; color?: string;
-          codeLink_file?: string; codeLink_line?: number; branch?: string;
+          codeLink_file?: string; codeLink_line?: number; branch?: string; remindAt?: string;
         };
+
+        const remindAt = remindAtStr ? parseRemindAt(remindAtStr) : undefined;
 
         const note: Note = {
           id       : generateId(),
@@ -230,6 +244,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           starred  : false,
           owner    : 'Claude Code',
           branch,
+          remindAt,
           codeLink : codeLink_file ? { file: codeLink_file, line: codeLink_line ?? 1 } : undefined,
           createdAt: Date.now(),
           updatedAt: Date.now(),
@@ -345,9 +360,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       // ── update_note ─────────────────────────────────────────────────────────
       case 'update_note': {
-        const { query, title, tags, color, starred, shared } = args as {
+        const { query, title, tags, color, starred, shared, owner, remindAt: remindAtStr } = args as {
           query: string; title?: string; tags?: string[]; color?: string;
-          starred?: boolean; shared?: boolean;
+          starred?: boolean; shared?: boolean; owner?: string; remindAt?: string;
         };
 
         const notes = readAllNotes(DEVNOTES_DIR);
@@ -356,11 +371,15 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           return { content: [{ type: 'text', text: `No note found matching "${query}".` }], isError: true };
         }
 
-        if (title   !== undefined) note.title   = title;
-        if (tags    !== undefined) note.tags     = tags;
-        if (color   !== undefined) note.color    = color;
-        if (starred !== undefined) note.starred  = starred;
-        if (shared  !== undefined) note.shared   = shared;
+        if (title      !== undefined) note.title    = title;
+        if (tags       !== undefined) note.tags      = tags;
+        if (color      !== undefined) note.color     = color;
+        if (starred    !== undefined) note.starred   = starred;
+        if (shared     !== undefined) note.shared    = shared;
+        if (owner      !== undefined) note.owner     = owner || undefined;
+        if (remindAtStr !== undefined) {
+          note.remindAt = remindAtStr === '' ? undefined : parseRemindAt(remindAtStr);
+        }
         note.updatedAt = Date.now();
 
         writeNote(DEVNOTES_DIR, note);

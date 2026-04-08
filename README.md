@@ -588,11 +588,11 @@ Claude can call these tools at any point in a conversation:
 
 | Tool | What it does |
 |---|---|
-| `create_note` | Creates a new note with title, content, tags, color, and an optional code link |
+| `create_note` | Creates a new note with title, content, tags, color, optional code link, and optional reminder (`remindAt`) |
 | `get_note` | Retrieves a note by ID or title (fuzzy match). Returns the full content and metadata |
 | `list_notes` | Lists notes with optional filters: tag, search text, branch, or starred status |
 | `append_to_note` | Appends a new section to an existing note — preserves the original body |
-| `update_note` | Updates metadata: title, tags, color, starred, or shared status |
+| `update_note` | Updates metadata: title, tags, color, starred, shared, owner, or reminder (`remindAt`) |
 | `complete_todo` | Marks matching `- [ ]` items as done (`- [x]`) inside a note — matched by substring |
 | `delete_note` | Permanently deletes a note. Requires `confirm: true` as a safety guard |
 | `get_todos` | Extracts every unchecked `- [ ]` item across all notes into a unified list |
