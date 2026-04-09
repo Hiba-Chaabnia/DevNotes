@@ -42,6 +42,13 @@ import {
   resolveWorkspace,
 } from './notes.js';
 
+import {
+  parseGitHubUrl,
+  fetchIssue,
+  fetchComments,
+  deriveStatus,
+} from './github.js';
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 /** Parse an ISO date string (YYYY-MM-DD) into a 9:00 AM Unix timestamp in ms. */
@@ -217,6 +224,29 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
         required: ['query', 'confirm'],
       },
     },
+    {
+      name       : 'link_github',
+      description: 'Link a DevNote to a GitHub issue or pull request. Fetches the title and current status (open/closed/merged) from the GitHub API and stores them in the note frontmatter. Requires DEVNOTES_GITHUB_TOKEN env var for private repos.',
+      inputSchema: {
+        type      : 'object',
+        properties: {
+          query     : { type: 'string', description: 'Note ID or title to link' },
+          github_url: { type: 'string', description: 'Full GitHub issue or PR URL, e.g. https://github.com/owner/repo/issues/42' },
+        },
+        required: ['query', 'github_url'],
+      },
+    },
+    {
+      name       : 'get_github_context',
+      description: 'Fetch full context from GitHub for a note that is linked to an issue or PR: title, description, labels, assignees, and the last 20 comments. Use to get the full picture of a linked issue without leaving DevNotes.',
+      inputSchema: {
+        type      : 'object',
+        properties: {
+          query: { type: 'string', description: 'Note ID or title' },
+        },
+        required: ['query'],
+      },
+    },
   ],
 }));
 
@@ -281,6 +311,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           note.owner   ? `**Owner:** ${note.owner}` : '',
           note.codeLink ? `**Linked to:** ${note.codeLink.file}:${note.codeLink.line}` : '',
           note.shared  ? '**Shared:** yes (visible in git)' : '',
+          note.github  ? `**GitHub:** ${note.github.type === 'pr' ? 'PR' : 'Issue'} #${note.github.number} (${note.github.status ?? 'unknown'}) — ${note.github.url}` : '',
           `**Created:** ${new Date(note.createdAt).toLocaleDateString()}`,
           `**Updated:** ${new Date(note.updatedAt).toLocaleDateString()}`,
           '',
@@ -554,6 +585,126 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
         deleteNote(DEVNOTES_DIR, note.id);
         return { content: [{ type: 'text', text: `Deleted note "${note.title}" (ID: ${note.id}).` }] };
+      }
+
+      // ── link_github ──────────────────────────────────────────────────────────
+      case 'link_github': {
+        const { query, github_url } = args as { query: string; github_url: string };
+
+        const parsed = parseGitHubUrl(github_url);
+        if (!parsed) {
+          return { content: [{ type: 'text', text: `Could not parse GitHub URL: "${github_url}". Expected format: https://github.com/owner/repo/issues/123 or .../pull/123` }], isError: true };
+        }
+
+        const notes = readAllNotes(DEVNOTES_DIR);
+        const note  = findNote(notes, query);
+        if (!note) {
+          return { content: [{ type: 'text', text: `No note found matching "${query}".` }], isError: true };
+        }
+
+        let issueTitle = '';
+        let status: 'open' | 'closed' | 'merged' = 'open';
+        try {
+          const issue = await fetchIssue(parsed.repo, parsed.number);
+          issueTitle  = issue.title;
+          status      = deriveStatus(issue);
+        } catch (e) {
+          // Continue without API data — still store the link
+          const msg = e instanceof Error ? e.message : String(e);
+          if (msg.includes('401') || msg.includes('403')) {
+            return { content: [{ type: 'text', text: `GitHub auth failed. Set DEVNOTES_GITHUB_TOKEN to a Personal Access Token with repo read access.` }], isError: true };
+          }
+          if (msg.includes('404')) {
+            return { content: [{ type: 'text', text: `GitHub issue/PR not found: ${github_url}. Check the URL and your token's permissions.` }], isError: true };
+          }
+        }
+
+        note.github = {
+          url            : github_url,
+          repo           : parsed.repo,
+          number         : parsed.number,
+          type           : parsed.type,
+          status,
+          title          : issueTitle || undefined,
+          statusCheckedAt: Date.now(),
+        };
+        note.updatedAt = Date.now();
+        writeNote(DEVNOTES_DIR, note);
+
+        const typeLabel = parsed.type === 'pr' ? 'PR' : 'Issue';
+        const titleLine = issueTitle ? ` — "${issueTitle}"` : '';
+        return {
+          content: [{ type: 'text', text: `Linked note "${note.title}" to GitHub ${typeLabel} #${parsed.number}${titleLine} (${status}).` }],
+        };
+      }
+
+      // ── get_github_context ───────────────────────────────────────────────────
+      case 'get_github_context': {
+        const { query } = args as { query: string };
+
+        const notes = readAllNotes(DEVNOTES_DIR);
+        const note  = findNote(notes, query);
+        if (!note) {
+          return { content: [{ type: 'text', text: `No note found matching "${query}".` }], isError: true };
+        }
+        if (!note.github) {
+          return { content: [{ type: 'text', text: `Note "${note.title}" has no GitHub link. Use link_github first.` }], isError: true };
+        }
+
+        const { repo, number, type, url } = note.github;
+        const typeLabel = type === 'pr' ? 'PR' : 'Issue';
+
+        let issue;
+        try {
+          issue = await fetchIssue(repo, number);
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e);
+          return { content: [{ type: 'text', text: `Failed to fetch GitHub ${typeLabel}: ${msg}` }], isError: true };
+        }
+
+        // Refresh status on the note
+        const freshStatus = deriveStatus(issue);
+        if (note.github.status !== freshStatus || note.github.title !== issue.title) {
+          note.github.status          = freshStatus;
+          note.github.title           = issue.title;
+          note.github.statusCheckedAt = Date.now();
+          writeNote(DEVNOTES_DIR, note);
+        }
+
+        let comments: { user: { login: string }; body: string; created_at: string }[] = [];
+        try {
+          comments = await fetchComments(repo, number);
+        } catch { /* non-fatal */ }
+
+        const labels    = issue.labels.map(l => l.name).join(', ') || 'none';
+        const assignees = issue.assignees.map(a => a.login).join(', ') || 'unassigned';
+
+        const lines: string[] = [
+          `# GitHub ${typeLabel} #${number}: ${issue.title}`,
+          `**URL:** ${url}`,
+          `**Status:** ${freshStatus}`,
+          `**Labels:** ${labels}`,
+          `**Assignees:** ${assignees}`,
+          `**Opened by:** ${issue.user.login} on ${new Date(issue.created_at).toLocaleDateString()}`,
+          `**Last updated:** ${new Date(issue.updated_at).toLocaleDateString()}`,
+          '',
+          '## Description',
+          '',
+          issue.body?.trim() || '*(no description)*',
+        ];
+
+        if (comments.length > 0) {
+          lines.push('', `## Comments (${comments.length})`);
+          for (const c of comments) {
+            lines.push(
+              '',
+              `**${c.user.login}** on ${new Date(c.created_at).toLocaleDateString()}:`,
+              c.body.trim()
+            );
+          }
+        }
+
+        return { content: [{ type: 'text', text: lines.join('\n') }] };
       }
 
       default:

@@ -17,6 +17,16 @@ export interface CodeLink {
   line: number;
 }
 
+export interface GitHubLink {
+  url: string;
+  repo: string;    // "owner/repo"
+  number: number;
+  type: 'issue' | 'pr';
+  status?: 'open' | 'closed' | 'merged';
+  title?: string;
+  statusCheckedAt?: number;
+}
+
 export interface Note {
   id: string;
   title: string;
@@ -26,6 +36,7 @@ export interface Note {
   starred: boolean;
   shared?: boolean;
   codeLink?: CodeLink;
+  github?: GitHubLink;
   branch?: string;
   remindAt?: number;
   owner?: string;
@@ -115,6 +126,17 @@ function parseNoteFile(raw: string, fileName: string): Note | null {
       branch   : typeof meta.branch === 'string' && meta.branch ? meta.branch : undefined,
       owner    : typeof meta.owner  === 'string' && meta.owner  ? meta.owner  : undefined,
       remindAt : meta.remindAt ? Number(meta.remindAt) : undefined,
+      github   : (typeof meta.github_url === 'string' && meta.github_url)
+        ? {
+            url             : meta.github_url as string,
+            repo            : meta.github_repo as string,
+            number          : Number(meta.github_number),
+            type            : meta.github_type as 'issue' | 'pr',
+            status          : meta.github_status as GitHubLink['status'] | undefined,
+            title           : typeof meta.github_title === 'string' ? meta.github_title : undefined,
+            statusCheckedAt : meta.github_status_checked_at ? Number(meta.github_status_checked_at) : undefined,
+          }
+        : undefined,
       conflicted: isConflicted || undefined,
       createdAt: Number(meta.createdAt ?? Date.now()),
       updatedAt: Number(meta.updatedAt ?? Date.now()),
@@ -184,6 +206,15 @@ export function writeNote(devnotesDir: string, note: Note): void {
   if (note.codeLink) {
     meta.codeLink_file = note.codeLink.file;
     meta.codeLink_line = note.codeLink.line;
+  }
+  if (note.github) {
+    meta.github_url    = note.github.url;
+    meta.github_repo   = note.github.repo;
+    meta.github_number = note.github.number;
+    meta.github_type   = note.github.type;
+    if (note.github.status)          meta.github_status           = note.github.status;
+    if (note.github.title)           meta.github_title            = note.github.title;
+    if (note.github.statusCheckedAt) meta.github_status_checked_at = note.github.statusCheckedAt;
   }
 
   fs.writeFileSync(

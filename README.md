@@ -22,6 +22,7 @@ A VS Code extension that gives you a **project-scoped note panel** — rich text
 - **Activity feed** — a live panel showing recent changes to shared notes, grouped by day with owner avatars and clickable titles
 - **Conflict resolution UI** — when a shared note has a git merge conflict, a visual two-column panel lets you keep yours, keep theirs, or merge both versions
 - **Note ownership** — notes are automatically attributed to the git user who created them; filter to your own notes instantly with the "Mine" button
+- **GitHub integration** — link any note to a GitHub issue or PR; the MCP server fetches the title, status (open/closed/merged), description, and comments so Claude can reason about the issue without leaving your workspace
 - **Claude Code integration** — an MCP server lets Claude Code create notes, read them, append solutions, query todos, and generate standups or PR handoffs — all talking to the same `.devnotes/` files the extension uses
 
 ## Quick Capture
@@ -518,7 +519,7 @@ updatedAt: 1712349000
 2. Make any API call → 401
 ```
 
-`codeLink_file`, `codeLink_line`, `branch`, `owner`, and `remindAt` are all optional — notes without these fields simply omit them. Notes are readable and editable in any text editor, even without the extension installed.
+`codeLink_file`, `codeLink_line`, `branch`, `owner`, `remindAt`, and the `github_*` fields are all optional — notes without these fields simply omit them. Notes are readable and editable in any text editor, even without the extension installed.
 
 ### Personal vs. shared data
 
@@ -599,6 +600,8 @@ Claude can call these tools at any point in a conversation:
 | `get_stale_notes` | Finds notes not updated in N days that still have open todos or a bug tag |
 | `note_history` | Shows the git commit history for a note file. Requires the workspace to be a git repo and the note to be tracked by git. |
 | `log_session` | Appends a timestamped Done / In-progress / Blocked entry to a persistent session log. Called automatically at the end of every work session. |
+| `link_github` | Links a note to a GitHub issue or PR URL. Fetches the title and current status (open/closed/merged) from the GitHub API and stores them in the note's frontmatter. |
+| `get_github_context` | Fetches the full context of a linked GitHub issue or PR: description, labels, assignees, and the last 20 comments. Refreshes the cached status automatically. |
 
 ### Resources
 
@@ -644,6 +647,63 @@ Prompts are pre-built workflows. Invoke them with `/mcp__devnotes__<name>` in Cl
 → Claude runs the standup prompt against notes updated in the last 24 hours.
 
 ```
+
+### GitHub integration
+
+Link a note to a GitHub issue or PR so Claude can pull full context without leaving your workspace.
+
+**Setup** — set the `DEVNOTES_GITHUB_TOKEN` environment variable to a GitHub Personal Access Token. Classic PATs need the `repo` scope for private repos, or `public_repo` for public repos only. Fine-grained PATs need "Issues: read" permission. Public repos work without a token but will hit the GitHub API rate limit quickly.
+
+Add it to your MCP server config:
+
+```json
+{
+  "mcpServers": {
+    "devnotes": {
+      "command": "node",
+      "args": ["/path/to/mcp-server/dist/index.js"],
+      "env": {
+        "DEVNOTES_WORKSPACE": "/path/to/your/project",
+        "DEVNOTES_GITHUB_TOKEN": "ghp_yourtoken"
+      }
+    }
+  }
+}
+```
+
+**Workflow:**
+
+```
+"Link my 'Auth bug' note to github.com/org/repo/issues/42"
+→ Claude calls link_github — fetches the title and status from GitHub,
+  stores them in the note's frontmatter.
+
+"What's the full context on the issue linked to 'Auth bug'?"
+→ Claude calls get_github_context — returns the issue description,
+  labels, assignees, and the last 20 comments inline.
+```
+
+**Note format with a GitHub link:**
+
+```markdown
+---
+id: lp9k3fab
+title: Auth bug
+color: orange
+tags: bug
+github_url: https://github.com/org/repo/issues/42
+github_repo: org/repo
+github_number: 42
+github_type: issue
+github_status: open
+github_title: Token expiry not handled on mobile
+github_status_checked_at: 1745226000000
+createdAt: 1712345678
+updatedAt: 1712349000
+---
+```
+
+`github_status` is one of `open`, `closed`, or `merged` (PRs only). It is refreshed automatically whenever `get_github_context` is called.
 
 ### Session log
 
