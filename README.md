@@ -22,7 +22,7 @@ A VS Code extension that gives you a **project-scoped note panel** — rich text
 - **Activity feed** — a live panel showing recent changes to shared notes, grouped by day with owner avatars and clickable titles
 - **Conflict resolution UI** — when a shared note has a git merge conflict, a visual two-column panel lets you keep yours, keep theirs, or merge both versions
 - **Note ownership** — notes are automatically attributed to the git user who created them; filter to your own notes instantly with the "Mine" button
-- **GitHub integration** — link any note to a GitHub issue or PR; a color-coded status badge (green open, grey closed, purple merged) appears on the card and opens the issue in the browser on click; the MCP server fetches the full description and comments so Claude can reason about the issue without leaving your workspace
+- **GitHub integration** — one-click OAuth connection via the sidebar; link any note to a GitHub issue or PR; a color-coded status badge (green open, grey closed, purple merged) appears on the card and opens the issue in the browser on click; the MCP server fetches the full description and comments so Claude can reason about the issue without leaving your workspace
 - **Claude Code integration** — an MCP server lets Claude Code create notes, read them, append solutions, query todos, and generate standups or PR handoffs — all talking to the same `.devnotes/` files the extension uses
 
 ## Quick Capture
@@ -652,24 +652,11 @@ Prompts are pre-built workflows. Invoke them with `/mcp__devnotes__<name>` in Cl
 
 Link a note to a GitHub issue or PR so Claude can pull full context without leaving your workspace.
 
-**Setup** — set the `DEVNOTES_GITHUB_TOKEN` environment variable to a GitHub Personal Access Token. Classic PATs need the `repo` scope for private repos, or `public_repo` for public repos only. Fine-grained PATs need "Issues: read" permission. Public repos work without a token but will hit the GitHub API rate limit quickly.
+**Setup** — click the GitHub icon (🐙) in the DevNotes sidebar top bar. VS Code will prompt you to sign in to GitHub using its built-in OAuth flow — the same one used by GitHub Copilot and the GitHub Pull Requests extension. If you are already signed in to GitHub in your editor, this completes with zero additional clicks.
 
-Add it to your MCP server config:
+Once connected, the icon turns green and a `.devnotes/.github-token` file is written locally. The MCP server reads this file automatically — no environment variables or config changes needed.
 
-```json
-{
-  "mcpServers": {
-    "devnotes": {
-      "command": "node",
-      "args": ["/path/to/mcp-server/dist/index.js"],
-      "env": {
-        "DEVNOTES_WORKSPACE": "/path/to/your/project",
-        "DEVNOTES_GITHUB_TOKEN": "ghp_yourtoken"
-      }
-    }
-  }
-}
-```
+The token file is gitignored by default (`.devnotes/` ignores everything) and never leaves your machine.
 
 **Sidebar badge**
 

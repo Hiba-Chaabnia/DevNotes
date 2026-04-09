@@ -47,6 +47,7 @@ import {
   fetchIssue,
   fetchComments,
   deriveStatus,
+  setDevnotesDir,
 } from './github.js';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -62,6 +63,7 @@ function parseRemindAt(dateStr: string): number {
 
 const WORKSPACE    = resolveWorkspace();
 const DEVNOTES_DIR = path.join(WORKSPACE, '.devnotes');
+setDevnotesDir(DEVNOTES_DIR);
 
 // ─── Server ───────────────────────────────────────────────────────────────────
 

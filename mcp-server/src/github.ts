@@ -1,12 +1,20 @@
 /**
  * github.ts — minimal GitHub REST API client for DevNotes.
  *
- * Uses a Personal Access Token stored in the DEVNOTES_GITHUB_TOKEN
- * environment variable. Classic PATs need the `repo` scope (or `public_repo`
- * for public repos only). Fine-grained PATs need "Issues: read" permission.
+ * Token resolution order:
+ *   1. DEVNOTES_GITHUB_TOKEN environment variable
+ *   2. .devnotes/.github-token file in the workspace (written by the VS Code
+ *      extension's "Connect to GitHub" OAuth flow)
  *
  * No external dependencies — uses Node's built-in fetch (Node 18+).
  */
+
+import * as fs   from 'fs';
+import * as path from 'path';
+
+// Set by index.ts at startup so getToken() can fall back to the token file.
+let _devnotesDir: string | null = null;
+export function setDevnotesDir(dir: string): void { _devnotesDir = dir; }
 
 export interface GitHubIssue {
   number: number;
@@ -29,7 +37,14 @@ export interface GitHubComment {
 }
 
 function getToken(): string | null {
-  return process.env.DEVNOTES_GITHUB_TOKEN ?? null;
+  if (process.env.DEVNOTES_GITHUB_TOKEN) return process.env.DEVNOTES_GITHUB_TOKEN;
+  if (_devnotesDir) {
+    try {
+      const tokenFile = path.join(_devnotesDir, '.github-token');
+      if (fs.existsSync(tokenFile)) return fs.readFileSync(tokenFile, 'utf-8').trim();
+    } catch { /* ignore */ }
+  }
+  return null;
 }
 
 function headers(): Record<string, string> {
