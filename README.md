@@ -22,7 +22,7 @@ A VS Code extension that gives you a **project-scoped note panel** — rich text
 - **Activity feed** — a live panel showing recent changes to shared notes, grouped by day with owner avatars and clickable titles
 - **Conflict resolution UI** — when a shared note has a git merge conflict, a visual two-column panel lets you keep yours, keep theirs, or merge both versions
 - **Note ownership** — notes are automatically attributed to the git user who created them; filter to your own notes instantly with the "Mine" button
-- **GitHub integration** — link any note to a GitHub issue or PR; the MCP server fetches the title, status (open/closed/merged), description, and comments so Claude can reason about the issue without leaving your workspace
+- **GitHub integration** — link any note to a GitHub issue or PR; a color-coded status badge (green open, grey closed, purple merged) appears on the card and opens the issue in the browser on click; the MCP server fetches the full description and comments so Claude can reason about the issue without leaving your workspace
 - **Claude Code integration** — an MCP server lets Claude Code create notes, read them, append solutions, query todos, and generate standups or PR handoffs — all talking to the same `.devnotes/` files the extension uses
 
 ## Quick Capture
@@ -671,16 +671,30 @@ Add it to your MCP server config:
 }
 ```
 
+**Sidebar badge**
+
+Once a note is linked, a badge appears directly on the card:
+
+| Status | Appearance |
+|---|---|
+| Open | Green badge with filled dot — `● #42 open` |
+| Closed | Grey dimmed badge — `● #42 closed` |
+| Merged (PR) | Purple badge — `● PR#42 merged` |
+
+Hovering the badge shows the issue title as a tooltip. Clicking it opens the issue or PR in the browser.
+
 **Workflow:**
 
 ```
 "Link my 'Auth bug' note to github.com/org/repo/issues/42"
 → Claude calls link_github — fetches the title and status from GitHub,
   stores them in the note's frontmatter.
+→ A green "● #42 open" badge appears on the note card immediately.
 
 "What's the full context on the issue linked to 'Auth bug'?"
 → Claude calls get_github_context — returns the issue description,
   labels, assignees, and the last 20 comments inline.
+→ The badge status is refreshed automatically.
 ```
 
 **Note format with a GitHub link:**

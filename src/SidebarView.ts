@@ -22,6 +22,7 @@ type ToExt =
   | { type: 'jumpToLink'; file: string; line: number }
   | { type: 'linkToEditor'; noteId: string }
   | { type: 'removeCodeLink'; noteId: string }
+  | { type: 'openGitHubLink'; url: string }
   | { type: 'registerMcp' };
 
 // ─── Provider ────────────────────────────────────────────────────────────────
@@ -292,6 +293,10 @@ export class SidebarView implements vscode.WebviewViewProvider {
         await this.storage.updateNote(msg.noteId, { codeLink: undefined });
         this.push();
         this.onNoteLinkChanged();
+        break;
+
+      case 'openGitHubLink':
+        vscode.env.openExternal(vscode.Uri.parse(msg.url));
         break;
 
       case 'registerMcp':
@@ -1113,6 +1118,44 @@ export class SidebarView implements vscode.WebviewViewProvider {
     border-color: rgba(239,108,87,.35);
     opacity: 1;
   }
+
+  /* ── GitHub status badge ────────────────────────────── */
+  .github-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 10px;
+    padding: 2px 7px;
+    border-radius: 4px;
+    color: var(--card-text);
+    align-self: flex-start;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: filter .1s;
+    text-decoration: none;
+  }
+  .github-badge:hover { filter: brightness(.9); }
+  .github-badge.gh-open {
+    background: rgba(6,214,160,.18);
+    border: 1px solid rgba(6,214,160,.45);
+  }
+  .github-badge.gh-closed {
+    background: rgba(0,0,0,.1);
+    border: 1px solid rgba(0,0,0,.18);
+    opacity: .7;
+  }
+  .github-badge.gh-merged {
+    background: rgba(130,80,255,.18);
+    border: 1px solid rgba(130,80,255,.4);
+  }
+  .github-badge-dot {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .gh-open  .github-badge-dot { background: #06d6a0; }
+  .gh-closed .github-badge-dot { background: #888; }
+  .gh-merged .github-badge-dot { background: #8250df; }
 
   /* ── Template picker (in new-note form) ─────────────── */
   .template-row {
@@ -1952,6 +1995,23 @@ export class SidebarView implements vscode.WebviewViewProvider {
       const badge = mkEl('span', 'reminder-badge' + (isOverdue ? ' overdue' : ''));
       badge.textContent = '🔔 ' + formatReminder(note.remindAt);
       badge.title = isOverdue ? 'Overdue — click 🔔 to reschedule' : new Date(note.remindAt).toLocaleString();
+      card.appendChild(badge);
+    }
+
+    // ── GitHub status badge ──
+    if (note.github) {
+      const gh     = note.github;
+      const status = gh.status ?? 'open';
+      const badge  = mkEl('button', \`github-badge gh-\${status}\`);
+      const dot    = mkEl('span', 'github-badge-dot');
+      const typeLabel = gh.type === 'pr' ? 'PR' : '#';
+      const label  = mkEl('span', '', \`\${typeLabel}\${gh.number} \${status}\`);
+      badge.title  = gh.title ? gh.title : gh.url;
+      badge.append(dot, label);
+      badge.addEventListener('click', e => {
+        e.stopPropagation();
+        vscode.postMessage({ type: 'openGitHubLink', url: gh.url });
+      });
       card.appendChild(badge);
     }
 
