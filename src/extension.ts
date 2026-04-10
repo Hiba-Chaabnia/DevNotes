@@ -12,7 +12,6 @@ import { runExport } from './ExportController';
 import { detectProjectIdentity, getCurrentBranch, getGitUser } from './GitDetector';
 import { registerDevNotesMcp, isClaudeCodeInstalled } from './McpRegistration';
 import { StatusBarController } from './StatusBarController';
-import { StatusBarSimulator } from './StatusBarSimulator';
 
 // ─── Activation ──────────────────────────────────────────────────────────────
 
@@ -174,11 +173,6 @@ async function _activate(context: vscode.ExtensionContext): Promise<void> {
     })
   );
 
-  context.subscriptions.push(
-    vscode.commands.registerCommand('devnotes.simulateStatusBar', () => {
-      StatusBarSimulator.show(context);
-    })
-  );
 
   // Quick Capture — Ctrl+Alt+Q (Cmd+Alt+Q on Mac)
   // Works from anywhere: auto-links to current file:line when an editor is

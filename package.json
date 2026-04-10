@@ -80,11 +80,6 @@
         "command": "devnotes.focusSidebar",
         "title": "Open DevNotes Sidebar",
         "category": "DevNotes"
-      },
-      {
-        "command": "devnotes.simulateStatusBar",
-        "title": "Simulate Status Bar",
-        "category": "DevNotes"
       }
     ],
     "keybindings": [

@@ -268,10 +268,6 @@ The item updates instantly on every editor tab switch — if you move to a file 
 
 Both items use the standard VS Code Extension API and work in all VS Code-based editors: VS Code, Windsurf, Cursor, and VSCodium.
 
-### Simulator
-
-To preview different status bar states without creating real notes, open the Command Palette and run **DevNotes: Simulate Status Bar**. An interactive panel opens where you can toggle each note's archived status, reminder state, and code link, and watch the status bar items update live.
-
 ## Getting Started
 
 1. Install the extension (or run it via **F5** in the repo)
