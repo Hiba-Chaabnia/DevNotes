@@ -119,10 +119,11 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
       inputSchema: {
         type      : 'object',
         properties: {
-          tag    : { type: 'string',  description: 'Filter by tag ID (e.g. "bug")' },
-          search : { type: 'string',  description: 'Filter by text in title or content' },
-          branch : { type: 'string',  description: 'Filter by branch scope. Use "current" to auto-detect the active branch.' },
-          starred: { type: 'boolean', description: 'If true, return only starred notes' },
+          tag      : { type: 'string',  description: 'Filter by tag ID (e.g. "bug")' },
+          search   : { type: 'string',  description: 'Filter by text in title or content' },
+          branch   : { type: 'string',  description: 'Filter by branch scope. Use "current" to auto-detect the active branch.' },
+          starred  : { type: 'boolean', description: 'If true, return only starred notes' },
+          archived : { type: 'boolean', description: 'If true, return only archived notes. Defaults to false (archived notes are excluded by default).' },
         },
       },
     },
@@ -150,6 +151,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
           tags   : { type: 'array', items: { type: 'string' }, description: 'Replace tag list' },
           color  : { type: 'string',  description: 'New color', enum: ['yellow','orange','purple','cyan','green','pink','blue','white'] },
           starred  : { type: 'boolean', description: 'Set starred status' },
+          archived : { type: 'boolean', description: 'Set archived status. Archived notes are hidden from the main list but not deleted.' },
           shared   : { type: 'boolean', description: 'Set shared status (makes note visible to teammates via git)' },
           owner    : { type: 'string',  description: 'Assign ownership (e.g. a teammate\'s name)' },
           remindAt : { type: 'string',  description: 'ISO 8601 date string for a reminder (e.g. "2026-04-20"). Set to empty string to clear.' },
@@ -312,6 +314,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           note.branch  ? `**Branch:** ${note.branch}` : '',
           note.owner   ? `**Owner:** ${note.owner}` : '',
           note.codeLink ? `**Linked to:** ${note.codeLink.file}:${note.codeLink.line}` : '',
+          note.archived ? '**Archived:** yes' : '',
           note.shared  ? '**Shared:** yes (visible in git)' : '',
           note.github  ? `**GitHub:** ${note.github.type === 'pr' ? 'PR' : 'Issue'} #${note.github.number} (${note.github.status ?? 'unknown'}) — ${note.github.url}` : '',
           `**Created:** ${new Date(note.createdAt).toLocaleDateString()}`,
@@ -327,14 +330,17 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       // ── list_notes ──────────────────────────────────────────────────────────
       case 'list_notes': {
-        const { tag, search, branch, starred } = args as {
-          tag?: string; search?: string; branch?: string; starred?: boolean;
+        const { tag, search, branch, starred, archived } = args as {
+          tag?: string; search?: string; branch?: string; starred?: boolean; archived?: boolean;
         };
 
         let notes = readAllNotes(DEVNOTES_DIR);
 
         // Resolve "current" branch alias
         const branchFilter = branch === 'current' ? getCurrentBranch(WORKSPACE) : branch;
+
+        // Exclude archived notes by default; show only archived when explicitly requested
+        notes = archived ? notes.filter(n => n.archived) : notes.filter(n => !n.archived);
 
         if (tag)          notes = notes.filter(n => n.tags.includes(tag));
         if (branchFilter) notes = notes.filter(n => n.branch === branchFilter || !n.branch);
@@ -393,9 +399,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       // ── update_note ─────────────────────────────────────────────────────────
       case 'update_note': {
-        const { query, title, tags, color, starred, shared, owner, remindAt: remindAtStr } = args as {
+        const { query, title, tags, color, starred, archived, shared, owner, remindAt: remindAtStr } = args as {
           query: string; title?: string; tags?: string[]; color?: string;
-          starred?: boolean; shared?: boolean; owner?: string; remindAt?: string;
+          starred?: boolean; archived?: boolean; shared?: boolean; owner?: string; remindAt?: string;
         };
 
         const notes = readAllNotes(DEVNOTES_DIR);
@@ -408,6 +414,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         if (tags       !== undefined) note.tags      = tags;
         if (color      !== undefined) note.color     = color;
         if (starred    !== undefined) note.starred   = starred;
+        if (archived   !== undefined) note.archived  = archived || undefined;
         if (shared     !== undefined) note.shared    = shared;
         if (owner      !== undefined) note.owner     = owner || undefined;
         if (remindAtStr !== undefined) {
@@ -423,7 +430,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       case 'get_todos': {
         const { tag } = args as { tag?: string };
 
-        let notes = readAllNotes(DEVNOTES_DIR);
+        let notes = readAllNotes(DEVNOTES_DIR).filter(n => !n.archived);
         if (tag) notes = notes.filter(n => n.tags.includes(tag));
 
         const sections: string[] = [];
@@ -450,7 +457,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const { days = 14 } = args as { days?: number };
         const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
 
-        const stale = readAllNotes(DEVNOTES_DIR).filter(n => {
+        const stale = readAllNotes(DEVNOTES_DIR).filter(n => !n.archived).filter(n => {
           if (n.updatedAt > cutoff) return false;
           const hasBugTag    = n.tags.includes('bug');
           const hasOpenTodos = extractTodos(n.content).length > 0;
@@ -781,7 +788,7 @@ server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
     case 'devnotes://recent': {
       const cutoff = Date.now() - 72 * 60 * 60 * 1000;
       const recent = readAllNotes(DEVNOTES_DIR)
-        .filter(n => n.updatedAt > cutoff)
+        .filter(n => !n.archived && n.updatedAt > cutoff)
         .sort((a, b) => b.updatedAt - a.updatedAt);
 
       const text = recent.length
@@ -817,7 +824,7 @@ server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
         return { contents: [{ uri, mimeType: 'text/plain', text: 'Could not detect current branch (not a git repository?).' }] };
       }
 
-      const notes = readAllNotes(DEVNOTES_DIR).filter(n => n.branch === branch);
+      const notes = readAllNotes(DEVNOTES_DIR).filter(n => !n.archived && n.branch === branch);
 
       const text = notes.length
         ? `NOTES FOR BRANCH "${branch}" (${notes.length}):\n\n${notes.map(n => {

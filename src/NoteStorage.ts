@@ -28,6 +28,7 @@ export interface Note {
   branch?: string;       // optional git branch scope — undefined means visible on all branches
   remindAt?: number;     // Unix timestamp (ms) for when a reminder should fire; undefined = no reminder
   owner?: string;        // git user name (or email) of whoever created this note
+  archived?: boolean;    // when true, note is hidden from the main list
   conflicted?: boolean;  // true when the file on disk contains unresolved git conflict markers
   createdAt: number;
   updatedAt: number;
@@ -521,6 +522,7 @@ export class NoteStorage {
         branch     : typeof meta.branch === 'string' && meta.branch ? meta.branch : undefined,
         owner      : typeof meta.owner  === 'string' && meta.owner  ? meta.owner  : undefined,
         remindAt   : meta.remindAt ? Number(meta.remindAt) : undefined,
+        archived   : meta.archived === true || undefined,
         conflicted : isConflicted || undefined,
         createdAt  : Number(meta.createdAt ?? Date.now()),
         updatedAt  : Number(meta.updatedAt ?? Date.now()),
@@ -557,10 +559,11 @@ export class NoteStorage {
         createdAt: note.createdAt,
         updatedAt: note.updatedAt,
       };
-      if (note.shared)   meta.shared   = true;
-      if (note.branch)   meta.branch   = note.branch;
-      if (note.owner)    meta.owner    = note.owner;
-      if (note.remindAt) meta.remindAt = note.remindAt;
+      if (note.shared)    meta.shared    = true;
+      if (note.branch)    meta.branch    = note.branch;
+      if (note.owner)     meta.owner     = note.owner;
+      if (note.remindAt)  meta.remindAt  = note.remindAt;
+      if (note.archived)  meta.archived  = true;
       if (note.codeLink) {
         meta.codeLink_file = note.codeLink.file;
         meta.codeLink_line = note.codeLink.line;

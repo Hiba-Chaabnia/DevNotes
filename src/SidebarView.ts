@@ -24,6 +24,8 @@ type ToExt =
   | { type: 'removeCodeLink'; noteId: string }
   | { type: 'openGitHubLink'; url: string }
   | { type: 'connectGitHub' }
+  | { type: 'archiveNote'; id: string }
+  | { type: 'unarchiveNote'; id: string }
   | { type: 'registerMcp' };
 
 // ─── Provider ────────────────────────────────────────────────────────────────
@@ -304,6 +306,18 @@ export class SidebarView implements vscode.WebviewViewProvider {
         this.push();
         this.onNoteLinkChanged();
         break;
+
+      case 'archiveNote': {
+        await this.storage.updateNote(msg.id, { archived: true, starred: false });
+        this.push();
+        break;
+      }
+
+      case 'unarchiveNote': {
+        await this.storage.updateNote(msg.id, { archived: undefined });
+        this.push();
+        break;
+      }
 
       case 'openGitHubLink':
         vscode.env.openExternal(vscode.Uri.parse(msg.url));
@@ -1035,6 +1049,21 @@ export class SidebarView implements vscode.WebviewViewProvider {
 
   .branch-filter-btn.active { color: var(--vscode-button-background) !important; opacity: 1; }
   .github-connect-btn.connected { color: #06d6a0 !important; opacity: 1; }
+  .archive-view-btn.active { color: var(--vscode-button-background) !important; opacity: 1; }
+  .card.is-archived { opacity: .75; }
+  .archived-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    font-size: 10px;
+    padding: 2px 6px;
+    border-radius: 4px;
+    background: rgba(0,0,0,.1);
+    border: 1px solid rgba(0,0,0,.15);
+    color: var(--card-text);
+    opacity: .65;
+    align-self: flex-start;
+  }
 
   /* Off-branch card — dimmed but still accessible */
   .card.off-branch { opacity: .42; }
@@ -1293,6 +1322,12 @@ export class SidebarView implements vscode.WebviewViewProvider {
         <circle cx="12" cy="7" r="4"/>
       </svg>
     </button>
+    <button class="icon-btn" id="btn-archive-view" title="Show archived notes">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/>
+        <line x1="10" y1="12" x2="14" y2="12"/>
+      </svg>
+    </button>
     <button class="icon-btn" id="btn-select" title="Select notes to export">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
         <rect x="3" y="5" width="5" height="5" rx="1"/>
@@ -1394,6 +1429,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
   let branchFilterActive  = false;
   let mineFilterActive    = false;
   let githubConnected     = false;
+  let showArchived        = false;
   let selectMode         = false;
   let selectedIds        = [];
   let openColorPop    = null;
@@ -1438,6 +1474,16 @@ export class SidebarView implements vscode.WebviewViewProvider {
     mineFilterActive = !mineFilterActive;
     btnMineFilter.classList.toggle('active', mineFilterActive);
     btnMineFilter.title = mineFilterActive ? 'Show all notes' : 'Show only my notes';
+    renderCards();
+  });
+
+  // ── Archive view toggle ──────────────────────────────────────────────────
+  const btnArchiveView = document.getElementById('btn-archive-view');
+  btnArchiveView.classList.add('archive-view-btn');
+  btnArchiveView.addEventListener('click', () => {
+    showArchived = !showArchived;
+    btnArchiveView.classList.toggle('active', showArchived);
+    btnArchiveView.title = showArchived ? 'Back to notes' : 'Show archived notes';
     renderCards();
   });
 
@@ -1804,6 +1850,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
   // ── Cards ────────────────────────────────────────────────────────────────
   function visibleNotes() {
     return notes.filter(n => {
+      if (showArchived ? !n.archived : n.archived) return false;
       if (mineFilterActive && currentUser && n.owner && n.owner !== currentUser) return false;
       if (branchFilterActive && currentBranch && n.branch && n.branch !== currentBranch) return false;
       if (searchQuery) {
@@ -1822,7 +1869,9 @@ export class SidebarView implements vscode.WebviewViewProvider {
     const visible = visibleNotes();
     if (visible.length === 0) {
       const empty = mkEl('div', 'empty');
-      if (notes.length === 0) {
+      if (showArchived) {
+        empty.innerHTML = '<div class="empty-icon">📦</div><p>No archived notes.</p>';
+      } else if (notes.length === 0) {
         empty.innerHTML = '<div class="empty-icon">📋</div><p>No notes yet.<br>Click <strong>+</strong> to create one.</p>';
       } else {
         empty.innerHTML = '<div class="empty-icon">🔍</div><p>No notes match<br><strong>' + esc(searchQuery || 'the selected filter') + '</strong>.</p>';
@@ -1839,9 +1888,10 @@ export class SidebarView implements vscode.WebviewViewProvider {
     const bg          = COLORS[note.color] || COLORS.yellow;
     const isOffBranch = currentBranch && note.branch && note.branch !== currentBranch;
     const card = mkEl('div', 'card'
-      + (note.shared     ? ' is-shared' : '')
-      + (isOffBranch     ? ' off-branch' : '')
-      + (note.conflicted ? ' conflict' : '')
+      + (note.shared     ? ' is-shared'   : '')
+      + (isOffBranch     ? ' off-branch'  : '')
+      + (note.conflicted ? ' conflict'    : '')
+      + (note.archived   ? ' is-archived' : '')
     );
     card.dataset.id = note.id;
     card.style.background = bg;
@@ -1996,6 +2046,13 @@ export class SidebarView implements vscode.WebviewViewProvider {
       vscode.postMessage({ type: 'openEditor', noteId: note.id });
     });
 
+    // ── Archive / unarchive button ──
+    const archiveBtn = mkEl('button', 'card-btn', note.archived ? '↩' : '📦');
+    archiveBtn.title = note.archived ? 'Unarchive note' : 'Archive note';
+    archiveBtn.addEventListener('click', () => {
+      vscode.postMessage({ type: note.archived ? 'unarchiveNote' : 'archiveNote', id: note.id });
+    });
+
     // ── Delete button ──
     const delBtn = mkEl('button', 'card-btn', '✕');
     delBtn.title = 'Delete note';
@@ -2003,7 +2060,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
       vscode.postMessage({ type: 'deleteNote', id: note.id });
     });
 
-    actions.append(tagBtn, linkBtn, branchBtn, bellBtn, shareBtn, colorBtn, editBtn, delBtn);
+    actions.append(tagBtn, linkBtn, branchBtn, bellBtn, shareBtn, colorBtn, editBtn, archiveBtn, delBtn);
     hdr.append(starBtn, title, actions);
     card.append(hdr, colorPop, tagPop);
 
@@ -2036,6 +2093,11 @@ export class SidebarView implements vscode.WebviewViewProvider {
         vscode.postMessage({ type: 'openConflict', noteId: note.id });
       });
       card.appendChild(badge);
+    }
+
+    // ── Archived badge ──
+    if (note.archived) {
+      card.appendChild(mkEl('span', 'archived-badge', '📦 Archived'));
     }
 
     // ── Reminder badge ──

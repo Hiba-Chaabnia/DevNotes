@@ -40,6 +40,7 @@ export interface Note {
   branch?: string;
   remindAt?: number;
   owner?: string;
+  archived?: boolean;
   conflicted?: boolean;
   createdAt: number;
   updatedAt: number;
@@ -126,6 +127,7 @@ function parseNoteFile(raw: string, fileName: string): Note | null {
       branch   : typeof meta.branch === 'string' && meta.branch ? meta.branch : undefined,
       owner    : typeof meta.owner  === 'string' && meta.owner  ? meta.owner  : undefined,
       remindAt : meta.remindAt ? Number(meta.remindAt) : undefined,
+      archived : meta.archived === true || undefined,
       github   : (typeof meta.github_url === 'string' && meta.github_url)
         ? {
             url             : meta.github_url as string,
@@ -199,10 +201,11 @@ export function writeNote(devnotesDir: string, note: Note): void {
     createdAt: note.createdAt,
     updatedAt: note.updatedAt,
   };
-  if (note.shared)   meta.shared          = true;
-  if (note.branch)   meta.branch          = note.branch;
-  if (note.owner)    meta.owner           = note.owner;
-  if (note.remindAt) meta.remindAt        = note.remindAt;
+  if (note.shared)    meta.shared    = true;
+  if (note.branch)    meta.branch    = note.branch;
+  if (note.owner)     meta.owner     = note.owner;
+  if (note.remindAt)  meta.remindAt  = note.remindAt;
+  if (note.archived)  meta.archived  = true;
   if (note.codeLink) {
     meta.codeLink_file = note.codeLink.file;
     meta.codeLink_line = note.codeLink.line;

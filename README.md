@@ -16,6 +16,7 @@ A VS Code extension that gives you a **project-scoped note panel** — rich text
 - **Tags** — assign tags to notes for filtering; create custom tags with any color; delete tags you no longer need
 - **Color-coded notes** — eight color options per note, changeable at any time from the card
 - **Starred notes** — star important notes to pin them to the top of the list
+- **Note archiving** — archive completed or inactive notes to declutter the list without deleting them; a dedicated archive view lets you browse and restore them at any time
 - **Project-scoped storage** — notes are tied to the workspace, not a global account
 - **Git-aware** — detects the current repo so notes stay relevant to the project
 - **Opt-in sharing** — share individual notes with teammates through git, with nothing exposed by default
@@ -168,6 +169,46 @@ Token TTL is 1 hour — needs refresh token flow.
 ```
 
 `remindAt` is a Unix timestamp in milliseconds. It is omitted from the frontmatter when no reminder is set.
+
+## Note Archiving
+
+Archiving lets you hide notes that are no longer actively relevant — completed work, resolved bugs, old meeting notes — without permanently deleting them. Archived notes remain fully searchable and can be restored at any time.
+
+### Archiving a note
+
+Hover any note card to reveal the action buttons, then click **📦**. The note disappears from the main list immediately. Archiving a starred note also removes its star.
+
+### Browsing archived notes
+
+Click the **archive box icon** (☰ box) in the sidebar top bar. The view switches to show only archived notes. The icon highlights to indicate you are in archive mode.
+
+### Restoring a note
+
+While in archive view, hover any archived card and click **↩** to unarchive it. The note returns to the main list.
+
+### How archiving affects Claude
+
+Archived notes are excluded from all active-work surfaces:
+
+- `list_notes` hides archived notes by default — pass `archived: true` to list them
+- `get_todos`, `get_stale_notes`, and all MCP resources (`devnotes://todos`, `devnotes://recent`, `devnotes://branch`) never include archived notes
+- `get_note` still works on archived notes directly when queried by ID or title
+
+### Note format with archiving
+
+```markdown
+---
+id: lp9k3fab
+title: Old bug fix
+color: orange
+tags: bug
+archived: true
+createdAt: 1712345678
+updatedAt: 1712349000
+---
+```
+
+`archived: true` is omitted from the frontmatter when the note is not archived.
 
 ## Note Templates
 
@@ -593,7 +634,7 @@ Claude can call these tools at any point in a conversation:
 | `get_note` | Retrieves a note by ID or title (fuzzy match). Returns the full content and metadata |
 | `list_notes` | Lists notes with optional filters: tag, search text, branch, or starred status |
 | `append_to_note` | Appends a new section to an existing note — preserves the original body |
-| `update_note` | Updates metadata: title, tags, color, starred, shared, owner, or reminder (`remindAt`) |
+| `update_note` | Updates metadata: title, tags, color, starred, archived, shared, owner, or reminder (`remindAt`) |
 | `complete_todo` | Marks matching `- [ ]` items as done (`- [x]`) inside a note — matched by substring |
 | `delete_note` | Permanently deletes a note. Requires `confirm: true` as a safety guard |
 | `get_todos` | Extracts every unchecked `- [ ]` item across all notes into a unified list |
