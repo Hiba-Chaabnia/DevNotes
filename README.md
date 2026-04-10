@@ -17,6 +17,7 @@ A VS Code extension that gives you a **project-scoped note panel** — rich text
 - **Color-coded notes** — eight color options per note, changeable at any time from the card
 - **Starred notes** — star important notes to pin them to the top of the list
 - **Note archiving** — archive completed or inactive notes to declutter the list without deleting them; a dedicated archive view lets you browse and restore them at any time
+- **Status bar integration** — two persistent items in the bottom status bar surface overdue reminders and notes linked to the current file without opening the sidebar; works in VS Code, Windsurf, Cursor, and all VS Code-based editors
 - **Project-scoped storage** — notes are tied to the workspace, not a global account
 - **Git-aware** — detects the current repo so notes stay relevant to the project
 - **Opt-in sharing** — share individual notes with teammates through git, with nothing exposed by default
@@ -238,6 +239,38 @@ Templates let you scaffold a new note with a pre-defined structure, color, and t
 Any note can become a template via `Tpl↑` in the editor toolbar. Custom templates are stored in `.devnotes/templates.json` and appear alongside the built-ins everywhere — sidebar picker, Quick Capture, and the editor.
 
 To delete a custom template, remove its entry from `.devnotes/templates.json` directly.
+
+## Status Bar Integration
+
+DevNotes places two items in the VS Code status bar (bottom-right) that surface context without requiring you to open the sidebar.
+
+### Overdue reminders
+
+```
+🔔 2 overdue
+```
+
+Appears whenever one or more non-archived notes have a past reminder date. The item uses the warning background colour (amber) so it stands out. Hovering shows a tooltip listing each overdue note by title. Clicking opens the DevNotes sidebar.
+
+The item disappears automatically once all overdue reminders are dismissed or rescheduled.
+
+### Linked notes
+
+```
+📒 3 notes here
+```
+
+Appears when the file currently open in the editor has notes linked to it via a code link. Hovering shows a tooltip listing the linked note titles. Clicking opens the DevNotes sidebar.
+
+The item updates instantly on every editor tab switch — if you move to a file with no linked notes it hides, if you move to one with notes it shows.
+
+### Compatibility
+
+Both items use the standard VS Code Extension API and work in all VS Code-based editors: VS Code, Windsurf, Cursor, and VSCodium.
+
+### Simulator
+
+To preview different status bar states without creating real notes, open the Command Palette and run **DevNotes: Simulate Status Bar**. An interactive panel opens where you can toggle each note's archived status, reminder state, and code link, and watch the status bar items update live.
 
 ## Getting Started
 

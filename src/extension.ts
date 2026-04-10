@@ -11,6 +11,8 @@ import { ConflictPanel } from './ConflictPanel';
 import { runExport } from './ExportController';
 import { detectProjectIdentity, getCurrentBranch, getGitUser } from './GitDetector';
 import { registerDevNotesMcp, isClaudeCodeInstalled } from './McpRegistration';
+import { StatusBarController } from './StatusBarController';
+import { StatusBarSimulator } from './StatusBarSimulator';
 
 // ─── Activation ──────────────────────────────────────────────────────────────
 
@@ -74,8 +76,16 @@ async function _activate(context: vscode.ExtensionContext): Promise<void> {
   context.subscriptions.push(gutterController);
 
   // Reminder system — checks due remindAt timestamps every minute
-  const reminderController = new ReminderController(storage, () => sidebar.push());
+  const reminderController = new ReminderController(storage, () => {
+    sidebar.push();
+    statusBar.refresh();
+  });
   context.subscriptions.push(reminderController);
+
+  // Status bar — overdue reminders + linked notes for active file
+  const statusBar = new StatusBarController(storage);
+  context.subscriptions.push(statusBar);
+  statusBar.refresh();
 
   // Activity feed — shows recent changes to shared notes
   const activityFeed = new ActivityFeedView(
@@ -104,6 +114,7 @@ async function _activate(context: vscode.ExtensionContext): Promise<void> {
     EditorPanel.current?.push();
     gutterController.refresh();
     reminderController.refresh();
+    statusBar.refresh();
     activityFeed.push();
 
     // Detect newly conflicted notes and show a notification
@@ -154,6 +165,18 @@ async function _activate(context: vscode.ExtensionContext): Promise<void> {
   context.subscriptions.push(
     vscode.commands.registerCommand('devnotes.refresh', () => {
       sidebar.push();
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('devnotes.focusSidebar', () => {
+      vscode.commands.executeCommand('devnotesView.focus');
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('devnotes.simulateStatusBar', () => {
+      StatusBarSimulator.show(context);
     })
   );
 
@@ -230,6 +253,7 @@ async function _activate(context: vscode.ExtensionContext): Promise<void> {
       });
       sidebar.push();
       gutterController.refresh();
+      statusBar.refresh();
     })
   );
 
@@ -347,6 +371,7 @@ async function _activate(context: vscode.ExtensionContext): Promise<void> {
       if (anyChanged) {
         sidebar.push();
         gutterController.refresh();
+        statusBar.refresh();
       }
     })
   );
