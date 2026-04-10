@@ -25,6 +25,7 @@ A VS Code extension that gives you a **project-scoped note panel** — rich text
 - **Conflict resolution UI** — when a shared note has a git merge conflict, a visual two-column panel lets you keep yours, keep theirs, or merge both versions
 - **Note ownership** — notes are automatically attributed to the git user who created them; filter to your own notes instantly with the "Mine" button
 - **GitHub integration** — one-click OAuth connection via the sidebar; link any note to a GitHub issue or PR; a color-coded status badge (green open, grey closed, purple merged) appears on the card and opens the issue in the browser on click; the MCP server fetches the full description and comments so Claude can reason about the issue without leaving your workspace
+- **Card keyboard shortcuts** — navigate the note list with arrow keys and trigger actions (open, star, archive, rename, delete) without touching the mouse
 - **Claude Code integration** — an MCP server lets Claude Code create notes, read them, append solutions, query todos, and generate standups or PR handoffs — all talking to the same `.devnotes/` files the extension uses
 
 ## Quick Capture
@@ -267,6 +268,24 @@ The item updates instantly on every editor tab switch — if you move to a file 
 ### Compatibility
 
 Both items use the standard VS Code Extension API and work in all VS Code-based editors: VS Code, Windsurf, Cursor, and VSCodium.
+
+## Card Keyboard Shortcuts
+
+Once a card is focused you can act on it entirely from the keyboard. Focus a card by navigating to it with the arrow keys from the search box or from another card.
+
+| Key | Action |
+|-----|--------|
+| `↓` (from search box) | Focus the first card |
+| `↓` / `↑` | Move to the next / previous card |
+| `↑` (from first card) | Return focus to the search box |
+| `Enter` | Open the note in the rich editor |
+| `S` | Toggle star (pins the note to the top) |
+| `A` | Archive the note (or unarchive if already archived) |
+| `R` | Rename — focuses the title input |
+| `Delete` | Delete the note |
+| `Escape` | Blur the card |
+
+A focused card is highlighted with the editor's standard focus ring (`--vscode-focusBorder`). Shortcuts only fire when the card itself has focus — child inputs such as the title field and the inline content editor handle their own keys independently.
 
 ## Getting Started
 

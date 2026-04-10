@@ -675,6 +675,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
     position: relative;
   }
   .card:hover { box-shadow: 0 4px 14px rgba(0,0,0,.15); transform: translateY(-1px); }
+  .card:focus { outline: 2px solid var(--vscode-focusBorder); outline-offset: 1px; box-shadow: 0 4px 14px rgba(0,0,0,.15); }
   .card.hidden { display: none; }
 
   /* Shared indicator — left-edge stripe */
@@ -1583,6 +1584,10 @@ export class SidebarView implements vscode.WebviewViewProvider {
       searchEl.value = '';
       searchClearEl.style.display = 'none';
       renderCards();
+    } else if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      const first = cardList.querySelector('.card[tabindex="0"]');
+      if (first) first.focus();
     }
   });
 
@@ -2227,6 +2232,53 @@ export class SidebarView implements vscode.WebviewViewProvider {
     const dateEl = mkEl('span', 'card-date', formatDate(note.updatedAt));
     footer.appendChild(dateEl);
     card.appendChild(footer);
+
+    // ── Keyboard shortcuts ──
+    card.tabIndex = 0;
+    card.addEventListener('keydown', e => {
+      if (e.target !== card) return; // let child inputs handle their own keys
+      switch (e.key) {
+        case 'Enter':
+          e.preventDefault();
+          vscode.postMessage({ type: 'openEditor', noteId: note.id });
+          break;
+        case 's': case 'S':
+          e.preventDefault();
+          vscode.postMessage({ type: 'updateNote', id: note.id, changes: { starred: !note.starred } });
+          break;
+        case 'a': case 'A':
+          e.preventDefault();
+          vscode.postMessage({ type: note.archived ? 'unarchiveNote' : 'archiveNote', id: note.id });
+          break;
+        case 'r': case 'R':
+          e.preventDefault();
+          title.focus();
+          title.select();
+          break;
+        case 'Delete':
+          e.preventDefault();
+          vscode.postMessage({ type: 'deleteNote', id: note.id });
+          break;
+        case 'ArrowDown': {
+          e.preventDefault();
+          const cards = [...cardList.querySelectorAll('.card[tabindex="0"]')];
+          const idx = cards.indexOf(card);
+          if (idx < cards.length - 1) cards[idx + 1].focus();
+          break;
+        }
+        case 'ArrowUp': {
+          e.preventDefault();
+          const cards = [...cardList.querySelectorAll('.card[tabindex="0"]')];
+          const idx = cards.indexOf(card);
+          if (idx > 0) cards[idx - 1].focus();
+          else searchEl.focus();
+          break;
+        }
+        case 'Escape':
+          card.blur();
+          break;
+      }
+    });
 
     return card;
   }
