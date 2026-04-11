@@ -29,7 +29,10 @@ type ToExt =
   | { type: 'archiveNote'; id: string }
   | { type: 'unarchiveNote'; id: string }
   | { type: 'registerMcp' }
-  | { type: 'createGitHubIssue'; noteId: string };
+  | { type: 'createGitHubIssue'; noteId: string }
+  | { type: 'linkNote'; noteId: string }
+  | { type: 'unlinkNote'; noteId: string; targetId: string }
+  | { type: 'openLinkedNote'; noteId: string };
 
 // ─── Provider ────────────────────────────────────────────────────────────────
 
@@ -408,6 +411,45 @@ export class SidebarView implements vscode.WebviewViewProvider {
         }
         break;
       }
+
+      case 'linkNote': {
+        const note = this.storage.getNote(msg.noteId);
+        if (!note) break;
+        const candidates = this.storage.getNotes()
+          .filter(n => n.id !== msg.noteId && !n.archived && !note.linkedNoteIds?.includes(n.id));
+        if (candidates.length === 0) {
+          vscode.window.showInformationMessage('No other notes available to link.');
+          break;
+        }
+        type NItem = vscode.QuickPickItem & { id: string };
+        const items: NItem[] = candidates.map(n => ({
+          id         : n.id,
+          label      : n.title,
+          description: n.tags.length ? n.tags.join(', ') : undefined,
+        }));
+        const picked = await vscode.window.showQuickPick(items, {
+          placeHolder      : 'Select a note to link to…',
+          matchOnDescription: true,
+        });
+        if (!picked) break;
+        const existing = note.linkedNoteIds ?? [];
+        await this.storage.updateNote(msg.noteId, { linkedNoteIds: [...existing, picked.id] });
+        this.push();
+        break;
+      }
+
+      case 'unlinkNote': {
+        const note = this.storage.getNote(msg.noteId);
+        if (!note) break;
+        const updated = (note.linkedNoteIds ?? []).filter(id => id !== msg.targetId);
+        await this.storage.updateNote(msg.noteId, { linkedNoteIds: updated.length ? updated : undefined });
+        this.push();
+        break;
+      }
+
+      case 'openLinkedNote':
+        this.onOpenEditor(msg.noteId);
+        break;
 
       case 'registerMcp':
         vscode.commands.executeCommand('devnotes.registerMcp');
@@ -1415,6 +1457,49 @@ export class SidebarView implements vscode.WebviewViewProvider {
   }
   .code-link-chip:hover .code-link-remove { opacity: .55; }
   .code-link-remove:hover { opacity: 1 !important; }
+
+  .note-links-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    align-items: center;
+  }
+  .note-link-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 10px;
+    padding: 2px 7px;
+    border-radius: 4px;
+    background: rgba(0,0,0,.1);
+    border: 1px solid rgba(0,0,0,.15);
+    color: var(--card-text);
+    cursor: pointer;
+    white-space: nowrap;
+    max-width: 160px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    opacity: .8;
+    transition: opacity .12s, background .12s;
+  }
+  .note-link-chip::before {
+    content: '↗';
+    font-size: 9px;
+    opacity: .6;
+    flex-shrink: 0;
+  }
+  .note-link-chip:hover { opacity: 1; background: rgba(0,0,0,.18); }
+  .note-link-unlink {
+    opacity: 0;
+    font-size: 8px;
+    flex-shrink: 0;
+    padding: 0 1px;
+    border-radius: 2px;
+    line-height: 1;
+    transition: opacity .1s;
+  }
+  .note-link-chip:hover .note-link-unlink { opacity: .55; }
+  .note-link-unlink:hover { opacity: 1 !important; }
 </style>
 </head>
 <body>
@@ -2204,6 +2289,18 @@ export class SidebarView implements vscode.WebviewViewProvider {
       vscode.postMessage({ type: 'openEditor', noteId: note.id });
     });
 
+    // ── Link to another note button ──
+    const noteLinkBtn = mkEl('button', 'card-btn');
+    noteLinkBtn.title = 'Link to another note';
+    noteLinkBtn.innerHTML = \`<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+      <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+      <line x1="5" y1="5" x2="5" y2="1"/><line x1="1" y1="5" x2="5" y2="5"/>
+    </svg>\`;
+    noteLinkBtn.addEventListener('click', () => {
+      vscode.postMessage({ type: 'linkNote', noteId: note.id });
+    });
+
     // ── Create GitHub issue button (only when connected and not yet linked) ──
     const ghIssueBtn = mkEl('button', 'card-btn');
     ghIssueBtn.title = 'Create GitHub issue from this note';
@@ -2230,7 +2327,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
       vscode.postMessage({ type: 'deleteNote', id: note.id });
     });
 
-    actions.append(tagBtn, linkBtn, branchBtn, bellBtn, shareBtn, colorBtn, editBtn, ghIssueBtn, archiveBtn, delBtn);
+    actions.append(tagBtn, linkBtn, branchBtn, bellBtn, shareBtn, colorBtn, editBtn, noteLinkBtn, ghIssueBtn, archiveBtn, delBtn);
     hdr.append(starBtn, title, actions);
     card.append(hdr, colorPop, tagPop);
 
@@ -2253,6 +2350,31 @@ export class SidebarView implements vscode.WebviewViewProvider {
         tagRow.appendChild(pill);
       });
       card.appendChild(tagRow);
+    }
+
+    // ── Linked notes chips ──
+    if (note.linkedNoteIds && note.linkedNoteIds.length > 0) {
+      const linksRow = mkEl('div', 'note-links-row');
+      note.linkedNoteIds.forEach(targetId => {
+        const target = notes.find(n => n.id === targetId);
+        if (!target) return; // note was deleted
+        const chip = mkEl('button', 'note-link-chip');
+        const label = mkEl('span', '', target.title);
+        const unlinkBtn = mkEl('span', 'note-link-unlink', '✕');
+        unlinkBtn.title = 'Remove link';
+        chip.title = target.title;
+        chip.append(label, unlinkBtn);
+        chip.addEventListener('click', e => {
+          if (e.target === unlinkBtn || unlinkBtn.contains(e.target)) {
+            e.stopPropagation();
+            vscode.postMessage({ type: 'unlinkNote', noteId: note.id, targetId });
+          } else {
+            vscode.postMessage({ type: 'openLinkedNote', noteId: targetId });
+          }
+        });
+        linksRow.appendChild(chip);
+      });
+      if (linksRow.children.length > 0) card.appendChild(linksRow);
     }
 
     // ── Conflict badge ──

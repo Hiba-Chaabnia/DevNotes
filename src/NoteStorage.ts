@@ -37,8 +37,9 @@ export interface Note {
   branch?: string;       // optional git branch scope — undefined means visible on all branches
   remindAt?: number;     // Unix timestamp (ms) for when a reminder should fire; undefined = no reminder
   owner?: string;        // git user name (or email) of whoever created this note
-  archived?: boolean;    // when true, note is hidden from the main list
-  github?: GitHubLink;   // linked GitHub issue or PR
+  archived?: boolean;       // when true, note is hidden from the main list
+  linkedNoteIds?: string[]; // IDs of other notes linked to this one
+  github?: GitHubLink;      // linked GitHub issue or PR
   conflicted?: boolean;  // true when the file on disk contains unresolved git conflict markers
   createdAt: number;
   updatedAt: number;
@@ -532,7 +533,10 @@ export class NoteStorage {
         branch     : typeof meta.branch === 'string' && meta.branch ? meta.branch : undefined,
         owner      : typeof meta.owner  === 'string' && meta.owner  ? meta.owner  : undefined,
         remindAt   : meta.remindAt ? Number(meta.remindAt) : undefined,
-        archived   : meta.archived === true || undefined,
+        archived      : meta.archived === true || undefined,
+        linkedNoteIds : (typeof meta.linked_notes === 'string' && meta.linked_notes)
+          ? meta.linked_notes.split(',').filter(Boolean)
+          : undefined,
         github     : (meta.github_url && meta.github_number)
           ? {
               url    : String(meta.github_url),
@@ -584,6 +588,7 @@ export class NoteStorage {
       if (note.owner)     meta.owner     = note.owner;
       if (note.remindAt)  meta.remindAt  = note.remindAt;
       if (note.archived)  meta.archived  = true;
+      if (note.linkedNoteIds?.length) meta.linked_notes = note.linkedNoteIds.join(',');
       if (note.github) {
         meta.github_url    = note.github.url;
         meta.github_repo   = note.github.repo;

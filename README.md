@@ -25,6 +25,7 @@ A VS Code extension that gives you a **project-scoped note panel** — rich text
 - **Conflict resolution UI** — when a shared note has a git merge conflict, a visual two-column panel lets you keep yours, keep theirs, or merge both versions
 - **Note ownership** — notes are automatically attributed to the git user who created them; filter to your own notes instantly with the "Mine" button
 - **GitHub integration** — one-click OAuth connection via the sidebar; link any note to an existing issue or PR, or create a new GitHub issue directly from a note; a color-coded status badge (green open, grey closed, purple merged) appears on the card; filter notes by GitHub status (open/closed/merged) using the filter bar that appears automatically when linked notes exist; the MCP server fetches the full description and comments so Claude can reason about the issue without leaving your workspace
+- **Note linking** — link any note to one or more other notes; linked notes appear as clickable chips on the card and open instantly in the rich editor; links are stored in frontmatter and survive restarts and git syncs
 - **Card keyboard shortcuts** — navigate the note list with arrow keys and trigger actions (open, star, archive, rename, delete) without touching the mouse
 - **Claude Code integration** — an MCP server lets Claude Code create notes, read them, append solutions, query todos, and generate standups or PR handoffs — all talking to the same `.devnotes/` files the extension uses
 
@@ -268,6 +269,34 @@ The item updates instantly on every editor tab switch — if you move to a file 
 ### Compatibility
 
 Both items use the standard VS Code Extension API and work in all VS Code-based editors: VS Code, Windsurf, Cursor, and VSCodium.
+
+## Note Linking
+
+Notes can be linked to each other to build a lightweight knowledge graph across your workspace.
+
+### Creating a link
+
+Click the chain-link-with-arrow button (↗) in a card's action bar. A VS Code quick pick lists all other non-archived notes not already linked to this one — searchable by title or tags. Pick one to create the link.
+
+### Navigating links
+
+Linked notes appear as `↗ Note Title` chips below the tag row on the card. Clicking a chip opens that note in the rich editor immediately.
+
+### Removing a link
+
+Hover a chip and click the `✕` that appears on the right. Only the link is removed — neither note is deleted.
+
+### Note format with links
+
+```markdown
+---
+id: abc123
+title: Auth bug
+linked_notes: def456,ghi789
+---
+```
+
+`linked_notes` is a comma-separated list of note IDs. Links are one-directional — linking note A to note B does not automatically add a back-link from B to A.
 
 ## Card Keyboard Shortcuts
 
