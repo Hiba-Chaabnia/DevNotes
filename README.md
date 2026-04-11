@@ -24,7 +24,7 @@ A VS Code extension that gives you a **project-scoped note panel** — rich text
 - **Activity feed** — a live panel showing recent changes to shared notes, grouped by day with owner avatars and clickable titles
 - **Conflict resolution UI** — when a shared note has a git merge conflict, a visual two-column panel lets you keep yours, keep theirs, or merge both versions
 - **Note ownership** — notes are automatically attributed to the git user who created them; filter to your own notes instantly with the "Mine" button
-- **GitHub integration** — one-click OAuth connection via the sidebar; link any note to an existing issue or PR, or create a new GitHub issue directly from a note; a color-coded status badge (green open, grey closed, purple merged) appears on the card; the MCP server fetches the full description and comments so Claude can reason about the issue without leaving your workspace
+- **GitHub integration** — one-click OAuth connection via the sidebar; link any note to an existing issue or PR, or create a new GitHub issue directly from a note; a color-coded status badge (green open, grey closed, purple merged) appears on the card; filter notes by GitHub status (open/closed/merged) using the filter bar that appears automatically when linked notes exist; the MCP server fetches the full description and comments so Claude can reason about the issue without leaving your workspace
 - **Card keyboard shortcuts** — navigate the note list with arrow keys and trigger actions (open, star, archive, rename, delete) without touching the mouse
 - **Claude Code integration** — an MCP server lets Claude Code create notes, read them, append solutions, query todos, and generate standups or PR handoffs — all talking to the same `.devnotes/` files the extension uses
 
@@ -758,6 +758,18 @@ Once a note is linked, a badge appears directly on the card:
 | Merged (PR) | Purple badge — `● PR#42 merged` |
 
 Hovering the badge shows the issue title as a tooltip. Clicking it opens the issue or PR in the browser.
+
+**Filtering by GitHub status**
+
+When at least one non-archived note has a GitHub link, a filter bar appears between the tag bar and the card list:
+
+```
+GitHub:  All  ● Open  ● Closed  ● Merged
+```
+
+- Only statuses that exist in the current note list are shown — no ghost chips for unused states
+- Clicking a chip filters the list to notes with that exact status; **All** clears the filter
+- The bar hides automatically when no linked notes are visible (e.g. when the archive view is open)
 
 **Creating an issue from a note**
 

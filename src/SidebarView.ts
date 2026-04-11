@@ -540,6 +540,50 @@ export class SidebarView implements vscode.WebviewViewProvider {
     flex-shrink: 0;
   }
 
+  .github-filter-bar {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 5px 10px;
+    border-bottom: 1px solid var(--vscode-panel-border);
+    flex-shrink: 0;
+  }
+  .github-filter-bar .gh-chip {
+    font-size: 11px;
+    padding: 2px 7px;
+    border-radius: 20px;
+    border: 1.5px solid transparent;
+    cursor: pointer;
+    font-weight: 500;
+    background: var(--vscode-button-secondaryBackground);
+    color: var(--vscode-button-secondaryForeground);
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    white-space: nowrap;
+    transition: opacity .12s;
+  }
+  .github-filter-bar .gh-chip:hover { opacity: .85; }
+  .github-filter-bar .gh-chip.active {
+    background: var(--vscode-button-background);
+    color: var(--vscode-button-foreground);
+    border-color: transparent;
+  }
+  .github-filter-bar .gh-chip .gh-dot {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .github-filter-bar .gh-chip.open-chip  .gh-dot { background: #06d6a0; }
+  .github-filter-bar .gh-chip.closed-chip .gh-dot { background: #888; }
+  .github-filter-bar .gh-chip.merged-chip .gh-dot { background: #8250df; }
+  .github-filter-bar .gh-filter-label {
+    font-size: 10px;
+    opacity: .5;
+    margin-right: 2px;
+    white-space: nowrap;
+  }
+
   .tag-chip {
     font-size: 11px;
     padding: 2px 7px;
@@ -1450,6 +1494,9 @@ export class SidebarView implements vscode.WebviewViewProvider {
 <!-- ── Tag filter bar ── -->
 <div class="tag-bar" id="tag-bar"></div>
 
+<!-- ── GitHub status filter bar ── -->
+<div class="github-filter-bar" id="github-filter-bar" style="display:none"></div>
+
 <!-- ── Tag manager panel ── -->
 <div class="tag-manager" id="tag-manager" style="display:none"></div>
 
@@ -1494,7 +1541,8 @@ export class SidebarView implements vscode.WebviewViewProvider {
   let branchFilterActive  = false;
   let mineFilterActive    = false;
   let githubConnected     = false;
-  let showArchived        = false;
+  let showArchived           = false;
+  let githubStatusFilter     = null; // null | 'open' | 'closed' | 'merged'
   let selectMode         = false;
   let selectedIds        = [];
   let openColorPop    = null;
@@ -1517,7 +1565,8 @@ export class SidebarView implements vscode.WebviewViewProvider {
   const btnSelect         = document.getElementById('btn-select');
   const exportBar         = document.getElementById('export-bar');
   const exportCountEl     = document.getElementById('export-count');
-  const branchPillEl      = document.getElementById('branch-pill');
+  const branchPillEl         = document.getElementById('branch-pill');
+  const githubFilterBar      = document.getElementById('github-filter-bar');
   const branchFilterBtn   = document.getElementById('btn-branch-filter');
   const branchScopeLabel  = document.getElementById('branch-scope-label');
   const branchScopeNameEl = document.getElementById('branch-scope-name');
@@ -1549,6 +1598,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
     showArchived = !showArchived;
     btnArchiveView.classList.toggle('active', showArchived);
     btnArchiveView.title = showArchived ? 'Back to notes' : 'Show archived notes';
+    githubStatusFilter = null;
     renderCards();
   });
 
@@ -1922,6 +1972,9 @@ export class SidebarView implements vscode.WebviewViewProvider {
       if (showArchived ? !n.archived : n.archived) return false;
       if (mineFilterActive && currentUser && n.owner && n.owner !== currentUser) return false;
       if (branchFilterActive && currentBranch && n.branch && n.branch !== currentBranch) return false;
+      if (githubStatusFilter) {
+        if (!n.github || n.github.status !== githubStatusFilter) return false;
+      }
       if (searchQuery) {
         const tagText = n.tags.map(tid => { const t = tags.find(t => t.id === tid); return t ? t.label : ''; }).join(' ').toLowerCase();
         if (!n.title.toLowerCase().includes(searchQuery) &&
@@ -1933,7 +1986,43 @@ export class SidebarView implements vscode.WebviewViewProvider {
     });
   }
 
+  function renderGitHubFilterBar() {
+    const linkedNotes = notes.filter(n => !n.archived && n.github);
+    githubFilterBar.style.display = linkedNotes.length > 0 ? '' : 'none';
+    if (linkedNotes.length === 0) return;
+
+    githubFilterBar.innerHTML = '';
+    const label = mkEl('span', 'gh-filter-label', 'GitHub:');
+    githubFilterBar.appendChild(label);
+
+    const statuses = [
+      { key: null,     text: 'All' },
+      { key: 'open',   text: 'Open',   cls: 'open-chip'   },
+      { key: 'closed', text: 'Closed', cls: 'closed-chip' },
+      { key: 'merged', text: 'Merged', cls: 'merged-chip' },
+    ];
+
+    statuses.forEach(({ key, text, cls }) => {
+      // Only show status chips that have at least one matching note
+      if (key !== null && !linkedNotes.some(n => n.github.status === key)) return;
+
+      const chip = mkEl('button', 'gh-chip' + (cls ? ' ' + cls : '') + (githubStatusFilter === key ? ' active' : ''));
+      if (cls) {
+        const dot = mkEl('span', 'gh-dot');
+        chip.appendChild(dot);
+      }
+      chip.appendChild(mkEl('span', '', text));
+      chip.addEventListener('click', () => {
+        githubStatusFilter = key;
+        renderGitHubFilterBar();
+        renderCards();
+      });
+      githubFilterBar.appendChild(chip);
+    });
+  }
+
   function renderCards() {
+    renderGitHubFilterBar();
     cardList.innerHTML = '';
     const visible = visibleNotes();
     if (visible.length === 0) {
