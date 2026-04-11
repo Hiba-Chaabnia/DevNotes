@@ -24,7 +24,7 @@ A VS Code extension that gives you a **project-scoped note panel** — rich text
 - **Activity feed** — a live panel showing recent changes to shared notes, grouped by day with owner avatars and clickable titles
 - **Conflict resolution UI** — when a shared note has a git merge conflict, a visual two-column panel lets you keep yours, keep theirs, or merge both versions
 - **Note ownership** — notes are automatically attributed to the git user who created them; filter to your own notes instantly with the "Mine" button
-- **GitHub integration** — one-click OAuth connection via the sidebar; link any note to a GitHub issue or PR; a color-coded status badge (green open, grey closed, purple merged) appears on the card and opens the issue in the browser on click; the MCP server fetches the full description and comments so Claude can reason about the issue without leaving your workspace
+- **GitHub integration** — one-click OAuth connection via the sidebar; link any note to an existing issue or PR, or create a new GitHub issue directly from a note; a color-coded status badge (green open, grey closed, purple merged) appears on the card; the MCP server fetches the full description and comments so Claude can reason about the issue without leaving your workspace
 - **Card keyboard shortcuts** — navigate the note list with arrow keys and trigger actions (open, star, archive, rename, delete) without touching the mouse
 - **Claude Code integration** — an MCP server lets Claude Code create notes, read them, append solutions, query todos, and generate standups or PR handoffs — all talking to the same `.devnotes/` files the extension uses
 
@@ -758,6 +758,16 @@ Once a note is linked, a badge appears directly on the card:
 | Merged (PR) | Purple badge — `● PR#42 merged` |
 
 Hovering the badge shows the issue title as a tooltip. Clicking it opens the issue or PR in the browser.
+
+**Creating an issue from a note**
+
+When GitHub is connected and a note has no existing GitHub link, a circle-dot icon (the GitHub issues icon) appears in the card's action bar. Clicking it:
+
+1. Pre-fills the issue title with the note's title — edit it if needed and press Enter
+2. Uses the workspace's git remote to detect the repo automatically; if the remote isn't a GitHub URL, VS Code asks for `owner/repo`
+3. Posts the note's content as the issue body via the GitHub API
+4. Writes the new issue URL back to the note's frontmatter immediately — the green badge appears on the card straight away
+5. Offers to open the new issue in the browser
 
 **Workflow:**
 

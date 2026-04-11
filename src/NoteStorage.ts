@@ -8,6 +8,15 @@ export interface CodeLink {
   line: number;   // 1-based line number
 }
 
+export interface GitHubLink {
+  url: string;
+  repo: string;        // "owner/repo"
+  number: number;
+  type: 'issue' | 'pr';
+  status: string;      // "open" | "closed" | "merged"
+  title?: string;
+}
+
 export interface Template {
   id: string;
   name: string;
@@ -29,6 +38,7 @@ export interface Note {
   remindAt?: number;     // Unix timestamp (ms) for when a reminder should fire; undefined = no reminder
   owner?: string;        // git user name (or email) of whoever created this note
   archived?: boolean;    // when true, note is hidden from the main list
+  github?: GitHubLink;   // linked GitHub issue or PR
   conflicted?: boolean;  // true when the file on disk contains unresolved git conflict markers
   createdAt: number;
   updatedAt: number;
@@ -523,6 +533,16 @@ export class NoteStorage {
         owner      : typeof meta.owner  === 'string' && meta.owner  ? meta.owner  : undefined,
         remindAt   : meta.remindAt ? Number(meta.remindAt) : undefined,
         archived   : meta.archived === true || undefined,
+        github     : (meta.github_url && meta.github_number)
+          ? {
+              url    : String(meta.github_url),
+              repo   : String(meta.github_repo   ?? ''),
+              number : Number(meta.github_number),
+              type   : (meta.github_type === 'pr' ? 'pr' : 'issue') as 'issue' | 'pr',
+              status : String(meta.github_status  ?? 'open'),
+              title  : meta.github_title ? String(meta.github_title) : undefined,
+            }
+          : undefined,
         conflicted : isConflicted || undefined,
         createdAt  : Number(meta.createdAt ?? Date.now()),
         updatedAt  : Number(meta.updatedAt ?? Date.now()),
@@ -564,6 +584,14 @@ export class NoteStorage {
       if (note.owner)     meta.owner     = note.owner;
       if (note.remindAt)  meta.remindAt  = note.remindAt;
       if (note.archived)  meta.archived  = true;
+      if (note.github) {
+        meta.github_url    = note.github.url;
+        meta.github_repo   = note.github.repo;
+        meta.github_number = note.github.number;
+        meta.github_type   = note.github.type;
+        meta.github_status = note.github.status;
+        if (note.github.title) meta.github_title = note.github.title;
+      }
       if (note.codeLink) {
         meta.codeLink_file = note.codeLink.file;
         meta.codeLink_line = note.codeLink.line;

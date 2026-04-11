@@ -1,7 +1,9 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
+import * as https from 'https';
 import * as path from 'path';
-import { NoteStorage, Note, Tag, Template, NOTE_COLORS, DEFAULT_TAGS } from './NoteStorage';
+import { NoteStorage, Note, Tag, Template, GitHubLink, NOTE_COLORS, DEFAULT_TAGS } from './NoteStorage';
+import { detectProjectIdentity } from './GitDetector';
 
 // ─── Message types ────────────────────────────────────────────────────────────
 
@@ -26,7 +28,8 @@ type ToExt =
   | { type: 'connectGitHub' }
   | { type: 'archiveNote'; id: string }
   | { type: 'unarchiveNote'; id: string }
-  | { type: 'registerMcp' };
+  | { type: 'registerMcp' }
+  | { type: 'createGitHubIssue'; noteId: string };
 
 // ─── Provider ────────────────────────────────────────────────────────────────
 
@@ -341,6 +344,67 @@ export class SidebarView implements vscode.WebviewViewProvider {
           vscode.window.showInformationMessage('GitHub connected! Claude can now link notes to issues and PRs.');
         } catch {
           vscode.window.showErrorMessage('GitHub sign-in was cancelled or failed.');
+        }
+        break;
+      }
+
+      case 'createGitHubIssue': {
+        const wsRoot = vscode.workspace.workspaceFolders?.[0]?.uri;
+        if (!wsRoot) break;
+
+        const note = this.storage.getNote(msg.noteId);
+        if (!note) break;
+
+        const tokenFile = path.join(wsRoot.fsPath, '.devnotes', '.github-token');
+        let token: string | undefined;
+        try { token = fs.readFileSync(tokenFile, 'utf-8').trim(); } catch {}
+        if (!token) {
+          vscode.window.showErrorMessage('DevNotes: connect to GitHub first (click the Octocat button in the sidebar).');
+          break;
+        }
+
+        // Detect owner/repo from git remote
+        const identity = detectProjectIdentity();
+        let ownerRepo = identity?.remoteUrl ? parseGitHubOwnerRepo(identity.remoteUrl) : undefined;
+
+        if (!ownerRepo) {
+          const input = await vscode.window.showInputBox({
+            prompt      : 'GitHub repository (owner/repo)',
+            placeHolder : 'e.g. microsoft/vscode',
+            validateInput: v => v.includes('/') ? undefined : 'Use owner/repo format',
+          });
+          if (!input) break;
+          const [owner, repo] = input.trim().split('/');
+          ownerRepo = { owner, repo };
+        }
+
+        const title = await vscode.window.showInputBox({
+          prompt: `Create issue in ${ownerRepo.owner}/${ownerRepo.repo}`,
+          value : note.title,
+        });
+        if (!title) break;
+
+        try {
+          const issue = await githubCreateIssue(token, ownerRepo.owner, ownerRepo.repo, title, note.content);
+          const github: GitHubLink = {
+            url   : issue.html_url,
+            repo  : `${ownerRepo.owner}/${ownerRepo.repo}`,
+            number: issue.number,
+            type  : 'issue',
+            status: 'open',
+            title : issue.title,
+          };
+          await this.storage.updateNote(msg.noteId, { github });
+          this.push();
+          const action = await vscode.window.showInformationMessage(
+            `Issue #${issue.number} created: "${issue.title}"`,
+            'Open in Browser'
+          );
+          if (action === 'Open in Browser') {
+            vscode.env.openExternal(vscode.Uri.parse(issue.html_url));
+          }
+        } catch (err: any) {
+          vscode.window.showErrorMessage(`DevNotes: failed to create issue — ${err.message ?? err}`);
         }
         break;
       }
@@ -2051,6 +2115,18 @@ export class SidebarView implements vscode.WebviewViewProvider {
       vscode.postMessage({ type: 'openEditor', noteId: note.id });
     });
 
+    // ── Create GitHub issue button (only when connected and not yet linked) ──
+    const ghIssueBtn = mkEl('button', 'card-btn');
+    ghIssueBtn.title = 'Create GitHub issue from this note';
+    ghIssueBtn.innerHTML = \`<svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
+      <path d="M8 9.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3Z"/>
+      <path d="M8 0a8 8 0 1 1 0 16A8 8 0 0 1 8 0ZM1.5 8a6.5 6.5 0 1 0 13 0 6.5 6.5 0 0 0-13 0Z"/>
+    </svg>\`;
+    ghIssueBtn.style.display = (githubConnected && !note.github) ? '' : 'none';
+    ghIssueBtn.addEventListener('click', () => {
+      vscode.postMessage({ type: 'createGitHubIssue', noteId: note.id });
+    });
+
     // ── Archive / unarchive button ──
     const archiveBtn = mkEl('button', 'card-btn', note.archived ? '↩' : '📦');
     archiveBtn.title = note.archived ? 'Unarchive note' : 'Archive note';
@@ -2065,7 +2141,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
       vscode.postMessage({ type: 'deleteNote', id: note.id });
     });
 
-    actions.append(tagBtn, linkBtn, branchBtn, bellBtn, shareBtn, colorBtn, editBtn, archiveBtn, delBtn);
+    actions.append(tagBtn, linkBtn, branchBtn, bellBtn, shareBtn, colorBtn, editBtn, ghIssueBtn, archiveBtn, delBtn);
     hdr.append(starBtn, title, actions);
     card.append(hdr, colorPop, tagPop);
 
@@ -2392,4 +2468,54 @@ export class SidebarView implements vscode.WebviewViewProvider {
 function getNonce(): string {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
   return Array.from({ length: 32 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
+}
+
+function parseGitHubOwnerRepo(remoteUrl: string): { owner: string; repo: string } | undefined {
+  const cleaned = remoteUrl.replace(/\.git$/, '');
+  const sshMatch   = cleaned.match(/github\.com[:/]([^/]+)\/([^/]+)$/);
+  if (sshMatch)   return { owner: sshMatch[1],   repo: sshMatch[2] };
+  const httpsMatch = cleaned.match(/github\.com\/([^/]+)\/([^/]+)$/);
+  if (httpsMatch) return { owner: httpsMatch[1], repo: httpsMatch[2] };
+  return undefined;
+}
+
+function githubCreateIssue(
+  token: string,
+  owner: string,
+  repo : string,
+  title: string,
+  body : string,
+): Promise<{ html_url: string; number: number; title: string }> {
+  return new Promise((resolve, reject) => {
+    const payload = JSON.stringify({ title, body });
+    const req = https.request(
+      {
+        hostname: 'api.github.com',
+        path    : `/repos/${owner}/${repo}/issues`,
+        method  : 'POST',
+        headers : {
+          'Authorization'        : `Bearer ${token}`,
+          'Accept'               : 'application/vnd.github+json',
+          'Content-Type'         : 'application/json',
+          'Content-Length'       : Buffer.byteLength(payload),
+          'User-Agent'           : 'DevNotes-VSCode',
+          'X-GitHub-Api-Version' : '2022-11-28',
+        },
+      },
+      res => {
+        let data = '';
+        res.on('data', (chunk: Buffer) => { data += chunk; });
+        res.on('end', () => {
+          if (res.statusCode === 201) {
+            resolve(JSON.parse(data));
+          } else {
+            reject(new Error(`GitHub API returned ${res.statusCode}: ${data}`));
+          }
+        });
+      }
+    );
+    req.on('error', reject);
+    req.write(payload);
+    req.end();
+  });
 }
