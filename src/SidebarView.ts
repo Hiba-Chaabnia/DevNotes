@@ -740,6 +740,8 @@ export class SidebarView implements vscode.WebviewViewProvider {
   }
   .tag-chip:hover .tag-chip-delete { opacity: .65; }
   .tag-chip-delete:hover { opacity: 1 !important; background: rgba(0,0,0,.15); border-radius: 50%; }
+  .tag-chip.confirming { outline: 2px solid #EF6C57; outline-offset: 1px; }
+  .tag-chip.confirming .tag-chip-delete { opacity: 1; color: #EF6C57; font-weight: 700; }
 
   .add-tag-btn {
     font-size: 11px;
@@ -842,6 +844,47 @@ export class SidebarView implements vscode.WebviewViewProvider {
     flex-shrink: 0;
   }
   .tag-mgr-del:hover { opacity: 1; background: var(--vscode-toolbar-hoverBackground); }
+
+  .tag-mgr-count {
+    font-size: 10px;
+    color: var(--vscode-descriptionForeground);
+    opacity: .55;
+    flex-shrink: 0;
+    min-width: 20px;
+    text-align: right;
+  }
+  .tag-mgr-confirm {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 2px 0;
+    font-size: 11px;
+    color: var(--vscode-foreground);
+    flex: 1;
+  }
+  .tag-mgr-confirm-msg { flex: 1; opacity: .8; }
+  .tag-mgr-confirm-yes {
+    background: #EF6C57;
+    color: #fff;
+    border: none;
+    border-radius: 3px;
+    padding: 2px 8px;
+    font-size: 11px;
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+  .tag-mgr-confirm-yes:hover { opacity: .85; }
+  .tag-mgr-confirm-no {
+    background: none;
+    border: 1px solid var(--vscode-panel-border);
+    border-radius: 3px;
+    padding: 2px 8px;
+    font-size: 11px;
+    cursor: pointer;
+    flex-shrink: 0;
+    color: var(--vscode-foreground);
+  }
+  .tag-mgr-confirm-no:hover { background: var(--vscode-toolbar-hoverBackground); }
 
   .tag-mgr-ro-label {
     flex: 1;
@@ -2096,9 +2139,22 @@ export class SidebarView implements vscode.WebviewViewProvider {
       if (!isDefault) {
         const delBtn = mkEl('span', 'tag-chip-delete', '✕');
         delBtn.title = 'Delete tag';
+        let confirmTimer = null;
         delBtn.addEventListener('click', e => {
           e.stopPropagation();
-          vscode.postMessage({ type: 'deleteTag', id: tag.id });
+          if (chip.classList.contains('confirming')) {
+            clearTimeout(confirmTimer);
+            vscode.postMessage({ type: 'deleteTag', id: tag.id });
+          } else {
+            chip.classList.add('confirming');
+            delBtn.textContent = '✓';
+            delBtn.title = 'Click to confirm deletion';
+            confirmTimer = setTimeout(() => {
+              chip.classList.remove('confirming');
+              delBtn.textContent = '✕';
+              delBtn.title = 'Delete tag';
+            }, 3000);
+          }
         });
         chip.appendChild(delBtn);
       }
@@ -2144,6 +2200,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
       mgr.appendChild(mkEl('div', 'tag-mgr-section', 'Custom tags'));
       customTags.forEach(tag => {
         const row = mkEl('div', 'tag-mgr-row');
+        const noteCount = notes.filter(n => n.tags.includes(tag.id)).length;
 
         const swatch = mkEl('div', 'tag-mgr-swatch');
         swatch.style.background = tag.color;
@@ -2175,6 +2232,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
         input.type = 'text';
         input.value = tag.label;
         input.maxLength = 24;
+        input.title = 'Rename tag — press Enter to save';
         let pendingLabel = tag.label;
         input.addEventListener('input', e => { pendingLabel = e.target.value; });
         input.addEventListener('blur', () => {
@@ -2188,13 +2246,28 @@ export class SidebarView implements vscode.WebviewViewProvider {
           if (e.key === 'Escape') { input.value = tag.label; pendingLabel = tag.label; input.blur(); }
         });
 
+        const countEl = mkEl('span', 'tag-mgr-count', noteCount > 0 ? String(noteCount) : '');
+        countEl.title = noteCount === 1 ? '1 note' : (noteCount + ' notes');
+
         const delBtn = mkEl('button', 'tag-mgr-del', '✕');
         delBtn.title = 'Delete tag';
         delBtn.addEventListener('click', () => {
-          vscode.postMessage({ type: 'deleteTag', id: tag.id });
+          row.innerHTML = '';
+          const confirmRow = mkEl('div', 'tag-mgr-confirm');
+          const suffix = noteCount !== 1 ? 's' : '';
+          const msgText = noteCount > 0
+            ? 'Delete "' + tag.label + '"? Removes it from ' + noteCount + ' note' + suffix + '.'
+            : 'Delete "' + tag.label + '"?';
+          const msg = mkEl('span', 'tag-mgr-confirm-msg', msgText);
+          const yes = mkEl('button', 'tag-mgr-confirm-yes', 'Delete');
+          const no  = mkEl('button', 'tag-mgr-confirm-no', 'Cancel');
+          yes.addEventListener('click', () => vscode.postMessage({ type: 'deleteTag', id: tag.id }));
+          no.addEventListener('click', () => renderTagManager());
+          confirmRow.append(msg, yes, no);
+          row.appendChild(confirmRow);
         });
 
-        row.append(swatch, colorPop, input, delBtn);
+        row.append(swatch, colorPop, input, countEl, delBtn);
         mgr.appendChild(row);
       });
     }
@@ -2202,12 +2275,15 @@ export class SidebarView implements vscode.WebviewViewProvider {
     if (builtinTags.length > 0) {
       mgr.appendChild(mkEl('div', 'tag-mgr-section', 'Built-in tags'));
       builtinTags.forEach(tag => {
+        const noteCount = notes.filter(n => n.tags.includes(tag.id)).length;
         const row  = mkEl('div', 'tag-mgr-row');
         const dot  = mkEl('div', 'tag-mgr-swatch tag-mgr-swatch-ro');
         dot.style.background = tag.color;
         const lbl  = mkEl('span', 'tag-mgr-ro-label', tag.label);
+        const countEl = mkEl('span', 'tag-mgr-count', noteCount > 0 ? String(noteCount) : '');
+        countEl.title = noteCount === 1 ? '1 note' : (noteCount + ' notes');
         const hint = mkEl('span', 'tag-mgr-ro-hint', 'built-in');
-        row.append(dot, lbl, hint);
+        row.append(dot, lbl, countEl, hint);
         mgr.appendChild(row);
       });
     }

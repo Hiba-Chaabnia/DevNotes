@@ -521,7 +521,11 @@ Tags are shown in the filter bar at the top of the sidebar. Click any tag to fil
 - **Create a tag** — click **+ tag** at the right end of the tag bar, enter a name, and pick a color
 - **Assign tags to a note** — click the **#** button on a card to open the tag picker; click any tag to toggle it on or off
 - **Assign tags at creation** — tags can also be selected in the new-note form before the note is created
-- **Delete a tag** — hover over a tag chip in the filter bar and click the **✕** that appears (built-in tags cannot be deleted)
+- **Delete a tag** — hover a custom tag chip in the filter bar and click **✕**; the chip highlights orange and the icon changes to **✓** — click again within 3 seconds to confirm, or wait for it to auto-cancel (built-in tags cannot be deleted)
+- **Rename a tag** — click **⚙** at the end of the tag bar to open the tag manager, then click the tag's name field, edit it, and press **Enter** (or click away) to save; press **Escape** to discard
+- **Recolor a tag** — in the tag manager, click the color dot to the left of the tag name to open a color picker
+- **See usage** — the tag manager shows a note count next to every tag (custom and built-in), so you know the impact before deleting
+- **Delete from the manager** — click **✕** in the manager row; it expands into a confirmation showing how many notes will be affected, with **Delete** and **Cancel** buttons
 
 ## Sharing Notes with Teammates
 
