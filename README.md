@@ -27,7 +27,7 @@ A VS Code extension that gives you a **project-scoped note panel** — rich text
 - **Note ownership** — notes are automatically attributed to the git user who created them; filter to your own notes instantly with the "Mine" button
 - **GitHub integration** — one-click OAuth connection via the sidebar; link any note to an existing issue or PR, or create a new GitHub issue directly from a note; a color-coded status badge (green open, grey closed, purple merged) appears on the card; filter notes by GitHub status (open/closed/merged) using the filter bar that appears automatically when linked notes exist; the MCP server fetches the full description and comments so Claude can reason about the issue without leaving your workspace
 - **Note duplication** — clone any note with one click; the copy inherits title, content, color, tags, and branch scope
-- **Note linking** — link any note to one or more other notes; linked notes appear as clickable chips on the card and open instantly in the rich editor; links are stored in frontmatter and survive restarts and git syncs
+- **Note linking** — link any note to one or more other notes with automatic back-links; linked notes appear as clickable chips on the card and open instantly in the rich editor; unlinking removes both directions at once
 - **Sort options** — cycle the note list between last updated, date created, and alphabetical order; starred notes always stay pinned to the top regardless of sort
 - **Card keyboard shortcuts** — navigate the note list with arrow keys and trigger actions (open, star, archive, rename, delete) without touching the mouse
 - **Claude Code integration** — an MCP server lets Claude Code create notes, read them, append solutions, query todos, and generate standups or PR handoffs — all talking to the same `.devnotes/` files the extension uses
@@ -296,11 +296,11 @@ Reminders, code links, GitHub links, and note-to-note links are not copied — t
 
 ## Note Linking
 
-Notes can be linked to each other to build a lightweight knowledge graph across your workspace.
+Notes can be linked to each other to build a lightweight knowledge graph across your workspace. All links are bidirectional — creating or removing a link always updates both notes simultaneously.
 
 ### Creating a link
 
-Click the chain-link-with-arrow button (↗) in a card's action bar. A VS Code quick pick lists all other non-archived notes not already linked to this one — searchable by title or tags. Pick one to create the link.
+Click the chain-link-with-arrow button (↗) in a card's action bar. A VS Code quick pick lists all other non-archived notes not already linked to this one — searchable by title or tags. Pick one to create the link. The back-link from the target note to this one is added automatically.
 
 ### Navigating links
 
@@ -308,7 +308,7 @@ Linked notes appear as `↗ Note Title` chips below the tag row on the card. Cli
 
 ### Removing a link
 
-Hover a chip and click the `✕` that appears on the right. Only the link is removed — neither note is deleted.
+Hover a chip and click the `✕` that appears on the right. Both directions are removed at once — neither note is deleted.
 
 ### Note format with links
 
@@ -320,7 +320,7 @@ linked_notes: def456,ghi789
 ---
 ```
 
-`linked_notes` is a comma-separated list of note IDs. Links are one-directional — linking note A to note B does not automatically add a back-link from B to A.
+`linked_notes` is a comma-separated list of note IDs. Links are bidirectional — linking note A to note B automatically adds a back-link from B to A. Unlinking either direction removes both sides simultaneously.
 
 ## Card Keyboard Shortcuts
 

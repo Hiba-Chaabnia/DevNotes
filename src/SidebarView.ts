@@ -499,8 +499,15 @@ export class SidebarView implements vscode.WebviewViewProvider {
           matchOnDescription: true,
         });
         if (!picked) break;
+        // Forward link: A → B
         const existing = note.linkedNoteIds ?? [];
         await this.storage.updateNote(msg.noteId, { linkedNoteIds: [...existing, picked.id] });
+        // Back-link: B → A
+        const target = this.storage.getNote(picked.id);
+        if (target && !target.linkedNoteIds?.includes(msg.noteId)) {
+          const targetExisting = target.linkedNoteIds ?? [];
+          await this.storage.updateNote(picked.id, { linkedNoteIds: [...targetExisting, msg.noteId] });
+        }
         this.push();
         break;
       }
@@ -508,8 +515,15 @@ export class SidebarView implements vscode.WebviewViewProvider {
       case 'unlinkNote': {
         const note = this.storage.getNote(msg.noteId);
         if (!note) break;
+        // Remove forward link: A → B
         const updated = (note.linkedNoteIds ?? []).filter(id => id !== msg.targetId);
         await this.storage.updateNote(msg.noteId, { linkedNoteIds: updated.length ? updated : undefined });
+        // Remove back-link: B → A
+        const target = this.storage.getNote(msg.targetId);
+        if (target) {
+          const targetUpdated = (target.linkedNoteIds ?? []).filter(id => id !== msg.noteId);
+          await this.storage.updateNote(msg.targetId, { linkedNoteIds: targetUpdated.length ? targetUpdated : undefined });
+        }
         this.push();
         break;
       }
