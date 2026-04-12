@@ -30,6 +30,9 @@ type ToExt =
   | { type: 'unarchiveNote'; id: string }
   | { type: 'registerMcp' }
   | { type: 'createGitHubIssue'; noteId: string }
+  | { type: 'bulkArchive'; noteIds: string[] }
+  | { type: 'bulkDelete';  noteIds: string[] }
+  | { type: 'bulkTag';     noteIds: string[] }
   | { type: 'linkNote'; noteId: string }
   | { type: 'unlinkNote'; noteId: string; targetId: string }
   | { type: 'openLinkedNote'; noteId: string };
@@ -348,6 +351,54 @@ export class SidebarView implements vscode.WebviewViewProvider {
         } catch {
           vscode.window.showErrorMessage('GitHub sign-in was cancelled or failed.');
         }
+        break;
+      }
+
+      case 'bulkArchive': {
+        for (const id of msg.noteIds) {
+          await this.storage.updateNote(id, { archived: true, starred: false });
+        }
+        this.push();
+        break;
+      }
+
+      case 'bulkDelete': {
+        const n = msg.noteIds.length;
+        const ans = await vscode.window.showWarningMessage(
+          `Delete ${n} note${n !== 1 ? 's' : ''}? This cannot be undone.`,
+          { modal: true },
+          'Delete'
+        );
+        if (ans !== 'Delete') break;
+        for (const id of msg.noteIds) {
+          await this.storage.deleteNote(id);
+        }
+        this.push();
+        break;
+      }
+
+      case 'bulkTag': {
+        if (this.storage.getTags().length === 0) {
+          vscode.window.showInformationMessage('No tags exist yet — create a tag first.');
+          break;
+        }
+        type TItem = vscode.QuickPickItem & { id: string };
+        const items: TItem[] = this.storage.getTags().map(t => ({
+          id   : t.id,
+          label: t.label,
+        }));
+        const picked = await vscode.window.showQuickPick(items, {
+          placeHolder: 'Choose a tag to add to all selected notes…',
+        });
+        if (!picked) break;
+        for (const id of msg.noteIds) {
+          const note = this.storage.getNote(id);
+          if (!note) continue;
+          if (!note.tags.includes(picked.id)) {
+            await this.storage.updateNote(id, { tags: [...note.tags, picked.id] });
+          }
+        }
+        this.push();
         break;
       }
 
@@ -1175,12 +1226,21 @@ export class SidebarView implements vscode.WebviewViewProvider {
     gap: 8px;
   }
   .export-bar.visible { display: flex; }
+  .export-bar .btn { font-size: 11px; padding: 3px 7px; }
   .export-count {
     flex: 1;
     font-size: 12px;
     color: var(--vscode-foreground);
     opacity: .85;
   }
+  .btn-danger {
+    color: var(--vscode-errorForeground) !important;
+    border-color: var(--vscode-errorForeground) !important;
+    opacity: .75;
+  }
+  .btn-danger:hover { opacity: 1; }
+  .btn-sel-all { opacity: .7; }
+  .btn-sel-all.all-selected { opacity: 1; font-weight: 700; }
 
   /* ── Branch indicator & filter ──────────────────────── */
   .branch-pill {
@@ -1601,7 +1661,11 @@ export class SidebarView implements vscode.WebviewViewProvider {
 <!-- ── Export bar (selection mode) ── -->
 <div class="export-bar" id="export-bar">
   <span class="export-count" id="export-count">0 notes selected</span>
-  <button class="btn btn-primary" id="btn-export-sel">Export</button>
+  <button class="btn btn-ghost btn-sel-all" id="btn-sel-all" title="Select all visible notes">All</button>
+  <button class="btn btn-ghost" id="btn-archive-sel" title="Archive selected">📦</button>
+  <button class="btn btn-ghost" id="btn-tag-sel" title="Assign tag to selected">#</button>
+  <button class="btn btn-ghost" id="btn-export-sel" title="Export selected">↓</button>
+  <button class="btn btn-ghost btn-danger" id="btn-delete-sel" title="Delete selected">✕</button>
   <button class="btn btn-ghost" id="btn-cancel-sel">Cancel</button>
 </div>
 
@@ -1660,7 +1724,6 @@ export class SidebarView implements vscode.WebviewViewProvider {
   const btnMineFilter     = document.getElementById('btn-mine-filter');
   const btnSelect         = document.getElementById('btn-select');
   const exportBar         = document.getElementById('export-bar');
-  const exportCountEl     = document.getElementById('export-count');
   const branchPillEl         = document.getElementById('branch-pill');
   const githubFilterBar      = document.getElementById('github-filter-bar');
   const btnSort              = document.getElementById('btn-sort');
@@ -1727,13 +1790,17 @@ export class SidebarView implements vscode.WebviewViewProvider {
   });
 
   // ── Selection mode ───────────────────────────────────────────────────────
+  const exportCountEl  = document.getElementById('export-count');
+  const btnSelAll      = document.getElementById('btn-sel-all');
+
   function exitSelectMode() {
     selectMode  = false;
     selectedIds = [];
     btnSelect.classList.remove('active');
-    btnSelect.title = 'Select notes to export';
+    btnSelect.title = 'Select notes';
     cardList.classList.remove('select-mode');
     exportBar.classList.remove('visible');
+    btnSelAll.classList.remove('all-selected');
     cardList.querySelectorAll('.card.selected').forEach(c => c.classList.remove('selected'));
   }
 
@@ -1741,6 +1808,9 @@ export class SidebarView implements vscode.WebviewViewProvider {
     const n = selectedIds.length;
     exportCountEl.textContent = n + ' note' + (n !== 1 ? 's' : '') + ' selected';
     exportBar.classList.toggle('visible', n > 0);
+    const visibleCount = cardList.querySelectorAll('.card[tabindex="0"]').length;
+    btnSelAll.classList.toggle('all-selected', n > 0 && n === visibleCount);
+    btnSelAll.title = (n > 0 && n === visibleCount) ? 'Deselect all' : 'Select all visible notes';
   }
 
   btnSelect.addEventListener('click', () => {
@@ -1751,9 +1821,41 @@ export class SidebarView implements vscode.WebviewViewProvider {
     cardList.classList.add('select-mode');
   });
 
+  // Select / deselect all visible
+  btnSelAll.addEventListener('click', () => {
+    const allCards = [...cardList.querySelectorAll('.card[tabindex="0"]')];
+    const allSelected = allCards.length > 0 && allCards.every(c => selectedIds.includes(c.dataset.id));
+    if (allSelected) {
+      selectedIds = [];
+      allCards.forEach(c => c.classList.remove('selected'));
+    } else {
+      selectedIds = allCards.map(c => c.dataset.id);
+      allCards.forEach(c => c.classList.add('selected'));
+    }
+    updateExportBar();
+  });
+
   document.getElementById('btn-export-sel').addEventListener('click', () => {
     if (selectedIds.length === 0) return;
     vscode.postMessage({ type: 'exportNotes', noteIds: [...selectedIds] });
+    exitSelectMode();
+  });
+
+  document.getElementById('btn-archive-sel').addEventListener('click', () => {
+    if (selectedIds.length === 0) return;
+    vscode.postMessage({ type: 'bulkArchive', noteIds: [...selectedIds] });
+    exitSelectMode();
+  });
+
+  document.getElementById('btn-tag-sel').addEventListener('click', () => {
+    if (selectedIds.length === 0) return;
+    vscode.postMessage({ type: 'bulkTag', noteIds: [...selectedIds] });
+    exitSelectMode();
+  });
+
+  document.getElementById('btn-delete-sel').addEventListener('click', () => {
+    if (selectedIds.length === 0) return;
+    vscode.postMessage({ type: 'bulkDelete', noteIds: [...selectedIds] });
     exitSelectMode();
   });
 
