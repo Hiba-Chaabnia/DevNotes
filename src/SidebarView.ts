@@ -1500,6 +1500,15 @@ export class SidebarView implements vscode.WebviewViewProvider {
   }
   .note-link-chip:hover .note-link-unlink { opacity: .55; }
   .note-link-unlink:hover { opacity: 1 !important; }
+
+  .sort-btn {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: -.3px;
+    min-width: 22px;
+    padding: 0 3px;
+  }
+  .sort-btn.active { color: var(--vscode-button-background); opacity: 1; }
 </style>
 </head>
 <body>
@@ -1545,6 +1554,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
         <circle cx="12" cy="3" r="1.5"/>
       </svg>
     </button>
+    <button class="icon-btn sort-btn" id="btn-sort" title="Sort: last updated">↓U</button>
     <button class="icon-btn" id="btn-new" title="New Note">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
         <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
@@ -1627,6 +1637,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
   let mineFilterActive    = false;
   let githubConnected     = false;
   let showArchived           = false;
+  let sortMode               = 'updated'; // 'updated' | 'created' | 'alpha'
   let githubStatusFilter     = null; // null | 'open' | 'closed' | 'merged'
   let selectMode         = false;
   let selectedIds        = [];
@@ -1652,6 +1663,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
   const exportCountEl     = document.getElementById('export-count');
   const branchPillEl         = document.getElementById('branch-pill');
   const githubFilterBar      = document.getElementById('github-filter-bar');
+  const btnSort              = document.getElementById('btn-sort');
   const branchFilterBtn   = document.getElementById('btn-branch-filter');
   const branchScopeLabel  = document.getElementById('branch-scope-label');
   const branchScopeNameEl = document.getElementById('branch-scope-name');
@@ -1673,6 +1685,22 @@ export class SidebarView implements vscode.WebviewViewProvider {
     mineFilterActive = !mineFilterActive;
     btnMineFilter.classList.toggle('active', mineFilterActive);
     btnMineFilter.title = mineFilterActive ? 'Show all notes' : 'Show only my notes';
+    renderCards();
+  });
+
+  // ── Sort mode cycle ──────────────────────────────────────────────────────
+  const SORT_MODES = [
+    { key: 'updated', label: '↓U', title: 'Sort: last updated' },
+    { key: 'created', label: '↓C', title: 'Sort: date created' },
+    { key: 'alpha',   label: 'A–Z', title: 'Sort: alphabetical' },
+  ];
+  btnSort.addEventListener('click', () => {
+    const idx = SORT_MODES.findIndex(m => m.key === sortMode);
+    const next = SORT_MODES[(idx + 1) % SORT_MODES.length];
+    sortMode = next.key;
+    btnSort.textContent = next.label;
+    btnSort.title = next.title;
+    btnSort.classList.toggle('active', sortMode !== 'updated');
     renderCards();
   });
 
@@ -2123,7 +2151,13 @@ export class SidebarView implements vscode.WebviewViewProvider {
       return;
     }
     [...visible]
-      .sort((a, b) => (b.starred ? 1 : 0) - (a.starred ? 1 : 0) || b.updatedAt - a.updatedAt)
+      .sort((a, b) => {
+        const starDiff = (b.starred ? 1 : 0) - (a.starred ? 1 : 0);
+        if (starDiff !== 0) return starDiff;
+        if (sortMode === 'alpha')   return a.title.localeCompare(b.title);
+        if (sortMode === 'created') return b.createdAt - a.createdAt;
+        return b.updatedAt - a.updatedAt;
+      })
       .forEach(note => cardList.appendChild(buildCard(note)));
   }
 

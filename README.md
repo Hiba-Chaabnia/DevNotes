@@ -26,6 +26,7 @@ A VS Code extension that gives you a **project-scoped note panel** — rich text
 - **Note ownership** — notes are automatically attributed to the git user who created them; filter to your own notes instantly with the "Mine" button
 - **GitHub integration** — one-click OAuth connection via the sidebar; link any note to an existing issue or PR, or create a new GitHub issue directly from a note; a color-coded status badge (green open, grey closed, purple merged) appears on the card; filter notes by GitHub status (open/closed/merged) using the filter bar that appears automatically when linked notes exist; the MCP server fetches the full description and comments so Claude can reason about the issue without leaving your workspace
 - **Note linking** — link any note to one or more other notes; linked notes appear as clickable chips on the card and open instantly in the rich editor; links are stored in frontmatter and survive restarts and git syncs
+- **Sort options** — cycle the note list between last updated, date created, and alphabetical order; starred notes always stay pinned to the top regardless of sort
 - **Card keyboard shortcuts** — navigate the note list with arrow keys and trigger actions (open, star, archive, rename, delete) without touching the mouse
 - **Claude Code integration** — an MCP server lets Claude Code create notes, read them, append solutions, query todos, and generate standups or PR handoffs — all talking to the same `.devnotes/` files the extension uses
 
@@ -269,6 +270,18 @@ The item updates instantly on every editor tab switch — if you move to a file 
 ### Compatibility
 
 Both items use the standard VS Code Extension API and work in all VS Code-based editors: VS Code, Windsurf, Cursor, and VSCodium.
+
+## Sort Options
+
+Click the sort button (**↓U**) in the sidebar toolbar to cycle through three sort modes:
+
+| Button | Mode | Order |
+|--------|------|-------|
+| `↓U` | Last updated | Most recently edited first (default) |
+| `↓C` | Date created | Newest notes first |
+| `A–Z` | Alphabetical | A to Z by title |
+
+Starred notes are always pinned to the top regardless of the active sort mode. The button turns accent-coloured when a non-default sort is active so you can tell at a glance that the list is reordered.
 
 ## Note Linking
 
