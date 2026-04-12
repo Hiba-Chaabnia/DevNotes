@@ -30,9 +30,10 @@ type ToExt =
   | { type: 'unarchiveNote'; id: string }
   | { type: 'registerMcp' }
   | { type: 'createGitHubIssue'; noteId: string }
-  | { type: 'bulkArchive'; noteIds: string[] }
-  | { type: 'bulkDelete';  noteIds: string[] }
-  | { type: 'bulkTag';     noteIds: string[] }
+  | { type: 'bulkArchive';    noteIds: string[] }
+  | { type: 'bulkDelete';     noteIds: string[] }
+  | { type: 'bulkTag';        noteIds: string[] }
+  | { type: 'duplicateNote';  noteId: string }
   | { type: 'linkNote'; noteId: string }
   | { type: 'unlinkNote'; noteId: string; targetId: string }
   | { type: 'openLinkedNote'; noteId: string };
@@ -324,6 +325,21 @@ export class SidebarView implements vscode.WebviewViewProvider {
 
       case 'unarchiveNote': {
         await this.storage.updateNote(msg.id, { archived: undefined });
+        this.push();
+        break;
+      }
+
+      case 'duplicateNote': {
+        const src = this.storage.getNote(msg.noteId);
+        if (!src) break;
+        await this.storage.createNote({
+          title  : `Copy of ${src.title}`,
+          content: src.content,
+          color  : src.color,
+          tags   : [...src.tags],
+          branch : src.branch,
+          owner  : this.currentUser,
+        });
         this.push();
         break;
       }
@@ -2425,6 +2441,16 @@ export class SidebarView implements vscode.WebviewViewProvider {
       vscode.postMessage({ type: 'openEditor', noteId: note.id });
     });
 
+    // ── Duplicate button ──
+    const dupBtn = mkEl('button', 'card-btn');
+    dupBtn.title = 'Duplicate note';
+    dupBtn.innerHTML = \`<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+    </svg>\`;
+    dupBtn.addEventListener('click', () => {
+      vscode.postMessage({ type: 'duplicateNote', noteId: note.id });
+    });
+
     // ── Link to another note button ──
     const noteLinkBtn = mkEl('button', 'card-btn');
     noteLinkBtn.title = 'Link to another note';
@@ -2463,7 +2489,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
       vscode.postMessage({ type: 'deleteNote', id: note.id });
     });
 
-    actions.append(tagBtn, linkBtn, branchBtn, bellBtn, shareBtn, colorBtn, editBtn, noteLinkBtn, ghIssueBtn, archiveBtn, delBtn);
+    actions.append(tagBtn, linkBtn, branchBtn, bellBtn, shareBtn, colorBtn, editBtn, dupBtn, noteLinkBtn, ghIssueBtn, archiveBtn, delBtn);
     hdr.append(starBtn, title, actions);
     card.append(hdr, colorPop, tagPop);
 

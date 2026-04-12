@@ -26,6 +26,7 @@ A VS Code extension that gives you a **project-scoped note panel** — rich text
 - **Conflict resolution UI** — when a shared note has a git merge conflict, a visual two-column panel lets you keep yours, keep theirs, or merge both versions
 - **Note ownership** — notes are automatically attributed to the git user who created them; filter to your own notes instantly with the "Mine" button
 - **GitHub integration** — one-click OAuth connection via the sidebar; link any note to an existing issue or PR, or create a new GitHub issue directly from a note; a color-coded status badge (green open, grey closed, purple merged) appears on the card; filter notes by GitHub status (open/closed/merged) using the filter bar that appears automatically when linked notes exist; the MCP server fetches the full description and comments so Claude can reason about the issue without leaving your workspace
+- **Note duplication** — clone any note with one click; the copy inherits title, content, color, tags, and branch scope
 - **Note linking** — link any note to one or more other notes; linked notes appear as clickable chips on the card and open instantly in the rich editor; links are stored in frontmatter and survive restarts and git syncs
 - **Sort options** — cycle the note list between last updated, date created, and alphabetical order; starred notes always stay pinned to the top regardless of sort
 - **Card keyboard shortcuts** — navigate the note list with arrow keys and trigger actions (open, star, archive, rename, delete) without touching the mouse
@@ -283,6 +284,15 @@ Click the sort button (**↓U**) in the sidebar toolbar to cycle through three s
 | `A–Z` | Alphabetical | A to Z by title |
 
 Starred notes are always pinned to the top regardless of the active sort mode. The button turns accent-coloured when a non-default sort is active so you can tell at a glance that the list is reordered.
+
+## Note Duplication
+
+Click the **copy icon** (⧉) in a card's action bar to duplicate the note. The new note is created immediately with:
+
+- Title prefixed `Copy of …`
+- Same content, color, tags, and branch scope as the original
+
+Reminders, code links, GitHub links, and note-to-note links are not copied — these are context-specific to the original note. Rename and adjust the duplicate as needed.
 
 ## Note Linking
 
