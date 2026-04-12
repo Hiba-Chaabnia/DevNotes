@@ -251,6 +251,19 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
         required: ['query'],
       },
     },
+    {
+      name       : 'search_notes',
+      description: 'Full-text search across all notes with ranked results and match snippets. Returns results ordered by relevance — title matches rank above content matches, and notes with more matches rank higher. Use when you need to find a note by topic, keyword, or phrase rather than exact title.',
+      inputSchema: {
+        type      : 'object',
+        properties: {
+          query           : { type: 'string',  description: 'Search query — space-separated terms are ANDed (all must be present)' },
+          limit           : { type: 'number',  description: 'Maximum number of results to return (default: 10)' },
+          include_archived: { type: 'boolean', description: 'Include archived notes in results (default: false)' },
+        },
+        required: ['query'],
+      },
+    },
   ],
 }));
 
@@ -714,6 +727,108 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         }
 
         return { content: [{ type: 'text', text: lines.join('\n') }] };
+      }
+
+      // ── search_notes ─────────────────────────────────────────────────────────
+      case 'search_notes': {
+        const { query, limit = 10, include_archived = false } = args as {
+          query: string; limit?: number; include_archived?: boolean;
+        };
+
+        const terms = query.toLowerCase().split(/\s+/).filter(Boolean);
+        if (terms.length === 0) {
+          return { content: [{ type: 'text', text: 'Provide at least one search term.' }], isError: true };
+        }
+
+        let notes = readAllNotes(DEVNOTES_DIR);
+        if (!include_archived) notes = notes.filter(n => !n.archived);
+
+        // Score each note
+        interface ScoredNote { note: Note; score: number; snippets: string[] }
+        const results: ScoredNote[] = [];
+
+        for (const note of notes) {
+          const titleLower   = note.title.toLowerCase();
+          const contentLower = note.content.toLowerCase();
+          const tagsLower    = note.tags.join(' ').toLowerCase();
+          const ghTitle      = (note.github?.title ?? '').toLowerCase();
+          const codePath     = (note.codeLink?.file ?? '').toLowerCase();
+
+          // All terms must appear somewhere in the note
+          const allMatch = terms.every(t =>
+            titleLower.includes(t)   ||
+            contentLower.includes(t) ||
+            tagsLower.includes(t)    ||
+            ghTitle.includes(t)      ||
+            codePath.includes(t)
+          );
+          if (!allMatch) continue;
+
+          let score = 0;
+          const snippets: string[] = [];
+
+          for (const term of terms) {
+            // Title match — highest weight
+            if (titleLower.includes(term)) score += 10;
+            // Tag match
+            if (tagsLower.includes(term))  score += 4;
+            // GitHub title match
+            if (ghTitle.includes(term))    score += 3;
+            // Code path match
+            if (codePath.includes(term))   score += 2;
+            // Content matches — count occurrences, cap at 5 per term
+            let idx = 0;
+            let hits = 0;
+            while ((idx = contentLower.indexOf(term, idx)) !== -1 && hits < 5) {
+              score += 1;
+              hits++;
+              // Build a snippet: 40 chars before and after the match
+              const start   = Math.max(0, idx - 40);
+              const end     = Math.min(note.content.length, idx + term.length + 40);
+              const prefix  = start > 0 ? '…' : '';
+              const suffix  = end < note.content.length ? '…' : '';
+              const raw     = note.content.slice(start, end).replace(/\n/g, ' ');
+              // Mark the match with asterisks
+              const matchStart = idx - start;
+              const matchEnd   = matchStart + term.length;
+              const snippet    = prefix +
+                raw.slice(0, matchStart) +
+                `**${raw.slice(matchStart, matchEnd)}**` +
+                raw.slice(matchEnd) +
+                suffix;
+              if (hits === 1) snippets.push(snippet); // one snippet per term is enough
+              idx += term.length;
+            }
+          }
+
+          results.push({ note, score, snippets });
+        }
+
+        if (results.length === 0) {
+          return { content: [{ type: 'text', text: `No notes found matching "${query}".` }] };
+        }
+
+        // Sort by score descending
+        results.sort((a, b) => b.score - a.score);
+        const top = results.slice(0, limit);
+
+        const lines = top.map(({ note, score, snippets }) => {
+          const tags     = note.tags.length ? ` [${note.tags.join(', ')}]` : '';
+          const starred  = note.starred ? ' ★' : '';
+          const archived = note.archived ? ' (archived)' : '';
+          const date     = new Date(note.updatedAt).toLocaleDateString();
+          const header   = `• **${note.title}**${starred}${tags}${archived} — ${date} (score: ${score})\n  ID: ${note.id}`;
+          const snipText = snippets.length ? '\n  ' + snippets.slice(0, 2).join('\n  ') : '';
+          return header + snipText;
+        });
+
+        const total = results.length;
+        const shown = top.length;
+        const footer = total > shown ? `\n\n*(${total - shown} more result(s) not shown — narrow your query or increase limit)*` : '';
+
+        return {
+          content: [{ type: 'text', text: `Found ${total} matching note(s)${shown < total ? `, showing top ${shown}` : ''}:\n\n${lines.join('\n\n')}${footer}` }],
+        };
       }
 
       default:

@@ -30,7 +30,7 @@ A VS Code extension that gives you a **project-scoped note panel** — rich text
 - **Note linking** — link any note to one or more other notes with automatic back-links; linked notes appear as clickable chips on the card and open instantly in the rich editor; unlinking removes both directions at once
 - **Sort options** — cycle the note list between last updated, date created, and alphabetical order; starred notes always stay pinned to the top regardless of sort
 - **Card keyboard shortcuts** — navigate the note list with arrow keys and trigger actions (open, star, archive, rename, delete) without touching the mouse
-- **Claude Code integration** — an MCP server lets Claude Code create notes, read them, append solutions, query todos, and generate standups or PR handoffs — all talking to the same `.devnotes/` files the extension uses
+- **Claude Code integration** — an MCP server lets Claude Code create notes, read them, append solutions, query todos, search full-text with ranked snippets, and generate standups or PR handoffs — all talking to the same `.devnotes/` files the extension uses
 
 ## Quick Capture
 
@@ -761,6 +761,7 @@ Claude can call these tools at any point in a conversation:
 | `log_session` | Appends a timestamped Done / In-progress / Blocked entry to a persistent session log. Called automatically at the end of every work session. |
 | `link_github` | Links a note to a GitHub issue or PR URL. Fetches the title and current status (open/closed/merged) from the GitHub API and stores them in the note's frontmatter. |
 | `get_github_context` | Fetches the full context of a linked GitHub issue or PR: description, labels, assignees, and the last 20 comments. Refreshes the cached status automatically. |
+| `search_notes` | Full-text search with ranked results and match snippets. All terms must be present (AND logic). Searches title, content, tags, GitHub title, and code link path. Returns results ordered by relevance with highlighted snippets showing where each term matched. |
 
 ### Resources
 
@@ -804,6 +805,10 @@ Prompts are pre-built workflows. Invoke them with `/mcp__devnotes__<name>` in Cl
 
 "Generate my standup for today"
 → Claude runs the standup prompt against notes updated in the last 24 hours.
+
+"Find my notes about JWT token expiry"
+→ Claude calls search_notes with query "JWT token expiry", returns ranked results
+  with snippets showing exactly where each term appears in the note content.
 
 ```
 
