@@ -1374,6 +1374,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
     max-width: 56px;
   }
   .mine-filter-btn.active { color: var(--vscode-button-background) !important; opacity: 1; }
+  .stale-filter-btn.active { color: #EF6C57 !important; opacity: 1; }
 
   /* ── Conflict indicator ─────────────────────────────── */
   .card.conflict::after {
@@ -1621,6 +1622,12 @@ export class SidebarView implements vscode.WebviewViewProvider {
         <line x1="10" y1="12" x2="14" y2="12"/>
       </svg>
     </button>
+    <button class="icon-btn stale-filter-btn" id="btn-stale-filter" title="Show stale notes (14+ days old with open todos or bug tag)">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="9"/>
+        <polyline points="12 6 12 12 16 14"/>
+      </svg>
+    </button>
     <button class="icon-btn" id="btn-select" title="Select notes to export">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
         <rect x="3" y="5" width="5" height="5" rx="1"/>
@@ -1733,6 +1740,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
   let showArchived           = false;
   let sortMode               = 'updated'; // 'updated' | 'created' | 'alpha'
   let githubStatusFilter     = null; // null | 'open' | 'closed' | 'merged'
+  let staleFilterActive      = false;
   let selectMode         = false;
   let selectedIds        = [];
   let openColorPop    = null;
@@ -1752,6 +1760,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
   const newTagsEl      = document.getElementById('new-tags');
   const newTemplatesEl    = document.getElementById('new-templates');
   const btnMineFilter     = document.getElementById('btn-mine-filter');
+  const btnStaleFilter    = document.getElementById('btn-stale-filter');
   const btnSelect         = document.getElementById('btn-select');
   const exportBar         = document.getElementById('export-bar');
   const branchPillEl         = document.getElementById('branch-pill');
@@ -1805,6 +1814,19 @@ export class SidebarView implements vscode.WebviewViewProvider {
     btnArchiveView.classList.toggle('active', showArchived);
     btnArchiveView.title = showArchived ? 'Back to notes' : 'Show archived notes';
     githubStatusFilter = null;
+    renderCards();
+  });
+
+  // ── Stale filter ─────────────────────────────────────────────────────────
+  btnStaleFilter.addEventListener('click', () => {
+    staleFilterActive = !staleFilterActive;
+    btnStaleFilter.classList.toggle('active', staleFilterActive);
+    btnStaleFilter.title = staleFilterActive ? 'Show all notes' : 'Show stale notes (14+ days old with open todos or bug tag)';
+    if (staleFilterActive && showArchived) {
+      showArchived = false;
+      btnArchiveView.classList.remove('active');
+      btnArchiveView.title = 'Show archived notes';
+    }
     renderCards();
   });
 
@@ -2227,6 +2249,13 @@ export class SidebarView implements vscode.WebviewViewProvider {
             !tagText.includes(searchQuery)) return false;
       }
       if (activeTagIds.length > 0 && !activeTagIds.some(id => n.tags.includes(id))) return false;
+      if (staleFilterActive) {
+        const cutoff = Date.now() - 14 * 24 * 60 * 60 * 1000;
+        if (n.updatedAt > cutoff) return false;
+        const hasBugTag    = n.tags.includes('bug');
+        const hasOpenTodos = /- \[ \]/.test(n.content);
+        if (!hasBugTag && !hasOpenTodos) return false;
+      }
       return true;
     });
   }
@@ -2274,6 +2303,8 @@ export class SidebarView implements vscode.WebviewViewProvider {
       const empty = mkEl('div', 'empty');
       if (showArchived) {
         empty.innerHTML = '<div class="empty-icon">📦</div><p>No archived notes.</p>';
+      } else if (staleFilterActive) {
+        empty.innerHTML = '<div class="empty-icon">✅</div><p>No stale notes.<br>Everything looks up to date.</p>';
       } else if (notes.length === 0) {
         empty.innerHTML = '<div class="empty-icon">📋</div><p>No notes yet.<br>Click <strong>+</strong> to create one.</p>';
       } else {

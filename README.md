@@ -18,6 +18,7 @@ A VS Code extension that gives you a **project-scoped note panel** — rich text
 - **Color-coded notes** — eight color options per note, changeable at any time from the card
 - **Starred notes** — star important notes to pin them to the top of the list
 - **Note archiving** — archive completed or inactive notes to declutter the list without deleting them; a dedicated archive view lets you browse and restore them at any time
+- **Stale notes filter** — click the clock icon in the toolbar to instantly surface notes that haven't been touched in 14+ days and still have open todos or a bug tag; the same logic the MCP's `get_stale_notes` tool uses, now available as a one-click filter in the sidebar
 - **Status bar integration** — two persistent items in the bottom status bar surface overdue reminders and notes linked to the current file without opening the sidebar; works in VS Code, Windsurf, Cursor, and all VS Code-based editors
 - **Project-scoped storage** — notes are tied to the workspace, not a global account
 - **Git-aware** — detects the current repo so notes stay relevant to the project
@@ -215,6 +216,39 @@ updatedAt: 1712349000
 ```
 
 `archived: true` is omitted from the frontmatter when the note is not archived.
+
+## Stale Notes Filter
+
+The stale notes filter surfaces notes that have fallen through the cracks — old enough to be forgotten but still carrying unresolved work.
+
+### What counts as stale
+
+A note is stale when **both** of the following are true:
+
+1. It has not been updated in **14 or more days**
+2. It contains at least one of:
+   - An unchecked todo item (`- [ ]`)
+   - The **bug** tag
+
+Archived notes are never included.
+
+This is the same definition used by the MCP server's `get_stale_notes` tool, so the filter and Claude see the same set of notes.
+
+### Using the filter
+
+Click the **clock icon** (🕐) in the sidebar top bar. The button turns orange when the filter is active to distinguish it from the blue used by other active filters — orange reinforces the "needs attention" signal.
+
+- Clicking the button when the archive view is open automatically exits archive view first, since archived notes are excluded by definition.
+- The filter stacks with search, tag filters, the branch filter, and the Mine filter — you can narrow stale notes further.
+- When the filter is active but nothing qualifies, the sidebar shows: **"No stale notes. Everything looks up to date."**
+
+Click the button again to return to the full list.
+
+### When to use it
+
+- **Weekly review** — run the filter before your standup or retrospective to catch unresolved bugs and forgotten todos
+- **Before a release** — confirm nothing critical is sitting idle
+- **After a long break** — re-orient quickly on what was left open
 
 ## Note Templates
 
