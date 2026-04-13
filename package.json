@@ -114,8 +114,9 @@
   "scripts": {
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./ && npm run build:webview",
-    "build:webview": "npm run build:editor",
+    "build:webview": "npm run build:editor && npm run build:sidebar-editor",
     "build:editor": "esbuild src/webview/editor.ts --bundle --outfile=media/editor.js --platform=browser --target=es2020 --minify",
+    "build:sidebar-editor": "esbuild src/webview/sidebar-editor.ts --bundle --outfile=media/sidebar-editor.js --platform=browser --target=es2020 --minify",
     "watch": "tsc -watch -p ./",
     "lint": "eslint src --ext ts"
   },

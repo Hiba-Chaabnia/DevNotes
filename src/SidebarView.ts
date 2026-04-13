@@ -541,8 +541,11 @@ export class SidebarView implements vscode.WebviewViewProvider {
   // ── HTML ─────────────────────────────────────────────────────────────────
 
   private buildHtml(webview: vscode.Webview): string {
-    const nonce      = getNonce();
-    const colorsJson = JSON.stringify(NOTE_COLORS);
+    const nonce             = getNonce();
+    const colorsJson        = JSON.stringify(NOTE_COLORS);
+    const sidebarEditorUri  = webview.asWebviewUri(
+      vscode.Uri.joinPath(this.context.extensionUri, 'media', 'sidebar-editor.js')
+    );
 
     return /* html */`<!DOCTYPE html>
 <html lang="en">
@@ -1291,25 +1294,29 @@ export class SidebarView implements vscode.WebviewViewProvider {
   .note-card-title::placeholder { color: rgba(26,26,46,.4); }
 
   .note-card-body {
-    background: transparent;
-    border: none;
-    outline: none;
-    font-size: 12.5px;
-    color: #1a1a2e;
-    padding: 0 12px 10px;
-    width: 100%;
-    min-height: 88px;
-    font-family: var(--vscode-font-family);
-    line-height: 1.55;
     cursor: text;
     overflow-y: auto;
+    min-height: 88px;
     word-break: break-word;
   }
-  .note-card-body:empty::before {
+  .note-card-body .ProseMirror {
+    outline: none;
+    min-height: 88px;
+    padding: 0 12px 10px;
+    font-size: 12.5px;
+    color: #1a1a2e;
+    font-family: var(--vscode-font-family);
+    line-height: 1.55;
+  }
+  .note-card-body .ProseMirror p { margin: 0 0 3px; }
+  .note-card-body .ProseMirror ul { padding-left: 18px; margin: 0 0 3px; }
+  .note-card-body .ProseMirror li { margin: 0; }
+  .note-card-body.is-empty .ProseMirror p:first-child::before {
     content: attr(data-placeholder);
     color: rgba(26,26,46,.38);
     pointer-events: none;
-    display: block;
+    float: left;
+    height: 0;
   }
 
   .note-card-footer {
@@ -1845,15 +1852,14 @@ export class SidebarView implements vscode.WebviewViewProvider {
       <button class="note-card-close" id="btn-cancel-new" title="Cancel">✕</button>
     </div>
     <input class="note-card-title" id="new-title" type="text" placeholder="Note title…" maxlength="120" autocomplete="off">
-    <div class="note-card-body" id="new-body" contenteditable="true" spellcheck="true" data-placeholder="Start writing…" role="textbox" aria-multiline="true"></div>
+    <div class="note-card-body is-empty" id="new-body" data-placeholder="Start writing…"></div>
     <div class="note-card-footer">
       <div class="note-card-fmtbar">
-        <button class="fmt-btn" data-cmd="bold"                 title="Bold (Ctrl+B)"><b>B</b></button>
-        <button class="fmt-btn" data-cmd="italic"               title="Italic (Ctrl+I)"><i>I</i></button>
-        <button class="fmt-btn" data-cmd="underline"            title="Underline (Ctrl+U)"><u>U</u></button>
-        <button class="fmt-btn" data-cmd="strikeThrough"        title="Strikethrough"><s>S</s></button>
+        <button class="fmt-btn" data-cmd="bold"       title="Bold (Ctrl+B)"><b>B</b></button>
+        <button class="fmt-btn" data-cmd="italic"     title="Italic (Ctrl+I)"><i>I</i></button>
+        <button class="fmt-btn" data-cmd="strike"     title="Strikethrough"><s>S</s></button>
         <div class="fmt-btn-sep"></div>
-        <button class="fmt-btn" data-cmd="insertUnorderedList"  title="Bullet list">&#8801;</button>
+        <button class="fmt-btn" data-cmd="bulletList" title="Bullet list">&#8801;</button>
       </div>
       <div class="note-card-metabar">
         <label class="branch-scope-label" id="branch-scope-label">
@@ -1935,6 +1941,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
   </div>
 </div>
 
+<script nonce="${nonce}" src="${sidebarEditorUri}"></script>
 <script nonce="${nonce}">
 (() => {
   const vscode = acquireVsCodeApi();
@@ -1993,6 +2000,9 @@ export class SidebarView implements vscode.WebviewViewProvider {
   const addTagForm     = document.getElementById('add-tag-form');
   const tagLabelEl     = document.getElementById('tag-label');
   const tagColorsEl    = document.getElementById('tag-colors');
+
+  // ── Tiptap ──────────────────────────────────────────────────────────────
+  window.SidebarEditor?.init(newBodyEl);
 
   // ── Overflow menu ────────────────────────────────────────────────────────
   const btnOverflow  = document.getElementById('btn-overflow');
@@ -2244,8 +2254,8 @@ export class SidebarView implements vscode.WebviewViewProvider {
 
   document.querySelectorAll('.fmt-btn[data-cmd]').forEach(btn => {
     btn.addEventListener('mousedown', e => {
-      e.preventDefault(); // keep focus in contenteditable
-      document.execCommand(btn.dataset.cmd);
+      e.preventDefault(); // keep Tiptap selection intact
+      window.SidebarEditor?.toggleFormat(btn.dataset.cmd);
       updateFmtBar();
     });
   });
@@ -2256,16 +2266,14 @@ export class SidebarView implements vscode.WebviewViewProvider {
 
   function updateFmtBar() {
     document.querySelectorAll('.fmt-btn[data-cmd]').forEach(btn => {
-      try {
-        btn.classList.toggle('active', document.queryCommandState(btn.dataset.cmd));
-      } catch (_) {}
+      btn.classList.toggle('active', window.SidebarEditor?.isActive(btn.dataset.cmd) ?? false);
     });
   }
 
   function closeNewForm() {
     noteCardOverlay.classList.remove('open');
-    newTitleEl.value    = '';
-    newBodyEl.innerHTML = '';
+    newTitleEl.value = '';
+    window.SidebarEditor?.clear();
     newTags       = [];
     newTemplateId = null;
     newColor      = COLOR_KEYS[0];
@@ -2315,7 +2323,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
     if (!title) { newTitleEl.focus(); return; }
     const scopeCheckbox = document.getElementById('new-branch-scope');
     const branch = scopeCheckbox?.checked && currentBranch ? currentBranch : undefined;
-    const body = newBodyEl.innerText.trim() || undefined;
+    const body = window.SidebarEditor?.getMarkdown().trim() || undefined;
     vscode.postMessage({ type: 'createNote', title, color: newColor, tags: [...newTags], templateId: newTemplateId, branch, body });
     closeNewForm();
   }
