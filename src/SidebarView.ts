@@ -1370,6 +1370,23 @@ export class SidebarView implements vscode.WebviewViewProvider {
   }
   .note-card-confirm:hover { background: rgba(26,26,46,.25); }
 
+  .note-card-header .color-swatch { width: 18px; height: 18px; }
+
+  .nc-select {
+    background: rgba(26,26,46,.12);
+    border: 1px solid rgba(26,26,46,.2);
+    border-radius: 5px;
+    color: #1a1a2e;
+    font-size: 11px;
+    padding: 2px 4px;
+    cursor: pointer;
+    font-family: var(--vscode-font-family);
+    outline: none;
+    max-width: 105px;
+    flex-shrink: 0;
+  }
+  .nc-select:focus { border-color: rgba(26,26,46,.4); }
+
   .color-strip {
     display: flex;
     gap: 6px;
@@ -1661,29 +1678,6 @@ export class SidebarView implements vscode.WebviewViewProvider {
   .gh-closed .github-badge-dot { background: #888; }
   .gh-merged .github-badge-dot { background: #8250df; }
 
-  /* ── Template picker (in new-note form) ─────────────── */
-  .template-row {
-    display: flex;
-    gap: 4px;
-    flex-wrap: wrap;
-  }
-  .tpl-chip {
-    font-size: 11px;
-    padding: 2px 8px;
-    border-radius: 4px;
-    background: var(--vscode-button-secondaryBackground);
-    color: var(--vscode-button-secondaryForeground);
-    border: 1px solid transparent;
-    cursor: pointer;
-    white-space: nowrap;
-    transition: filter .1s;
-  }
-  .tpl-chip:hover { filter: brightness(1.1); }
-  .tpl-chip.active {
-    background: var(--vscode-button-background);
-    color: var(--vscode-button-foreground);
-  }
-
   /* ── Empty state ─────────────────────────────────────── */
   .empty {
     flex: 1;
@@ -1857,7 +1851,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
           <span>&#8903; <code id="branch-scope-name"></code></span>
         </label>
         <div class="new-note-tags" id="new-tags"></div>
-        <div class="template-row" id="new-templates"></div>
+        <select class="nc-select" id="new-template-select"></select>
         <button class="note-card-confirm" id="btn-confirm-new" title="Create note">&#10003;</button>
       </div>
     </div>
@@ -1975,7 +1969,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
   const newBodyEl       = document.getElementById('new-body');
   const newColorsEl     = document.getElementById('new-colors');
   const newTagsEl       = document.getElementById('new-tags');
-  const newTemplatesEl  = document.getElementById('new-templates');
+  const newTemplateSelectEl = document.getElementById('new-template-select');
   const btnMineFilter     = document.getElementById('btn-mine-filter');
   const btnStaleFilter    = document.getElementById('btn-stale-filter');
   const btnSelect         = document.getElementById('btn-select');
@@ -2178,7 +2172,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
       if (isManagingTags) renderTagManager();
       renderCards();
       renderNewNoteTags();
-      renderTemplatePicker();
+      renderCardTemplatePicker();
       buildColorStrip(newColorsEl,  c => { newColor = c; highlightSwatch(newColorsEl, c); noteCardEl.style.setProperty('--nc-bg', COLORS[c]); });
       buildColorStrip(tagColorsEl, c => { tagColor = c; highlightSwatch(tagColorsEl, c); });
       highlightSwatch(newColorsEl, newColor);
@@ -2248,10 +2242,44 @@ export class SidebarView implements vscode.WebviewViewProvider {
     noteCardEl.style.setProperty('--nc-bg', COLORS[newColor]);
     const scopeCheckbox = document.getElementById('new-branch-scope');
     if (scopeCheckbox) scopeCheckbox.checked = false;
-    renderTemplatePicker();
+    renderCardTemplatePicker();
     highlightSwatch(newColorsEl, newColor);
     renderNewNoteTags();
   }
+
+  function renderCardTemplatePicker() {
+    if (!newTemplateSelectEl) return;
+    newTemplateSelectEl.innerHTML = '';
+    const blank = document.createElement('option');
+    blank.value = '';
+    blank.textContent = 'Blank';
+    newTemplateSelectEl.appendChild(blank);
+    templates.forEach(tpl => {
+      const opt = document.createElement('option');
+      opt.value = tpl.id;
+      opt.textContent = tpl.name;
+      newTemplateSelectEl.appendChild(opt);
+    });
+    newTemplateSelectEl.value = newTemplateId ?? '';
+  }
+
+  newTemplateSelectEl.addEventListener('change', () => {
+    const id = newTemplateSelectEl.value || null;
+    newTemplateId = id;
+    if (!id) {
+      newColor = COLOR_KEYS[0];
+      newTags  = [];
+    } else {
+      const tpl = templates.find(t => t.id === id);
+      if (tpl) {
+        if (tpl.color) newColor = tpl.color;
+        if (tpl.tags?.length) newTags = [...tpl.tags];
+      }
+    }
+    noteCardEl.style.setProperty('--nc-bg', COLORS[newColor]);
+    highlightSwatch(newColorsEl, newColor);
+    renderNewNoteTags();
+  });
   function confirmNewNote() {
     const title = newTitleEl.value.trim();
     if (!title) { newTitleEl.focus(); return; }
@@ -2291,41 +2319,6 @@ export class SidebarView implements vscode.WebviewViewProvider {
       branchFilterBtn.style.display = 'none';
       branchScopeLabel.classList.remove('visible');
     }
-  }
-
-  function renderTemplatePicker() {
-    newTemplatesEl.innerHTML = '';
-
-    const blankChip = mkEl('button', 'tpl-chip' + (!newTemplateId ? ' active' : ''), 'Blank');
-    blankChip.type = 'button';
-    blankChip.addEventListener('click', () => {
-      newTemplateId = null;
-      newColor      = COLOR_KEYS[0];
-      newTags       = [];
-      renderTemplatePicker();
-      highlightSwatch(newColorsEl, newColor);
-      renderNewNoteTags();
-    });
-    newTemplatesEl.appendChild(blankChip);
-
-    templates.forEach(tpl => {
-      const chip = mkEl('button', 'tpl-chip' + (newTemplateId === tpl.id ? ' active' : ''), tpl.name);
-      chip.type = 'button';
-      chip.title = tpl.content.replace(/#+\s/g, '').slice(0, 80);
-      chip.addEventListener('click', () => {
-        newTemplateId = tpl.id;
-        if (tpl.color) {
-          newColor = tpl.color;
-          highlightSwatch(newColorsEl, newColor);
-        }
-        if (tpl.tags && tpl.tags.length > 0) {
-          newTags = [...tpl.tags];
-          renderNewNoteTags();
-        }
-        renderTemplatePicker();
-      });
-      newTemplatesEl.appendChild(chip);
-    });
   }
 
   // ── Tag bar ─────────────────────────────────────────────────────────────
