@@ -1221,32 +1221,154 @@ export class SidebarView implements vscode.WebviewViewProvider {
     white-space: nowrap;
   }
 
-  /* ── New note form ───────────────────────────────────── */
-  .new-note-form {
-    margin: var(--gap) var(--gap) 0;
-    border-radius: var(--radius);
-    padding: 10px 12px;
-    background: var(--vscode-input-background);
-    border: 1px solid var(--vscode-panel-border);
+  /* ── Note card overlay ──────────────────────────────── */
+  .note-card-overlay {
     display: none;
-    flex-direction: column;
-    gap: 8px;
-    flex-shrink: 0;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,.38);
+    z-index: 200;
+    align-items: center;
+    justify-content: center;
+    padding: 16px 10px;
   }
-  .new-note-form.open { display: flex; }
+  .note-card-overlay.open { display: flex; }
 
-  .new-note-form input {
+  .note-card {
+    width: 100%;
+    border-radius: 12px;
+    background: var(--nc-bg, #FFD166);
+    box-shadow: 0 8px 32px rgba(0,0,0,.35), 0 2px 8px rgba(0,0,0,.18);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    transform: scale(.92);
+    opacity: 0;
+    transition: transform .18s cubic-bezier(.34,1.3,.64,1), opacity .15s ease;
+  }
+  .note-card-overlay.open .note-card {
+    transform: scale(1);
+    opacity: 1;
+  }
+
+  .note-card-header {
+    display: flex;
+    align-items: center;
+    padding: 8px 10px 6px;
+    gap: 6px;
+  }
+  .note-card-header .color-strip { flex: 1; }
+
+  .note-card-close {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 13px;
+    color: rgba(26,26,46,.5);
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    transition: background .12s, color .12s;
+    padding: 0;
+  }
+  .note-card-close:hover { background: rgba(26,26,46,.12); color: #1a1a2e; }
+
+  .note-card-title {
     background: transparent;
     border: none;
-    border-bottom: 1px solid var(--vscode-panel-border);
     outline: none;
-    font-size: 13px;
-    font-weight: 600;
-    color: var(--vscode-input-foreground);
-    padding: 2px 0 4px;
+    font-size: 14px;
+    font-weight: 700;
+    color: #1a1a2e;
+    padding: 0 12px 6px;
     width: 100%;
+    font-family: var(--vscode-font-family);
   }
-  .new-note-form input::placeholder { color: var(--vscode-input-placeholderForeground); }
+  .note-card-title::placeholder { color: rgba(26,26,46,.4); }
+
+  .note-card-body {
+    background: transparent;
+    border: none;
+    outline: none;
+    resize: none;
+    font-size: 12.5px;
+    color: #1a1a2e;
+    padding: 0 12px 10px;
+    width: 100%;
+    min-height: 88px;
+    font-family: var(--vscode-font-family);
+    line-height: 1.55;
+  }
+  .note-card-body::placeholder { color: rgba(26,26,46,.38); }
+
+  .note-card-footer {
+    background: rgba(0,0,0,.08);
+    border-top: 1px solid rgba(26,26,46,.1);
+    padding: 7px 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+  }
+
+  .note-card-fmtbar {
+    display: flex;
+    gap: 1px;
+    align-items: center;
+  }
+
+  .fmt-btn {
+    background: none;
+    border: none;
+    cursor: default;
+    color: rgba(26,26,46,.5);
+    font-size: 12px;
+    width: 24px;
+    height: 22px;
+    border-radius: 4px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-family: var(--vscode-font-family);
+  }
+
+  .fmt-btn-sep {
+    width: 1px;
+    height: 14px;
+    background: rgba(26,26,46,.18);
+    margin: 0 3px;
+    flex-shrink: 0;
+  }
+
+  .note-card-metabar {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    flex-wrap: wrap;
+    min-height: 24px;
+  }
+
+  .note-card-confirm {
+    background: rgba(26,26,46,.15);
+    border: none;
+    cursor: pointer;
+    color: #1a1a2e;
+    font-size: 14px;
+    font-weight: 700;
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    transition: background .12s;
+    margin-left: auto;
+  }
+  .note-card-confirm:hover { background: rgba(26,26,46,.25); }
 
   .color-strip {
     display: flex;
@@ -1259,12 +1381,6 @@ export class SidebarView implements vscode.WebviewViewProvider {
     gap: 5px;
     flex-wrap: wrap;
     min-height: 22px;
-  }
-
-  .form-actions {
-    display: flex;
-    gap: 6px;
-    justify-content: flex-end;
   }
 
   .btn {
@@ -1717,19 +1833,34 @@ export class SidebarView implements vscode.WebviewViewProvider {
   </div>
 </div>
 
-<!-- ── New note form ── -->
-<div class="new-note-form" id="new-note-form">
-  <input id="new-title" type="text" placeholder="Note title…" maxlength="120">
-  <div class="template-row" id="new-templates"></div>
-  <label class="branch-scope-label" id="branch-scope-label">
-    <input type="checkbox" id="new-branch-scope">
-    <span>Scope to <code id="branch-scope-name"></code></span>
-  </label>
-  <div class="color-strip" id="new-colors"></div>
-  <div class="new-note-tags" id="new-tags"></div>
-  <div class="form-actions">
-    <button class="btn btn-ghost" id="btn-cancel-new">Cancel</button>
-    <button class="btn btn-primary" id="btn-confirm-new">Create</button>
+<!-- ── Note card overlay ── -->
+<div class="note-card-overlay" id="note-card-overlay">
+  <div class="note-card" id="note-card">
+    <div class="note-card-header">
+      <div class="color-strip" id="new-colors"></div>
+      <button class="note-card-close" id="btn-cancel-new" title="Cancel">✕</button>
+    </div>
+    <input class="note-card-title" id="new-title" type="text" placeholder="Note title…" maxlength="120" autocomplete="off">
+    <textarea class="note-card-body" id="new-body" placeholder="Start writing…" spellcheck="true"></textarea>
+    <div class="note-card-footer">
+      <div class="note-card-fmtbar">
+        <button class="fmt-btn" title="Bold"><b>B</b></button>
+        <button class="fmt-btn" title="Italic"><i>I</i></button>
+        <button class="fmt-btn" title="Underline"><u>U</u></button>
+        <button class="fmt-btn" title="Strikethrough"><s>S</s></button>
+        <div class="fmt-btn-sep"></div>
+        <button class="fmt-btn" title="List">&#8801;</button>
+      </div>
+      <div class="note-card-metabar">
+        <label class="branch-scope-label" id="branch-scope-label">
+          <input type="checkbox" id="new-branch-scope">
+          <span>&#8903; <code id="branch-scope-name"></code></span>
+        </label>
+        <div class="new-note-tags" id="new-tags"></div>
+        <div class="template-row" id="new-templates"></div>
+        <button class="note-card-confirm" id="btn-confirm-new" title="Create note">&#10003;</button>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -1838,11 +1969,13 @@ export class SidebarView implements vscode.WebviewViewProvider {
   const tagBar         = document.getElementById('tag-bar');
   const searchEl       = document.getElementById('search');
   const searchClearEl  = document.getElementById('search-clear');
-  const newForm        = document.getElementById('new-note-form');
-  const newTitleEl     = document.getElementById('new-title');
-  const newColorsEl    = document.getElementById('new-colors');
-  const newTagsEl      = document.getElementById('new-tags');
-  const newTemplatesEl    = document.getElementById('new-templates');
+  const noteCardOverlay = document.getElementById('note-card-overlay');
+  const noteCardEl      = document.getElementById('note-card');
+  const newTitleEl      = document.getElementById('new-title');
+  const newBodyEl       = document.getElementById('new-body');
+  const newColorsEl     = document.getElementById('new-colors');
+  const newTagsEl       = document.getElementById('new-tags');
+  const newTemplatesEl  = document.getElementById('new-templates');
   const btnMineFilter     = document.getElementById('btn-mine-filter');
   const btnStaleFilter    = document.getElementById('btn-stale-filter');
   const btnSelect         = document.getElementById('btn-select');
@@ -2046,7 +2179,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
       renderCards();
       renderNewNoteTags();
       renderTemplatePicker();
-      buildColorStrip(newColorsEl,  c => { newColor = c; highlightSwatch(newColorsEl, c); });
+      buildColorStrip(newColorsEl,  c => { newColor = c; highlightSwatch(newColorsEl, c); noteCardEl.style.setProperty('--nc-bg', COLORS[c]); });
       buildColorStrip(tagColorsEl, c => { tagColor = c; highlightSwatch(tagColorsEl, c); });
       highlightSwatch(newColorsEl, newColor);
       highlightSwatch(tagColorsEl, tagColor);
@@ -2087,22 +2220,32 @@ export class SidebarView implements vscode.WebviewViewProvider {
     // note defaults to the current branch — consistent with the user's focus mode.
     const scopeCheckbox = document.getElementById('new-branch-scope');
     if (scopeCheckbox) scopeCheckbox.checked = branchFilterActive && !!currentBranch;
-    newForm.classList.add('open');
+    noteCardEl.style.setProperty('--nc-bg', COLORS[newColor]);
+    noteCardOverlay.classList.add('open');
     newTitleEl.focus();
+  });
+  noteCardOverlay.addEventListener('click', e => {
+    if (e.target === noteCardOverlay) closeNewForm();
   });
   document.getElementById('btn-cancel-new').addEventListener('click', closeNewForm);
   document.getElementById('btn-confirm-new').addEventListener('click', confirmNewNote);
   newTitleEl.addEventListener('keydown', e => {
-    if (e.key === 'Enter')  { e.preventDefault(); confirmNewNote(); }
+    if (e.key === 'Enter')  { e.preventDefault(); newBodyEl.focus(); }
     if (e.key === 'Escape') closeNewForm();
+  });
+  newBodyEl.addEventListener('keydown', e => {
+    if (e.key === 'Escape') closeNewForm();
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); confirmNewNote(); }
   });
 
   function closeNewForm() {
-    newForm.classList.remove('open');
-    newTitleEl.value = '';
+    noteCardOverlay.classList.remove('open');
+    newTitleEl.value  = '';
+    newBodyEl.value   = '';
     newTags       = [];
     newTemplateId = null;
     newColor      = COLOR_KEYS[0];
+    noteCardEl.style.setProperty('--nc-bg', COLORS[newColor]);
     const scopeCheckbox = document.getElementById('new-branch-scope');
     if (scopeCheckbox) scopeCheckbox.checked = false;
     renderTemplatePicker();
