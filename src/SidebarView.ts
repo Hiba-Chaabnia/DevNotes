@@ -652,6 +652,47 @@ export class SidebarView implements vscode.WebviewViewProvider {
     padding: 0 1px;
   }
 
+  /* ── Overflow menu (⋯) ──────────────────────────────── */
+  .overflow-menu {
+    position: fixed;
+    z-index: 500;
+    background: var(--vscode-editorWidget-background, var(--vscode-sideBar-background));
+    border: 1px solid var(--vscode-panel-border);
+    border-radius: 8px;
+    box-shadow: 0 4px 20px rgba(0,0,0,.28);
+    padding: 4px;
+    min-width: 176px;
+    display: none;
+    flex-direction: column;
+  }
+  .overflow-menu.open { display: flex; }
+
+  .ovf-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    border: none;
+    background: none;
+    color: var(--vscode-foreground);
+    cursor: pointer;
+    border-radius: 5px;
+    font-size: 12px;
+    font-family: var(--vscode-font-family);
+    text-align: left;
+    width: 100%;
+  }
+  .ovf-item:hover { background: var(--vscode-toolbar-hoverBackground); }
+  .ovf-icon { flex-shrink: 0; width: 16px; display: flex; align-items: center; justify-content: center; opacity: .75; }
+  .ovf-item:hover .ovf-icon { opacity: 1; }
+  .ovf-label { flex: 1; }
+  .ovf-check { font-size: 11px; opacity: 0; transition: opacity .1s; flex-shrink: 0; color: var(--vscode-button-background); font-weight: 700; }
+  .ovf-item.active .ovf-check { opacity: 1; }
+  .ovf-item.active .ovf-label { font-weight: 600; }
+  .ovf-divider { border: none; border-top: 1px solid var(--vscode-panel-border); margin: 4px 0; }
+
+  .overflow-btn.active { opacity: 1; background: var(--vscode-toolbar-hoverBackground); }
+
   /* ── Tag filter bar ──────────────────────────────────── */
   .tag-bar {
     display: flex;
@@ -1643,6 +1684,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
     padding: 0 3px;
   }
   .sort-btn.active { color: var(--vscode-button-background); opacity: 1; }
+
 </style>
 </head>
 <body>
@@ -1653,54 +1695,19 @@ export class SidebarView implements vscode.WebviewViewProvider {
     <span class="project-name" id="project-name">Loading…</span>
     <span class="branch-pill" id="branch-pill"></span>
     <button class="icon-btn branch-filter-btn" id="btn-branch-filter" title="Show current branch only" style="display:none">⎇</button>
-    <button class="icon-btn mine-filter-btn" id="btn-mine-filter" title="Show only my notes" style="display:none">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
-        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
-        <circle cx="12" cy="7" r="4"/>
-      </svg>
-    </button>
-    <button class="icon-btn" id="btn-archive-view" title="Show archived notes">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-        <polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/>
-        <line x1="10" y1="12" x2="14" y2="12"/>
-      </svg>
-    </button>
-    <button class="icon-btn stale-filter-btn" id="btn-stale-filter" title="Show stale notes (14+ days old with open todos or bug tag)">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-        <circle cx="12" cy="12" r="9"/>
-        <polyline points="12 6 12 12 16 14"/>
-      </svg>
-    </button>
-    <button class="icon-btn" id="btn-select" title="Select notes to export">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
-        <rect x="3" y="5" width="5" height="5" rx="1"/>
-        <line x1="12" y1="7.5" x2="21" y2="7.5"/>
-        <rect x="3" y="14" width="5" height="5" rx="1"/>
-        <line x1="12" y1="16.5" x2="21" y2="16.5"/>
-      </svg>
-    </button>
-    <button class="icon-btn github-connect-btn" id="btn-github-connect" title="Connect to GitHub">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
-        <path d="M12 2C6.477 2 2 6.477 2 12c0 4.418 2.865 8.166 6.839 9.489.5.092.682-.217.682-.482 0-.237-.009-.868-.013-1.703-2.782.604-3.369-1.34-3.369-1.34-.454-1.154-1.11-1.462-1.11-1.462-.908-.62.069-.608.069-.608 1.003.07 1.531 1.03 1.531 1.03.892 1.529 2.341 1.087 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.11-4.555-4.943 0-1.091.39-1.984 1.029-2.683-.103-.253-.446-1.27.098-2.647 0 0 .84-.269 2.75 1.025A9.578 9.578 0 0 1 12 6.836a9.59 9.59 0 0 1 2.504.337c1.909-1.294 2.747-1.025 2.747-1.025.546 1.377.202 2.394.1 2.647.64.699 1.028 1.592 1.028 2.683 0 3.842-2.339 4.687-4.566 4.935.359.309.678.919.678 1.852 0 1.336-.012 2.415-.012 2.743 0 .267.18.578.688.48C19.138 20.163 22 16.418 22 12c0-5.523-4.477-10-10-10z"/>
-      </svg>
-    </button>
-    <button class="icon-btn" id="btn-register-mcp" title="Connect to Claude Code (register MCP server)">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-        <rect x="3" y="8" width="18" height="13" rx="2"/>
-        <circle cx="9" cy="14" r="1" fill="currentColor" stroke="none"/>
-        <circle cx="15" cy="14" r="1" fill="currentColor" stroke="none"/>
-        <line x1="9" y1="18" x2="15" y2="18"/>
-        <line x1="12" y1="8" x2="12" y2="4"/>
-        <circle cx="12" cy="3" r="1.5"/>
-      </svg>
-    </button>
     <button class="icon-btn sort-btn" id="btn-sort" title="Sort: last updated">↓U</button>
     <button class="icon-btn" id="btn-new" title="New Note">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
         <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
       </svg>
     </button>
+    <button class="icon-btn overflow-btn" id="btn-overflow" title="More options">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+        <circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/>
+      </svg>
+    </button>
   </div>
+
   <div class="search-row">
     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" style="opacity:.5;flex-shrink:0">
       <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
@@ -1737,6 +1744,40 @@ export class SidebarView implements vscode.WebviewViewProvider {
 
 <!-- ── Card list ── -->
 <div class="card-list" id="card-list"></div>
+
+<!-- ── Overflow menu (⋯ button) ── -->
+<div class="overflow-menu" id="overflow-menu">
+  <button class="ovf-item mine-filter-btn" id="btn-mine-filter" style="display:none">
+    <span class="ovf-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span>
+    <span class="ovf-label">My notes only</span>
+    <span class="ovf-check">✓</span>
+  </button>
+  <button class="ovf-item" id="btn-archive-view">
+    <span class="ovf-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/></svg></span>
+    <span class="ovf-label">Archived notes</span>
+    <span class="ovf-check">✓</span>
+  </button>
+  <button class="ovf-item stale-filter-btn" id="btn-stale-filter">
+    <span class="ovf-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 6 12 12 16 14"/></svg></span>
+    <span class="ovf-label">Stale notes</span>
+    <span class="ovf-check">✓</span>
+  </button>
+  <button class="ovf-item" id="btn-select">
+    <span class="ovf-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><rect x="3" y="5" width="5" height="5" rx="1"/><line x1="12" y1="7.5" x2="21" y2="7.5"/><rect x="3" y="14" width="5" height="5" rx="1"/><line x1="12" y1="16.5" x2="21" y2="16.5"/></svg></span>
+    <span class="ovf-label">Selection mode</span>
+    <span class="ovf-check">✓</span>
+  </button>
+  <hr class="ovf-divider"/>
+  <button class="ovf-item github-connect-btn" id="btn-github-connect">
+    <span class="ovf-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.477 2 2 6.477 2 12c0 4.418 2.865 8.166 6.839 9.489.5.092.682-.217.682-.482 0-.237-.009-.868-.013-1.703-2.782.604-3.369-1.34-3.369-1.34-.454-1.154-1.11-1.462-1.11-1.462-.908-.62.069-.608.069-.608 1.003.07 1.531 1.03 1.531 1.03.892 1.529 2.341 1.087 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.11-4.555-4.943 0-1.091.39-1.984 1.029-2.683-.103-.253-.446-1.27.098-2.647 0 0 .84-.269 2.75 1.025A9.578 9.578 0 0 1 12 6.836a9.59 9.59 0 0 1 2.504.337c1.909-1.294 2.747-1.025 2.747-1.025.546 1.377.202 2.394.1 2.647.64.699 1.028 1.592 1.028 2.683 0 3.842-2.339 4.687-4.566 4.935.359.309.678.919.678 1.852 0 1.336-.012 2.415-.012 2.743 0 .267.18.578.688.48C19.138 20.163 22 16.418 22 12c0-5.523-4.477-10-10-10z"/></svg></span>
+    <span class="ovf-label" id="ovf-github-label">Connect GitHub</span>
+    <span class="ovf-check">✓</span>
+  </button>
+  <button class="ovf-item" id="btn-register-mcp">
+    <span class="ovf-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="8" width="18" height="13" rx="2"/><circle cx="9" cy="14" r="1" fill="currentColor" stroke="none"/><circle cx="15" cy="14" r="1" fill="currentColor" stroke="none"/><line x1="9" y1="18" x2="15" y2="18"/><line x1="12" y1="8" x2="12" y2="4"/><circle cx="12" cy="3" r="1.5"/></svg></span>
+    <span class="ovf-label">Register MCP</span>
+  </button>
+</div>
 
 <!-- ── Export bar (selection mode) ── -->
 <div class="export-bar" id="export-bar">
@@ -1815,6 +1856,27 @@ export class SidebarView implements vscode.WebviewViewProvider {
   const addTagForm     = document.getElementById('add-tag-form');
   const tagLabelEl     = document.getElementById('tag-label');
   const tagColorsEl    = document.getElementById('tag-colors');
+
+  // ── Overflow menu ────────────────────────────────────────────────────────
+  const btnOverflow  = document.getElementById('btn-overflow');
+  const overflowMenu = document.getElementById('overflow-menu');
+  const ovfGithubLabel = document.getElementById('ovf-github-label');
+
+  btnOverflow.addEventListener('click', e => {
+    e.stopPropagation();
+    const rect   = btnOverflow.getBoundingClientRect();
+    const isOpen = overflowMenu.classList.contains('open');
+    closeAllPops();
+    if (!isOpen) {
+      overflowMenu.style.top   = (rect.bottom + 4) + 'px';
+      overflowMenu.style.right = (window.innerWidth - rect.right) + 'px';
+      overflowMenu.classList.add('open');
+      btnOverflow.classList.add('active');
+    }
+  });
+
+  // Clicks inside the overflow propagate to document → closeAllPops closes it.
+  // Clicks on each item run their handler first, then the menu closes naturally.
 
   // ── Branch filter toggle ─────────────────────────────────────────────────
   branchFilterBtn.addEventListener('click', () => {
@@ -1971,9 +2033,11 @@ export class SidebarView implements vscode.WebviewViewProvider {
       if (msg.projectName) projectName.textContent = msg.projectName;
       // Show mine-filter button only when a git user is detected
       btnMineFilter.style.display = currentUser ? '' : 'none';
-      // Reflect GitHub connection status on the button
+      // Reflect GitHub connection status on the overflow item
       btnGithub.classList.toggle('connected', githubConnected);
+      btnGithub.classList.toggle('active', githubConnected);
       btnGithub.title = githubConnected ? 'GitHub connected' : 'Connect to GitHub';
+      if (ovfGithubLabel) ovfGithubLabel.textContent = githubConnected ? 'GitHub connected' : 'Connect GitHub';
       // Drop filter state for tags that no longer exist
       activeTagIds = activeTagIds.filter(id => tags.some(t => t.id === id));
       renderBranchIndicator();
@@ -2863,6 +2927,8 @@ export class SidebarView implements vscode.WebviewViewProvider {
     openColorPop    = null;
     openTagPop      = null;
     openMgrColorPop = null;
+    overflowMenu.classList.remove('open');
+    btnOverflow.classList.remove('active');
   }
 
   // ── Helpers ─────────────────────────────────────────────────────────────
