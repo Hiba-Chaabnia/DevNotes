@@ -1199,7 +1199,22 @@ export class SidebarView implements vscode.WebviewViewProvider {
     gap: 4px;
   }
 
-  .card-tags { display: flex; gap: 3px; flex-wrap: wrap; }
+  .card-tags { display: contents; } /* flattened into row2 */
+
+  .tag-ghost {
+    display: inline-flex;
+    align-items: center;
+    font-size: 10px;
+    padding: 1px 7px;
+    border-radius: 10px;
+    border: 1px dashed rgba(128,128,128,.35);
+    background: none;
+    color: var(--card-text);
+    opacity: .35;
+    cursor: pointer;
+    transition: opacity .12s;
+  }
+  .tag-ghost:hover { opacity: .7; }
   .tag-pill {
     font-size: 10px;
     padding: 1px 6px;
@@ -1533,7 +1548,6 @@ export class SidebarView implements vscode.WebviewViewProvider {
     border: 1px solid rgba(0,0,0,.15);
     color: var(--card-text);
     opacity: .65;
-    align-self: flex-start;
   }
 
   /* Off-branch card — dimmed but still accessible */
@@ -1627,7 +1641,6 @@ export class SidebarView implements vscode.WebviewViewProvider {
     border: 1px solid rgba(239,108,87,.4);
     color: var(--card-text);
     cursor: pointer;
-    align-self: flex-start;
     transition: background .1s;
   }
   .conflict-badge:hover { background: rgba(239,108,87,.3); }
@@ -1644,7 +1657,6 @@ export class SidebarView implements vscode.WebviewViewProvider {
     border: 1px solid rgba(0,0,0,.1);
     color: var(--card-text);
     opacity: .75;
-    align-self: flex-start;
     white-space: nowrap;
   }
   .reminder-badge.overdue {
@@ -1662,7 +1674,6 @@ export class SidebarView implements vscode.WebviewViewProvider {
     padding: 2px 7px;
     border-radius: 4px;
     color: var(--card-text);
-    align-self: flex-start;
     white-space: nowrap;
     cursor: pointer;
     transition: filter .1s;
@@ -1726,7 +1737,6 @@ export class SidebarView implements vscode.WebviewViewProvider {
     flex-shrink: 0;
     opacity: .75;
     transition: opacity .12s, background .12s;
-    align-self: flex-start;
   }
   .code-link-chip::before {
     content: '{}';
@@ -1756,12 +1766,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
   .code-link-chip:hover .code-link-remove { opacity: .55; }
   .code-link-remove:hover { opacity: 1 !important; }
 
-  .note-links-row {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 4px;
-    align-items: center;
-  }
+  .note-links-row { display: contents; } /* flattened into row2 */
   .note-link-chip {
     display: inline-flex;
     align-items: center;
@@ -2727,28 +2732,23 @@ export class SidebarView implements vscode.WebviewViewProvider {
     // ── Row 2: Metadata chips ──
     const row2 = mkEl('div', 'card-row-2');
 
-    if (note.tags.length > 0) {
-      const tagRow = mkEl('div', 'card-tags');
-      note.tags.forEach(tid => {
-        const tag = tags.find(t => t.id === tid);
-        if (!tag) return;
-        const pill = mkEl('span', 'tag-pill', tag.label);
-        pill.style.background = tag.color;
-        pill.title = 'Filter by ' + tag.label;
-        pill.addEventListener('click', () => {
-          if (!activeTagIds.includes(tid)) {
-            activeTagIds = [...activeTagIds, tid];
-            renderTagBar();
-            renderCards();
-          }
-        });
-        tagRow.appendChild(pill);
+    note.tags.forEach(tid => {
+      const tag = tags.find(t => t.id === tid);
+      if (!tag) return;
+      const pill = mkEl('span', 'tag-pill', tag.label);
+      pill.style.background = tag.color;
+      pill.title = 'Filter by ' + tag.label;
+      pill.addEventListener('click', () => {
+        if (!activeTagIds.includes(tid)) {
+          activeTagIds = [...activeTagIds, tid];
+          renderTagBar();
+          renderCards();
+        }
       });
-      row2.appendChild(tagRow);
-    }
+      row2.appendChild(pill);
+    });
 
     if (note.linkedNoteIds && note.linkedNoteIds.length > 0) {
-      const linksRow = mkEl('div', 'note-links-row');
       note.linkedNoteIds.forEach(targetId => {
         const target = notes.find(n => n.id === targetId);
         if (!target) return;
@@ -2766,9 +2766,8 @@ export class SidebarView implements vscode.WebviewViewProvider {
             vscode.postMessage({ type: 'openLinkedNote', noteId: targetId });
           }
         });
-        linksRow.appendChild(chip);
+        row2.appendChild(chip);
       });
-      if (linksRow.children.length > 0) row2.appendChild(linksRow);
     }
 
     if (note.conflicted) {
@@ -2830,6 +2829,15 @@ export class SidebarView implements vscode.WebviewViewProvider {
         chip.appendChild(removeBtn);
       }
       row2.appendChild(chip);
+    }
+
+    const hasChips = note.tags.length > 0
+      || (note.linkedNoteIds && note.linkedNoteIds.length > 0)
+      || note.codeLink || note.github || note.remindAt || note.conflicted || note.archived;
+    if (!hasChips) {
+      const ghost = mkEl('button', 'tag-ghost', '+ tag');
+      ghost.title = 'Assign tags via the overflow menu';
+      row2.appendChild(ghost);
     }
 
     card.appendChild(row2);
