@@ -1731,7 +1731,8 @@ export class SidebarView implements vscode.WebviewViewProvider {
   .branch-filter-btn.active { color: var(--vscode-button-background) !important; opacity: 1; }
   .github-connect-btn.connected { color: #06d6a0 !important; opacity: 1; }
   .archive-view-btn.active { color: var(--vscode-button-background) !important; opacity: 1; }
-  .card.is-archived { opacity: .75; }
+  .card.is-archived { opacity: .7; filter: grayscale(.25); }
+  .card.conflict { border-left-color: #EF6C57; background: rgba(239,108,87,.06); }
   .archived-badge {
     display: inline-flex;
     align-items: center;
@@ -1819,14 +1820,6 @@ export class SidebarView implements vscode.WebviewViewProvider {
   .stale-filter-btn.active { color: #EF6C57 !important; opacity: 1; }
 
   /* ── Conflict indicator ─────────────────────────────── */
-  .card.conflict::after {
-    content: '';
-    position: absolute;
-    left: 0; top: 0; bottom: 0;
-    width: 3px;
-    background: #EF6C57;
-    border-radius: var(--radius) 0 0 var(--radius);
-  }
   .conflict-badge {
     display: inline-flex;
     align-items: center;
@@ -1947,10 +1940,12 @@ export class SidebarView implements vscode.WebviewViewProvider {
     background: rgba(0,0,0,.2);
   }
   .code-link-chip.stale {
-    opacity: .35;
+    opacity: .5;
     text-decoration: line-through;
     cursor: default;
     pointer-events: none;
+    border-color: rgba(239,108,87,.4);
+    color: #EF6C57;
   }
   .code-link-remove {
     opacity: 0;
@@ -2107,7 +2102,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
 </div>
 
 <!-- ── Card list ── -->
-<div class="card-list" id="card-list"></div>
+<div class="card-list" id="card-list" role="list" aria-label="Notes"></div>
 
 <!-- ── Card-level overflow menu ── -->
 <div class="overflow-menu" id="card-ovf-menu"></div>
@@ -2909,6 +2904,11 @@ export class SidebarView implements vscode.WebviewViewProvider {
     );
     card.dataset.id = note.id;
     card.style.setProperty('--card-accent', bg);
+    card.setAttribute('role', 'listitem');
+    card.setAttribute('aria-label', note.title
+      + (note.conflicted ? ' — conflict' : '')
+      + (note.archived   ? ' — archived' : '')
+    );
 
     // ── Select checkbox (visible only in selection mode) ──
     const checkEl = mkEl('div', 'card-check');
@@ -2941,6 +2941,8 @@ export class SidebarView implements vscode.WebviewViewProvider {
     overflowBtn.textContent = '⋯';
     overflowBtn.title = 'More actions';
     overflowBtn.setAttribute('aria-label', 'More actions');
+    overflowBtn.setAttribute('aria-expanded', 'false');
+    overflowBtn.setAttribute('aria-haspopup', 'menu');
     overflowBtn.addEventListener('click', e => {
       e.stopPropagation();
       openCardMenu(note, overflowBtn);
@@ -2949,6 +2951,9 @@ export class SidebarView implements vscode.WebviewViewProvider {
     const cardColorBtn = mkEl('button', 'card-color-btn');
     cardColorBtn.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="8.5" cy="9" r="1.5" fill="currentColor"/><circle cx="15.5" cy="9" r="1.5" fill="currentColor"/><circle cx="12" cy="15" r="1.5" fill="currentColor"/></svg>';
     cardColorBtn.title = 'Change color';
+    cardColorBtn.setAttribute('aria-label', 'Change note color');
+    cardColorBtn.setAttribute('aria-expanded', 'false');
+    cardColorBtn.setAttribute('aria-haspopup', 'listbox');
     cardColorBtn.addEventListener('click', e => {
       e.stopPropagation();
       openCardColorPop(note, cardColorBtn);
@@ -2957,6 +2962,8 @@ export class SidebarView implements vscode.WebviewViewProvider {
     const starBtn = mkEl('button', 'star-btn' + (note.starred ? ' on' : ''));
     starBtn.textContent = '★';
     starBtn.title = note.starred ? 'Unstar' : 'Star';
+    starBtn.setAttribute('aria-pressed', note.starred ? 'true' : 'false');
+    starBtn.setAttribute('aria-label', note.starred ? 'Unstar note' : 'Star note');
     starBtn.addEventListener('click', () => {
       vscode.postMessage({ type: 'updateNote', id: note.id, changes: { starred: !note.starred } });
     });
@@ -3007,6 +3014,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
 
     if (note.conflicted) {
       const badge = mkEl('button', 'conflict-badge', '⚠ Conflict — click to resolve');
+      badge.setAttribute('aria-label', 'Merge conflict — click to open conflict resolution');
       badge.addEventListener('click', e => {
         e.stopPropagation();
         vscode.postMessage({ type: 'openConflict', noteId: note.id });
@@ -3015,7 +3023,9 @@ export class SidebarView implements vscode.WebviewViewProvider {
     }
 
     if (note.archived) {
-      row2.appendChild(mkEl('span', 'archived-badge', '📦 Archived'));
+      const ab = mkEl('span', 'archived-badge', '📦 Archived');
+      ab.setAttribute('aria-label', 'This note is archived');
+      row2.appendChild(ab);
     }
 
     if (note.remindAt) {
@@ -3045,10 +3055,15 @@ export class SidebarView implements vscode.WebviewViewProvider {
     if (note.codeLink) {
       const chip = mkEl('button', 'code-link-chip' + (note.codeLinkStale ? ' stale' : ''));
       const shortName = note.codeLink.file.split('/').pop() || note.codeLink.file;
+      const staleTitle = note.codeLink.file + ':' + note.codeLink.line + ' — file not found';
       chip.title = note.codeLinkStale
-        ? note.codeLink.file + ':' + note.codeLink.line + ' (file not found)'
+        ? staleTitle
         : note.codeLink.file + ':' + note.codeLink.line + ' — click to jump';
-      const chipLabel = mkEl('span', '', shortName + ':' + note.codeLink.line);
+      chip.setAttribute('aria-label', note.codeLinkStale
+        ? 'Broken link: ' + staleTitle
+        : 'Jump to ' + note.codeLink.file + ' line ' + note.codeLink.line
+      );
+      const chipLabel = mkEl('span', '', (note.codeLinkStale ? '⚠ ' : '') + shortName + ':' + note.codeLink.line);
       chip.appendChild(chipLabel);
       if (!note.codeLinkStale) {
         chip.addEventListener('click', e => {
@@ -3423,6 +3438,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
     });
 
     cardOvfMenu.classList.add('open');
+    btn.setAttribute('aria-expanded', 'true');
   }
 
   // ── Card color picker ───────────────────────────────────────────────────
@@ -3454,6 +3470,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
     });
 
     cardColorPop.classList.add('open');
+    btn.setAttribute('aria-expanded', 'true');
   }
 
   // ── Close all popover on outside click ─────────────────────────────────
@@ -3468,6 +3485,8 @@ export class SidebarView implements vscode.WebviewViewProvider {
     openMgrColorPop = null;
     overflowMenu.classList.remove('open');
     btnOverflow.classList.remove('active');
+    // Reset aria-expanded on any card overflow/color opener
+    document.querySelectorAll('[aria-expanded="true"]').forEach(el => el.setAttribute('aria-expanded', 'false'));
     cardOvfMenu.classList.remove('open');
     cardOvfTarget = null;
     cardColorPop.classList.remove('open');
