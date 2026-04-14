@@ -560,7 +560,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
   :root {
     --radius: 10px;
     --gap: 10px;
-    --card-text: #1a1a2e;
+    --card-text: var(--vscode-foreground);
   }
 
   body {
@@ -987,6 +987,8 @@ export class SidebarView implements vscode.WebviewViewProvider {
     display: flex;
     flex-direction: column;
     gap: 6px;
+    background: var(--vscode-editorWidget-background, var(--vscode-sideBar-background));
+    border-left: 3px solid var(--card-accent, #FFD166);
     box-shadow: 0 1px 4px rgba(0,0,0,.1);
     transition: box-shadow .15s, transform .15s;
     color: var(--card-text);
@@ -995,23 +997,14 @@ export class SidebarView implements vscode.WebviewViewProvider {
   .card:hover { box-shadow: 0 4px 14px rgba(0,0,0,.15); transform: translateY(-1px); }
   .card:focus { outline: 2px solid var(--vscode-focusBorder); outline-offset: 1px; box-shadow: 0 4px 14px rgba(0,0,0,.15); }
   .card.hidden { display: none; }
+  .card.is-shared { border-left-color: rgba(6, 214, 214, 0.85); }
 
-  /* Shared indicator — left-edge stripe */
-  .card.is-shared::before {
-    content: '';
-    position: absolute;
-    left: 0; top: 8px; bottom: 8px;
-    width: 3px;
-    background: rgba(6, 214, 214, 0.75);
-    border-radius: 0 3px 3px 0;
-  }
-
-  /* Card header row */
-  .card-header {
+  /* ── Card rows ───────────────────────────────────────── */
+  .card-row-1 {
     display: flex;
     align-items: center;
     gap: 4px;
-    min-height: 22px;
+    min-height: 24px;
   }
 
   .star-btn {
@@ -1036,35 +1029,19 @@ export class SidebarView implements vscode.WebviewViewProvider {
     cursor: text;
   }
   .card-title:focus {
-    border-bottom: 1.5px solid rgba(26,26,46,.35);
+    border-bottom: 1.5px solid var(--vscode-focusBorder);
   }
 
-  .card-actions {
+  .card-row-2 {
     display: flex;
     align-items: center;
-    gap: 2px;
-    opacity: 0;
-    transition: opacity .12s;
-    flex-shrink: 0;
+    gap: 4px;
+    flex-wrap: wrap;
+    min-height: 0;
   }
-  .card:hover .card-actions { opacity: 1; }
+  .card-row-2:empty { display: none; }
 
-  .card-btn {
-    background: rgba(0,0,0,.12);
-    border: none;
-    border-radius: 4px;
-    width: 22px; height: 22px;
-    display: flex; align-items: center; justify-content: center;
-    cursor: pointer;
-    font-size: 12px;
-    color: var(--card-text);
-    transition: background .1s;
-  }
-  .card-btn:hover { background: rgba(0,0,0,.22); }
-  .card-btn.is-active {
-    background: rgba(6, 214, 214, 0.35);
-  }
-  .card-btn.is-active:hover { background: rgba(6, 214, 214, 0.5); }
+  .card-row-3 { /* content area */ }
 
   /* Color picker popover */
   .color-pop {
@@ -1197,8 +1174,8 @@ export class SidebarView implements vscode.WebviewViewProvider {
   }
   .show-more:hover { opacity: 1; }
 
-  /* Card footer */
-  .card-footer {
+  /* Card footer — aliased to row 4 */
+  .card-row-4 {
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -1239,6 +1216,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
 
   .note-card {
     width: 100%;
+    max-height: 65vh;
     border-radius: 12px;
     background: var(--nc-bg, #FFD166);
     box-shadow: 0 8px 32px rgba(0,0,0,.35), 0 2px 8px rgba(0,0,0,.18);
@@ -1297,6 +1275,8 @@ export class SidebarView implements vscode.WebviewViewProvider {
     cursor: text;
     overflow-y: auto;
     min-height: 88px;
+    flex: 1;
+    min-height: 0;
     word-break: break-word;
   }
   .note-card-body .ProseMirror {
@@ -1812,6 +1792,23 @@ export class SidebarView implements vscode.WebviewViewProvider {
   }
   .sort-btn.active { color: var(--vscode-button-background); opacity: 1; }
 
+  /* ── New-note highlight flash ────────────────────────── */
+  @keyframes highlight-new {
+    0%   { outline: 3px solid rgba(255,255,255,.85); outline-offset: 0px; }
+    100% { outline: 3px solid rgba(255,255,255,0);   outline-offset: 5px; }
+  }
+  .card.highlight-new { animation: highlight-new 1.2s ease-out forwards; }
+
+  /* ── Keyboard hint in format bar ─────────────────────── */
+  .nc-hint {
+    margin-left: auto;
+    font-size: 10px;
+    color: rgba(26,26,46,.38);
+    white-space: nowrap;
+    pointer-events: none;
+    user-select: none;
+  }
+
 </style>
 </head>
 <body>
@@ -1860,6 +1857,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
         <button class="fmt-btn" data-cmd="strike"     title="Strikethrough"><s>S</s></button>
         <div class="fmt-btn-sep"></div>
         <button class="fmt-btn" data-cmd="bulletList" title="Bullet list">&#8801;</button>
+        <span class="nc-hint">Ctrl+Enter to create</span>
       </div>
       <div class="note-card-metabar">
         <label class="branch-scope-label" id="branch-scope-label">
@@ -1969,6 +1967,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
   let staleFilterActive      = false;
   let selectMode         = false;
   let selectedIds        = [];
+  let knownNoteIds       = null; // null on first load — skip highlight; Set afterwards
   let openColorPop    = null;
   let openTagPop      = null;
   let isManagingTags  = false;
@@ -2170,6 +2169,12 @@ export class SidebarView implements vscode.WebviewViewProvider {
 
   window.addEventListener('message', ({ data: msg }) => {
     if (msg.type === 'init') {
+      const incomingIds = new Set((msg.notes ?? []).map(n => n.id));
+      const addedId     = knownNoteIds !== null
+        ? [...incomingIds].find(id => !knownNoteIds.has(id)) ?? null
+        : null;
+      knownNoteIds = incomingIds;
+
       notes         = msg.notes         ?? [];
       tags          = msg.tags          ?? [];
       templates     = msg.templates     ?? [];
@@ -2191,6 +2196,16 @@ export class SidebarView implements vscode.WebviewViewProvider {
       renderTagBar();
       if (isManagingTags) renderTagManager();
       renderCards();
+      if (addedId) {
+        requestAnimationFrame(() => {
+          const newCard = cardList.querySelector('[data-id="' + addedId + '"]');
+          if (newCard) {
+            newCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            newCard.classList.add('highlight-new');
+            setTimeout(() => newCard.classList.remove('highlight-new'), 1200);
+          }
+        });
+      }
       renderNewNoteTags();
       renderCardTemplatePicker();
       buildColorStrip(newColorsEl,  c => { newColor = c; highlightSwatch(newColorsEl, c); noteCardEl.style.setProperty('--nc-bg', COLORS[c]); });
@@ -2649,7 +2664,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
       + (note.archived   ? ' is-archived' : '')
     );
     card.dataset.id = note.id;
-    card.style.background = bg;
+    card.style.setProperty('--card-accent', bg);
 
     // ── Select checkbox (visible only in selection mode) ──
     const checkEl = mkEl('div', 'card-check');
@@ -2657,22 +2672,15 @@ export class SidebarView implements vscode.WebviewViewProvider {
 
     card.addEventListener('click', e => {
       if (!selectMode) return;
-      if (e.target.closest('.card-actions')) return;
+      if (e.target.closest('button, input, textarea')) return;
       const idx = selectedIds.indexOf(note.id);
       if (idx === -1) { selectedIds.push(note.id); card.classList.add('selected'); }
       else            { selectedIds.splice(idx, 1); card.classList.remove('selected'); }
       updateExportBar();
     });
 
-    // ── Header ──
-    const hdr = mkEl('div', 'card-header');
-
-    const starBtn = mkEl('button', 'star-btn' + (note.starred ? ' on' : ''));
-    starBtn.textContent = '★';
-    starBtn.title = note.starred ? 'Unstar' : 'Star';
-    starBtn.addEventListener('click', () => {
-      vscode.postMessage({ type: 'updateNote', id: note.id, changes: { starred: !note.starred } });
-    });
+    // ── Row 1: Title + Star ──
+    const row1 = mkEl('div', 'card-row-1');
 
     const title = mkEl('input', 'card-title');
     title.type  = 'text';
@@ -2685,175 +2693,19 @@ export class SidebarView implements vscode.WebviewViewProvider {
     });
     title.addEventListener('keydown', e => { if (e.key === 'Enter') title.blur(); });
 
-    const actions = mkEl('div', 'card-actions');
-
-    // ── Tag assignment button ──
-    const tagBtn = mkEl('button', 'card-btn', '#');
-    tagBtn.title = 'Assign tags';
-    const tagPop = mkEl('div', 'tag-pop');
-
-    if (tags.length === 0) {
-      tagPop.appendChild(mkEl('div', 'tag-pop-empty', 'No tags yet'));
-    } else {
-      tags.forEach(tag => {
-        const item  = mkEl('div', 'tag-pop-item' + (note.tags.includes(tag.id) ? ' selected' : ''));
-        item.style.background = tag.color;
-        const lbl   = mkEl('span', '', tag.label);
-        const check = mkEl('span', 'tag-pop-check', '✓');
-        item.append(lbl, check);
-        item.addEventListener('click', e => {
-          e.stopPropagation();
-          const newNoteTags = note.tags.includes(tag.id)
-            ? note.tags.filter(t => t !== tag.id)
-            : [...note.tags, tag.id];
-          vscode.postMessage({ type: 'updateNote', id: note.id, changes: { tags: newNoteTags } });
-          tagPop.classList.remove('open');
-          openTagPop = null;
-        });
-        tagPop.appendChild(item);
-      });
-    }
-
-    tagBtn.addEventListener('click', e => {
-      e.stopPropagation();
-      const wasOpen = tagPop.classList.contains('open');
-      closeAllPops();
-      if (!wasOpen) { tagPop.classList.add('open'); openTagPop = note.id; }
+    const starBtn = mkEl('button', 'star-btn' + (note.starred ? ' on' : ''));
+    starBtn.textContent = '★';
+    starBtn.title = note.starred ? 'Unstar' : 'Star';
+    starBtn.addEventListener('click', () => {
+      vscode.postMessage({ type: 'updateNote', id: note.id, changes: { starred: !note.starred } });
     });
 
-    // ── Code link button ──
-    const linkBtn = mkEl('button', 'card-btn' + (note.codeLink ? ' is-active' : ''));
-    linkBtn.title = note.codeLink ? 'Update link to current cursor position' : 'Link to current cursor position';
-    linkBtn.innerHTML = \`<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-      <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
-      <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
-    </svg>\`;
-    linkBtn.addEventListener('click', () => {
-      vscode.postMessage({ type: 'linkToEditor', noteId: note.id });
-    });
+    row1.append(title, starBtn);
+    card.append(row1);
 
-    // ── Branch scope button ──
-    const branchBtn = mkEl('button', 'card-btn' + (note.branch ? ' is-active' : ''));
-    branchBtn.textContent = '⎇';
-    if (!currentBranch) {
-      branchBtn.style.display = 'none';
-    } else if (note.branch) {
-      branchBtn.title = note.branch === currentBranch
-        ? 'Scoped to this branch — click to make global'
-        : 'Scoped to ' + note.branch + ' — click to make global';
-    } else {
-      branchBtn.title = 'Scope to current branch (' + currentBranch + ')';
-    }
-    branchBtn.addEventListener('click', () => {
-      if (note.branch) {
-        vscode.postMessage({ type: 'setBranchScope', noteId: note.id, branch: null });
-      } else if (currentBranch) {
-        vscode.postMessage({ type: 'setBranchScope', noteId: note.id, branch: currentBranch });
-      }
-    });
+    // ── Row 2: Metadata chips ──
+    const row2 = mkEl('div', 'card-row-2');
 
-    // ── Reminder button ──
-    const bellBtn = mkEl('button', 'card-btn' + (note.remindAt ? ' is-active' : ''));
-    bellBtn.textContent = '🔔';
-    bellBtn.title = note.remindAt ? 'Edit reminder' : 'Set a reminder';
-    bellBtn.addEventListener('click', () => {
-      vscode.postMessage({ type: 'setReminder', noteId: note.id });
-    });
-
-    // ── Share toggle button ──
-    const shareBtn = mkEl('button', 'card-btn' + (note.shared ? ' is-active' : ''));
-    shareBtn.title = note.shared ? 'Unshare note' : 'Share note (opt into git)';
-    shareBtn.innerHTML = \`<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
-      <circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/>
-      <line x1="8.6" y1="13.5" x2="15.4" y2="17.5"/><line x1="15.4" y1="6.5" x2="8.6" y2="10.5"/>
-    </svg>\`;
-    shareBtn.addEventListener('click', () => {
-      vscode.postMessage({ type: 'updateNote', id: note.id, changes: { shared: !note.shared } });
-    });
-
-    // ── Color picker button ──
-    const colorBtn = mkEl('button', 'card-btn', '🎨');
-    colorBtn.title = 'Change color';
-    const colorPop = mkEl('div', 'color-pop');
-    COLOR_KEYS.forEach(key => {
-      const sw = mkEl('div', 'color-swatch' + (note.color === key ? ' selected' : ''));
-      sw.style.background = COLORS[key];
-      sw.title = key;
-      sw.addEventListener('click', e => {
-        e.stopPropagation();
-        vscode.postMessage({ type: 'updateNote', id: note.id, changes: { color: key } });
-        colorPop.classList.remove('open');
-        openColorPop = null;
-      });
-      colorPop.appendChild(sw);
-    });
-    colorBtn.addEventListener('click', e => {
-      e.stopPropagation();
-      const wasOpen = colorPop.classList.contains('open');
-      closeAllPops();
-      if (!wasOpen) { colorPop.classList.add('open'); openColorPop = note.id; }
-    });
-
-    // ── Open in rich editor button ──
-    const editBtn = mkEl('button', 'card-btn', '✏');
-    editBtn.title = 'Open in rich editor';
-    editBtn.addEventListener('click', () => {
-      vscode.postMessage({ type: 'openEditor', noteId: note.id });
-    });
-
-    // ── Duplicate button ──
-    const dupBtn = mkEl('button', 'card-btn');
-    dupBtn.title = 'Duplicate note';
-    dupBtn.innerHTML = \`<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-      <rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
-    </svg>\`;
-    dupBtn.addEventListener('click', () => {
-      vscode.postMessage({ type: 'duplicateNote', noteId: note.id });
-    });
-
-    // ── Link to another note button ──
-    const noteLinkBtn = mkEl('button', 'card-btn');
-    noteLinkBtn.title = 'Link to another note';
-    noteLinkBtn.innerHTML = \`<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-      <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
-      <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
-      <line x1="5" y1="5" x2="5" y2="1"/><line x1="1" y1="5" x2="5" y2="5"/>
-    </svg>\`;
-    noteLinkBtn.addEventListener('click', () => {
-      vscode.postMessage({ type: 'linkNote', noteId: note.id });
-    });
-
-    // ── Create GitHub issue button (only when connected and not yet linked) ──
-    const ghIssueBtn = mkEl('button', 'card-btn');
-    ghIssueBtn.title = 'Create GitHub issue from this note';
-    ghIssueBtn.innerHTML = \`<svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
-      <path d="M8 9.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3Z"/>
-      <path d="M8 0a8 8 0 1 1 0 16A8 8 0 0 1 8 0ZM1.5 8a6.5 6.5 0 1 0 13 0 6.5 6.5 0 0 0-13 0Z"/>
-    </svg>\`;
-    ghIssueBtn.style.display = (githubConnected && !note.github) ? '' : 'none';
-    ghIssueBtn.addEventListener('click', () => {
-      vscode.postMessage({ type: 'createGitHubIssue', noteId: note.id });
-    });
-
-    // ── Archive / unarchive button ──
-    const archiveBtn = mkEl('button', 'card-btn', note.archived ? '↩' : '📦');
-    archiveBtn.title = note.archived ? 'Unarchive note' : 'Archive note';
-    archiveBtn.addEventListener('click', () => {
-      vscode.postMessage({ type: note.archived ? 'unarchiveNote' : 'archiveNote', id: note.id });
-    });
-
-    // ── Delete button ──
-    const delBtn = mkEl('button', 'card-btn', '✕');
-    delBtn.title = 'Delete note';
-    delBtn.addEventListener('click', () => {
-      vscode.postMessage({ type: 'deleteNote', id: note.id });
-    });
-
-    actions.append(tagBtn, linkBtn, branchBtn, bellBtn, shareBtn, colorBtn, editBtn, dupBtn, noteLinkBtn, ghIssueBtn, archiveBtn, delBtn);
-    hdr.append(starBtn, title, actions);
-    card.append(hdr, colorPop, tagPop);
-
-    // ── Tags on card ──
     if (note.tags.length > 0) {
       const tagRow = mkEl('div', 'card-tags');
       note.tags.forEach(tid => {
@@ -2871,15 +2723,14 @@ export class SidebarView implements vscode.WebviewViewProvider {
         });
         tagRow.appendChild(pill);
       });
-      card.appendChild(tagRow);
+      row2.appendChild(tagRow);
     }
 
-    // ── Linked notes chips ──
     if (note.linkedNoteIds && note.linkedNoteIds.length > 0) {
       const linksRow = mkEl('div', 'note-links-row');
       note.linkedNoteIds.forEach(targetId => {
         const target = notes.find(n => n.id === targetId);
-        if (!target) return; // note was deleted
+        if (!target) return;
         const chip = mkEl('button', 'note-link-chip');
         const label = mkEl('span', '', target.title);
         const unlinkBtn = mkEl('span', 'note-link-unlink', '✕');
@@ -2896,34 +2747,30 @@ export class SidebarView implements vscode.WebviewViewProvider {
         });
         linksRow.appendChild(chip);
       });
-      if (linksRow.children.length > 0) card.appendChild(linksRow);
+      if (linksRow.children.length > 0) row2.appendChild(linksRow);
     }
 
-    // ── Conflict badge ──
     if (note.conflicted) {
       const badge = mkEl('button', 'conflict-badge', '⚠ Conflict — click to resolve');
       badge.addEventListener('click', e => {
         e.stopPropagation();
         vscode.postMessage({ type: 'openConflict', noteId: note.id });
       });
-      card.appendChild(badge);
+      row2.appendChild(badge);
     }
 
-    // ── Archived badge ──
     if (note.archived) {
-      card.appendChild(mkEl('span', 'archived-badge', '📦 Archived'));
+      row2.appendChild(mkEl('span', 'archived-badge', '📦 Archived'));
     }
 
-    // ── Reminder badge ──
     if (note.remindAt) {
       const isOverdue = note.remindAt <= Date.now();
       const badge = mkEl('span', 'reminder-badge' + (isOverdue ? ' overdue' : ''));
       badge.textContent = '🔔 ' + formatReminder(note.remindAt);
       badge.title = isOverdue ? 'Overdue — click 🔔 to reschedule' : new Date(note.remindAt).toLocaleString();
-      card.appendChild(badge);
+      row2.appendChild(badge);
     }
 
-    // ── GitHub status badge ──
     if (note.github) {
       const gh     = note.github;
       const status = gh.status ?? 'open';
@@ -2937,26 +2784,22 @@ export class SidebarView implements vscode.WebviewViewProvider {
         e.stopPropagation();
         vscode.postMessage({ type: 'openGitHubLink', url: gh.url });
       });
-      card.appendChild(badge);
+      row2.appendChild(badge);
     }
 
-    // ── Code link chip ──
     if (note.codeLink) {
       const chip = mkEl('button', 'code-link-chip' + (note.codeLinkStale ? ' stale' : ''));
       const shortName = note.codeLink.file.split('/').pop() || note.codeLink.file;
       chip.title = note.codeLinkStale
         ? note.codeLink.file + ':' + note.codeLink.line + ' (file not found)'
         : note.codeLink.file + ':' + note.codeLink.line + ' — click to jump';
-
       const chipLabel = mkEl('span', '', shortName + ':' + note.codeLink.line);
       chip.appendChild(chipLabel);
-
       if (!note.codeLinkStale) {
         chip.addEventListener('click', e => {
           e.stopPropagation();
           vscode.postMessage({ type: 'jumpToLink', file: note.codeLink.file, line: note.codeLink.line });
         });
-
         const removeBtn = mkEl('span', 'code-link-remove', '✕');
         removeBtn.title = 'Remove code link';
         removeBtn.addEventListener('click', e => {
@@ -2965,11 +2808,13 @@ export class SidebarView implements vscode.WebviewViewProvider {
         });
         chip.appendChild(removeBtn);
       }
-
-      card.appendChild(chip);
+      row2.appendChild(chip);
     }
 
-    // ── Content ──
+    card.appendChild(row2);
+
+    // ── Row 3: Content ──
+    const row3 = mkEl('div', 'card-row-3');
     const contentWrap = mkEl('div', 'card-content');
 
     const preview  = mkEl('div', 'card-preview clamped');
@@ -3016,10 +2861,11 @@ export class SidebarView implements vscode.WebviewViewProvider {
     });
 
     contentWrap.append(preview, showMore, editor);
-    card.appendChild(contentWrap);
+    row3.appendChild(contentWrap);
+    card.appendChild(row3);
 
-    // ── Footer ──
-    const footer  = mkEl('div', 'card-footer');
+    // ── Row 4: Footer ──
+    const footer  = mkEl('div', 'card-row-4');
     const leftEl  = mkEl('span', '');
     if (note.branch) {
       const badge = mkEl('span', 'branch-badge', '⎇ ' + note.branch);
