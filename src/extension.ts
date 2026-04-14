@@ -168,6 +168,13 @@ async function _activate(context: vscode.ExtensionContext): Promise<void> {
   );
 
   context.subscriptions.push(
+    vscode.commands.registerCommand('devnotes.simPhase7', () => {
+      vscode.commands.executeCommand('devnotesView.focus');
+      sidebar.pushSim();
+    })
+  );
+
+  context.subscriptions.push(
     vscode.commands.registerCommand('devnotes.focusSidebar', () => {
       vscode.commands.executeCommand('devnotesView.focus');
     })

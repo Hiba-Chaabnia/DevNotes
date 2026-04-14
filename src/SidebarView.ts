@@ -118,6 +118,53 @@ export class SidebarView implements vscode.WebviewViewProvider {
     });
   }
 
+  /** Push mock notes into the webview to simulate Phase 7 footer animations. */
+  pushSim(): void {
+    if (!this.view?.visible) return;
+    const now = Date.now();
+    const mockNotes: Note[] = [
+      {
+        id: 'sim-1', title: 'Owner + Branch — hover for branch',
+        content: 'Left: hover owner to reveal branch.\nRight: reminder > 24 h away → date shown, hover to peek reminder.',
+        color: 'yellow', tags: [], starred: true, createdAt: now - 86400000, updatedAt: now - 3600000,
+        owner: this.currentUser ?? 'Hiba Chaabnia', branch: this.currentBranch ?? 'feat/phase-7',
+        remindAt: now + 172800000, // 48 h away — not urgent
+      },
+      {
+        id: 'sim-2', title: 'Reminder within 24 h — shown by default',
+        content: 'Right: reminder is imminent (< 24 h) → reminder shown by default, hover to see date.',
+        color: 'orange', tags: [], starred: false, createdAt: now - 43200000, updatedAt: now - 1800000,
+        owner: this.currentUser ?? 'Hiba Chaabnia', branch: this.currentBranch ?? 'feat/phase-7',
+        remindAt: now + 7200000, // 2 h away — imminent
+      },
+      {
+        id: 'sim-3', title: 'Overdue reminder — shown by default',
+        content: 'Right: reminder is overdue → shown in red by default, hover to see date.',
+        color: 'red', tags: [], starred: false, createdAt: now - 172800000, updatedAt: now - 86400000,
+        owner: this.currentUser ?? 'Hiba Chaabnia',
+        remindAt: now - 3600000, // 1 h overdue
+      },
+      {
+        id: 'sim-4', title: 'Branch only + far reminder',
+        content: 'Left: static branch badge.\nRight: date shown, hover reveals reminder.',
+        color: 'green', tags: [], starred: false, createdAt: now - 7200000, updatedAt: now - 7200000,
+        branch: this.currentBranch ?? 'fix/checkbox',
+        remindAt: now + 259200000, // 3 days away
+      },
+      {
+        id: 'sim-5', title: 'No owner, no branch, no reminder',
+        content: 'Both slots static — date only.',
+        color: 'purple', tags: [], starred: false, createdAt: now - 3600000, updatedAt: now - 3600000,
+      },
+      {
+        id: 'sim-6', title: 'Just created',
+        content: 'createdAt ≈ updatedAt → shows "created" timestamp.',
+        color: 'blue', tags: [], starred: false, createdAt: now - 30000, updatedAt: now - 30000,
+      },
+    ];
+    this.view.webview.postMessage({ type: 'sim', notes: mockNotes });
+  }
+
   // ── Message handler ──────────────────────────────────────────────────────
 
   private async handle(msg: ToExt): Promise<void> {
@@ -970,6 +1017,21 @@ export class SidebarView implements vscode.WebviewViewProvider {
   }
   .tag-mgr-color-pop.open { display: flex; }
 
+  /* ── Simulation banner ───────────────────────────────── */
+  .sim-banner {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 6px; padding: 5px 10px;
+    background: rgba(255, 180, 0, .12);
+    border-bottom: 1px solid rgba(255, 180, 0, .25);
+    font-size: 10px;
+  }
+  .sim-label { opacity: .8; }
+  .sim-exit {
+    background: none; border: 1px solid rgba(255,180,0,.4); border-radius: 3px;
+    color: inherit; font-size: 10px; padding: 1px 6px; cursor: pointer; opacity: .7;
+  }
+  .sim-exit:hover { opacity: 1; background: rgba(255,180,0,.15); }
+
   /* ── Card list ───────────────────────────────────────── */
   .card-list {
     flex: 1;
@@ -1197,6 +1259,39 @@ export class SidebarView implements vscode.WebviewViewProvider {
     border-top: 1px solid rgba(128,128,128,.08);
     padding-top: 5px;
     margin-top: 1px;
+  }
+
+  /* Footer slot — crossfade between primary and secondary */
+  .card-foot-slot {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+  }
+  .card-foot-slot-left  { justify-content: flex-start; text-align: left; }
+  .card-foot-slot-right { justify-content: flex-end;   text-align: right; }
+  .card-foot-primary {
+    transition: opacity .18s ease, transform .18s ease;
+    white-space: nowrap;
+  }
+  /* Two-class selector beats single-class element styles (.card-date, .card-reminder, etc.) */
+  .card-foot-slot .card-foot-secondary {
+    position: absolute;
+    white-space: nowrap;
+    opacity: 0 !important;
+    transform: translateY(4px);
+    pointer-events: none;
+    transition: opacity .18s ease, transform .18s ease;
+  }
+  .card-foot-slot-left  .card-foot-secondary { left: 0; }
+  .card-foot-slot-right .card-foot-secondary { right: 0; }
+  .card-foot-slot.card-foot-flipped .card-foot-primary {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  .card-foot-slot.card-foot-flipped .card-foot-secondary {
+    opacity: 1 !important;
+    transform: translateY(0);
+    pointer-events: auto;
   }
 
   .card-reminder {
@@ -1976,6 +2071,12 @@ export class SidebarView implements vscode.WebviewViewProvider {
 <!-- ── Tag manager panel ── -->
 <div class="tag-manager" id="tag-manager" style="display:none"></div>
 
+<!-- ── Simulation banner (hidden unless sim mode active) ── -->
+<div class="sim-banner" id="sim-banner" style="display:none">
+  <span class="sim-label">⚗ Phase 7 simulation</span>
+  <button class="sim-exit" id="sim-exit">× Exit</button>
+</div>
+
 <!-- ── Card list ── -->
 <div class="card-list" id="card-list"></div>
 
@@ -2069,6 +2170,8 @@ export class SidebarView implements vscode.WebviewViewProvider {
   let openMgrColorPop = null;
 
   // ── DOM refs ────────────────────────────────────────────────────────────
+  const simBanner      = document.getElementById('sim-banner');
+  const simExit        = document.getElementById('sim-exit');
   const projectName    = document.getElementById('project-name');
   const cardList       = document.getElementById('card-list');
   const tagBar         = document.getElementById('tag-bar');
@@ -2308,6 +2411,17 @@ export class SidebarView implements vscode.WebviewViewProvider {
       highlightSwatch(newColorsEl, newColor);
       highlightSwatch(tagColorsEl, tagColor);
     }
+
+    if (msg.type === 'sim') {
+      notes = msg.notes ?? [];
+      simBanner.style.display = '';
+      renderCards();
+    }
+  });
+
+  simExit.addEventListener('click', () => {
+    simBanner.style.display = 'none';
+    vscode.postMessage({ type: 'ready' }); // triggers a full push() with real data
   });
 
   // ── Search ──────────────────────────────────────────────────────────────
@@ -2999,44 +3113,80 @@ export class SidebarView implements vscode.WebviewViewProvider {
     // ── Row 4: Footer ──
     const footer = mkEl('div', 'card-row-4');
 
-    // Left slot: owner if present, branch if scoped but no owner, else empty
-    const leftEl = mkEl('span', '');
+    // ── Left slot: owner ↔ branch ──
+    const leftSlot = mkEl('span', 'card-foot-slot card-foot-slot-left');
     const INVALID_OWNERS = ['undefined', 'null', 'unknown', ''];
     const hasOwner = note.owner && typeof note.owner === 'string'
       && !INVALID_OWNERS.includes(note.owner.trim());
-    if (hasOwner) {
-      const owner     = note.owner.trim();
-      const ownerEl   = mkEl('span', 'owner-badge');
-      ownerEl.title   = owner;
-      const circle    = mkEl('span', 'owner-initials', initials(owner));
-      const firstName = owner.split(/\s+/)[0] || owner;
-      const nameEl    = mkEl('span', 'owner-name', firstName);
-      ownerEl.append(circle, nameEl);
-      leftEl.appendChild(ownerEl);
-    } else if (note.branch) {
-      const badge = mkEl('span', 'branch-badge', '⎇ ' + note.branch);
-      leftEl.appendChild(badge);
-    }
-    footer.appendChild(leftEl);
 
-    // Right slot: reminder if set, otherwise date
-    let rightEl;
+    const buildOwnerEl = cls => {
+      const owner   = note.owner.trim();
+      const el      = mkEl('span', 'owner-badge ' + cls);
+      el.title      = owner;
+      const circle  = mkEl('span', 'owner-initials', initials(owner));
+      const nameEl  = mkEl('span', 'owner-name', owner.split(/\s+/)[0] || owner);
+      el.append(circle, nameEl);
+      return el;
+    };
+
+    if (hasOwner && note.branch) {
+      // Both present — hover to reveal branch, no auto-rotation
+      leftSlot.appendChild(buildOwnerEl('card-foot-primary'));
+      const branchEl = mkEl('span', 'branch-badge card-foot-secondary', '⎇ ' + note.branch);
+      leftSlot.appendChild(branchEl);
+      leftSlot.addEventListener('mouseenter', () => leftSlot.classList.add('card-foot-flipped'));
+      leftSlot.addEventListener('mouseleave', () => leftSlot.classList.remove('card-foot-flipped'));
+    } else if (hasOwner) {
+      leftSlot.appendChild(buildOwnerEl(''));
+    } else if (note.branch) {
+      leftSlot.appendChild(mkEl('span', 'branch-badge', '⎇ ' + note.branch));
+    }
+    footer.appendChild(leftSlot);
+
+    // ── Right slot ──
+    // Reminder is shown by default when overdue or due within 24 h;
+    // otherwise date is default and reminder peeks on hover.
+    const rightSlot = mkEl('span', 'card-foot-slot card-foot-slot-right');
+    const wasEdited = note.updatedAt - note.createdAt > 5000;
+    const dateLabel = formatDate(wasEdited ? note.updatedAt : note.createdAt);
+    const dateTitle = wasEdited
+      ? 'Updated ' + new Date(note.updatedAt).toLocaleString()
+      : 'Created '  + new Date(note.createdAt).toLocaleString();
+
     if (note.remindAt) {
-      const isOverdue = note.remindAt <= Date.now();
-      rightEl = mkEl('span', 'card-reminder' + (isOverdue ? ' overdue' : ''));
-      rightEl.textContent = '🔔 ' + formatReminder(note.remindAt);
-      rightEl.title = isOverdue
+      const isOverdue  = note.remindAt <= Date.now();
+      const isImminent = note.remindAt - Date.now() <= 86400000; // within 24 h
+      const reminderUrgent = isOverdue || isImminent;
+
+      const reminderEl = mkEl('span', 'card-reminder' + (isOverdue ? ' overdue' : ''));
+      reminderEl.textContent = '🔔 ' + formatReminder(note.remindAt);
+      reminderEl.title = isOverdue
         ? 'Overdue — open overflow menu to reschedule'
         : new Date(note.remindAt).toLocaleString();
+
+      const dateEl = mkEl('span', 'card-date');
+      dateEl.textContent = dateLabel;
+      dateEl.title = dateTitle;
+
+      if (reminderUrgent) {
+        // Reminder is primary; date peeks on hover
+        reminderEl.classList.add('card-foot-primary');
+        dateEl.classList.add('card-foot-secondary');
+      } else {
+        // Date is primary; reminder peeks on hover
+        dateEl.classList.add('card-foot-primary');
+        reminderEl.classList.add('card-foot-secondary');
+      }
+      rightSlot.append(reminderEl, dateEl);
+      rightSlot.addEventListener('mouseenter', () => rightSlot.classList.add('card-foot-flipped'));
+      rightSlot.addEventListener('mouseleave', () => rightSlot.classList.remove('card-foot-flipped'));
     } else {
-      const wasEdited = note.updatedAt - note.createdAt > 5000;
-      rightEl = mkEl('span', 'card-date');
-      rightEl.textContent = formatDate(wasEdited ? note.updatedAt : note.createdAt);
-      rightEl.title = wasEdited
-        ? 'Updated ' + new Date(note.updatedAt).toLocaleString()
-        : 'Created ' + new Date(note.createdAt).toLocaleString();
+      const dateEl = mkEl('span', 'card-date');
+      dateEl.textContent = dateLabel;
+      dateEl.title = dateTitle;
+      rightSlot.appendChild(dateEl);
     }
-    footer.appendChild(rightEl);
+    footer.appendChild(rightSlot);
     card.appendChild(footer);
 
     // ── Format bar (swaps with footer while editing) ──

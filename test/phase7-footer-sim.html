@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Phase 7 — Footer Animation Simulator</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: #1e1e2e;
+    color: #cdd6f4;
+    padding: 32px 24px;
+    min-height: 100vh;
+  }
+
+  h1 { font-size: 14px; font-weight: 600; opacity: .5; letter-spacing: .08em; text-transform: uppercase; margin-bottom: 24px; }
+  h2 { font-size: 11px; font-weight: 600; opacity: .4; letter-spacing: .06em; text-transform: uppercase; margin-bottom: 10px; margin-top: 28px; }
+
+  /* ── Controls ── */
+  .controls {
+    display: flex; flex-wrap: wrap; gap: 10px; align-items: center;
+    background: rgba(255,255,255,.05); border-radius: 8px;
+    padding: 12px 16px; margin-bottom: 28px;
+  }
+  .controls label { font-size: 11px; opacity: .7; display: flex; align-items: center; gap: 6px; cursor: pointer; }
+  .controls input[type=range] { width: 100px; accent-color: #FFD166; }
+  .controls span.val { font-size: 11px; font-weight: 600; color: #FFD166; min-width: 30px; }
+  .sep { width: 1px; height: 20px; background: rgba(255,255,255,.1); margin: 0 4px; }
+
+  /* ── Card grid ── */
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 16px; }
+
+  /* ── Card shell (minimal, matches SidebarView card) ── */
+  .card {
+    background: #2a2a3e;
+    border-left: 3px solid var(--card-accent, #FFD166);
+    border-radius: 4px;
+    padding: 10px 10px 8px;
+    display: flex; flex-direction: column; gap: 6px;
+  }
+  .card-title-mock {
+    font-size: 12px; font-weight: 600; opacity: .85;
+  }
+  .card-body-mock {
+    font-size: 11px; opacity: .45; line-height: 1.45;
+  }
+
+  /* ── Row 4 (exact copy from SidebarView) ── */
+  .card-row-4 {
+    display: flex; align-items: center; justify-content: space-between;
+    flex-wrap: wrap; gap: 4px;
+    border-top: 1px solid rgba(128,128,128,.08);
+    padding-top: 5px; margin-top: 1px;
+  }
+
+  /* Footer slot — crossfade */
+  .card-foot-slot {
+    position: relative; display: inline-flex; align-items: center;
+  }
+  .card-foot-primary {
+    transition: opacity .18s ease, transform .18s ease;
+    white-space: nowrap;
+  }
+  .card-foot-secondary {
+    position: absolute; left: 0; white-space: nowrap;
+    opacity: 0; transform: translateY(4px);
+    pointer-events: none;
+    transition: opacity .18s ease, transform .18s ease;
+  }
+  .card-foot-slot.card-foot-flipped .card-foot-primary  { opacity: 0; transform: translateY(-4px); }
+  .card-foot-slot.card-foot-flipped .card-foot-secondary { opacity: 1; transform: translateY(0); pointer-events: auto; }
+
+  /* Date */
+  .card-date { font-size: 10px; opacity: .55; color: #cdd6f4; white-space: nowrap; }
+
+  /* Reminder */
+  .card-reminder { font-size: 10px; white-space: nowrap; color: #d4900a; opacity: .9; }
+  .card-reminder.overdue { color: #c0392b; opacity: 1; }
+
+  /* Branch badge */
+  .branch-badge {
+    font-size: 10px; padding: 1px 5px; border-radius: 10px;
+    background: rgba(255,255,255,.1); color: #cdd6f4;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    max-width: 100px; opacity: .7;
+  }
+
+  /* Owner badge */
+  .owner-badge { display: inline-flex; align-items: center; gap: 4px; color: #cdd6f4; opacity: .7; max-width: 100px; overflow: hidden; }
+  .owner-initials {
+    width: 16px; height: 16px; border-radius: 50%;
+    background: var(--card-accent, #FFD166); opacity: .75;
+    font-size: 8px; font-weight: 700;
+    display: inline-flex; align-items: center; justify-content: center;
+    flex-shrink: 0; letter-spacing: -.5px; color: #1a1a2e;
+  }
+  .owner-name { font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 56px; }
+
+  /* ── Debug overlay ── */
+  .debug {
+    font-size: 10px; opacity: .35; margin-top: 6px; border-top: 1px solid rgba(255,255,255,.05); padding-top: 5px;
+  }
+  .debug span { display: inline-block; background: rgba(255,255,255,.07); border-radius: 3px; padding: 1px 5px; margin: 1px; }
+
+  /* ── Log ── */
+  .log-box {
+    margin-top: 28px; background: rgba(0,0,0,.3); border-radius: 6px;
+    padding: 12px 14px; font-size: 10px; font-family: monospace;
+    max-height: 160px; overflow-y: auto; opacity: .7;
+  }
+  .log-box .entry { padding: 1px 0; border-bottom: 1px solid rgba(255,255,255,.04); }
+  .log-box .entry:last-child { border-bottom: none; }
+  .ts { color: #89b4fa; margin-right: 8px; }
+  .ev-flip  { color: #a6e3a1; }
+  .ev-unflip{ color: #f38ba8; }
+  .ev-timer { color: #fab387; }
+  .ev-hover { color: #cba6f7; }
+</style>
+</head>
+<body>
+
+<h1>Phase 7 · Footer Animation Simulator</h1>
+
+<div class="controls">
+  <label>
+    Rotate interval
+    <input type="range" id="intervalSlider" min="500" max="6000" step="500" value="3000">
+    <span class="val" id="intervalVal">3 s</span>
+  </label>
+  <div class="sep"></div>
+  <label>
+    <input type="checkbox" id="pauseAll"> Pause all timers
+  </label>
+  <div class="sep"></div>
+  <label>
+    <input type="checkbox" id="showDebug" checked> Show state
+  </label>
+  <div class="sep"></div>
+  <button id="resetBtn" style="font-size:11px;padding:3px 10px;border-radius:4px;border:none;background:rgba(255,255,255,.1);color:#cdd6f4;cursor:pointer;">
+    ↺ Reset all
+  </button>
+</div>
+
+<h2>Left slot scenarios</h2>
+<div class="grid" id="leftGrid"></div>
+
+<h2>Right slot scenarios</h2>
+<div class="grid" id="rightGrid"></div>
+
+<h2>Combined (both slots animate)</h2>
+<div class="grid" id="comboGrid"></div>
+
+<div class="log-box" id="log"><div class="entry"><span class="ts">—</span>Hover a card footer to begin.</div></div>
+
+<script>
+  // ── Utilities ────────────────────────────────────────────────────────────────
+  function initials(name) {
+    const parts = name.trim().split(/\s+/);
+    if (parts.length === 1) return (parts[0][0] || '?').toUpperCase();
+    return ((parts[0][0] || '') + (parts[parts.length - 1][0] || '')).toUpperCase() || '?';
+  }
+
+  function formatDate(ts) {
+    const d = new Date(ts), now = new Date();
+    return d.toDateString() === now.toDateString()
+      ? d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
+      : d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  }
+
+  function formatReminder(ts) {
+    if (ts <= Date.now()) return 'Overdue';
+    const diff = ts - Date.now();
+    const h = Math.floor(diff / 36e5), m = Math.floor((diff % 36e5) / 6e4);
+    if (h > 24) return `in ${Math.floor(h / 24)}d`;
+    if (h > 0)  return `in ${h}h ${m}m`;
+    return `in ${m}m`;
+  }
+
+  // ── Logging ──────────────────────────────────────────────────────────────────
+  const logBox = document.getElementById('log');
+  function log(msg, cls) {
+    const ts = new Date().toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    const entry = document.createElement('div');
+    entry.className = 'entry';
+    entry.innerHTML = `<span class="ts">${ts}</span><span class="${cls || ''}">${msg}</span>`;
+    logBox.prepend(entry);
+    while (logBox.children.length > 30) logBox.removeChild(logBox.lastChild);
+  }
+
+  // ── Global controls ───────────────────────────────────────────────────────────
+  let globalInterval = 3000;
+  let globalPaused   = false;
+  const allTimers    = [];   // { slot, start, stop } registered by each card
+
+  document.getElementById('intervalSlider').addEventListener('input', e => {
+    globalInterval = +e.target.value;
+    document.getElementById('intervalVal').textContent = (globalInterval / 1000).toFixed(1).replace('.0', '') + ' s';
+    allTimers.forEach(t => { t.stop(); if (!globalPaused) t.start(globalInterval); });
+  });
+
+  document.getElementById('pauseAll').addEventListener('change', e => {
+    globalPaused = e.target.checked;
+    allTimers.forEach(t => globalPaused ? t.stop() : t.start(globalInterval));
+    log(globalPaused ? 'All timers paused' : 'All timers resumed', globalPaused ? 'ev-unflip' : 'ev-flip');
+  });
+
+  document.getElementById('showDebug').addEventListener('change', e => {
+    document.querySelectorAll('.debug').forEach(d => d.style.display = e.target.checked ? '' : 'none');
+  });
+
+  document.getElementById('resetBtn').addEventListener('click', () => {
+    document.querySelectorAll('.card-foot-slot').forEach(s => s.classList.remove('card-foot-flipped'));
+    log('All slots reset to primary', 'ev-unflip');
+  });
+
+  // ── Card builder ──────────────────────────────────────────────────────────────
+  function buildCard({ accent = '#FFD166', title, body, owner, branch, remindAt, updatedAt, createdAt }) {
+    const now = Date.now();
+    updatedAt  = updatedAt  || now;
+    createdAt  = createdAt  || now - 6e4;
+
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.style.setProperty('--card-accent', accent);
+
+    // Mock title + body
+    const titleEl = document.createElement('div');
+    titleEl.className = 'card-title-mock';
+    titleEl.textContent = title || 'Untitled';
+    card.appendChild(titleEl);
+
+    if (body) {
+      const bodyEl = document.createElement('div');
+      bodyEl.className = 'card-body-mock';
+      bodyEl.textContent = body;
+      card.appendChild(bodyEl);
+    }
+
+    // ── Row 4 ──
+    const footer = document.createElement('div');
+    footer.className = 'card-row-4';
+
+    // Left slot
+    const leftSlot = document.createElement('span');
+    leftSlot.className = 'card-foot-slot';
+
+    const INVALID = ['undefined', 'null', 'unknown', ''];
+    const hasOwner = owner && !INVALID.includes(owner.trim());
+
+    function buildOwnerEl(extraClass) {
+      const el = document.createElement('span');
+      el.className = 'owner-badge ' + (extraClass || '');
+      el.title = owner;
+      const circle = document.createElement('span');
+      circle.className = 'owner-initials';
+      circle.textContent = initials(owner);
+      const nameEl = document.createElement('span');
+      nameEl.className = 'owner-name';
+      nameEl.textContent = owner.split(/\s+/)[0] || owner;
+      el.append(circle, nameEl);
+      return el;
+    }
+
+    let timerCtrl = null;
+
+    if (hasOwner && branch) {
+      leftSlot.appendChild(buildOwnerEl('card-foot-primary'));
+      const branchEl = document.createElement('span');
+      branchEl.className = 'branch-badge card-foot-secondary';
+      branchEl.textContent = '⎇ ' + branch;
+      leftSlot.appendChild(branchEl);
+
+      let showingBranch = false;
+      let tid = null;
+
+      const doFlip = () => {
+        showingBranch = !showingBranch;
+        leftSlot.classList.toggle('card-foot-flipped', showingBranch);
+        updateDebug();
+        log(`[${title}] auto-rotated → ${showingBranch ? 'branch' : 'owner'}`, 'ev-timer');
+      };
+
+      timerCtrl = {
+        start(ms) { if (tid) clearInterval(tid); tid = setInterval(doFlip, ms); },
+        stop()     { clearInterval(tid); tid = null; },
+      };
+
+      leftSlot.addEventListener('mouseenter', () => {
+        timerCtrl.stop();
+        leftSlot.classList.add('card-foot-flipped');
+        updateDebug();
+        log(`[${title}] hover → branch`, 'ev-hover');
+      });
+      leftSlot.addEventListener('mouseleave', () => {
+        leftSlot.classList.remove('card-foot-flipped');
+        showingBranch = false;
+        updateDebug();
+        log(`[${title}] hover end → owner (timer restarted)`, 'ev-unflip');
+        if (!globalPaused) timerCtrl.start(globalInterval);
+      });
+
+      allTimers.push(timerCtrl);
+      if (!globalPaused) timerCtrl.start(globalInterval);
+
+    } else if (hasOwner) {
+      leftSlot.appendChild(buildOwnerEl(''));
+    } else if (branch) {
+      const b = document.createElement('span');
+      b.className = 'branch-badge';
+      b.textContent = '⎇ ' + branch;
+      leftSlot.appendChild(b);
+    }
+    footer.appendChild(leftSlot);
+
+    // Right slot
+    const rightSlot = document.createElement('span');
+    rightSlot.className = 'card-foot-slot';
+
+    const wasEdited = updatedAt - createdAt > 5000;
+    const dateEl = document.createElement('span');
+    dateEl.className = 'card-date card-foot-primary';
+    dateEl.textContent = formatDate(wasEdited ? updatedAt : createdAt);
+    dateEl.title = (wasEdited ? 'Updated ' : 'Created ') + new Date(wasEdited ? updatedAt : createdAt).toLocaleString();
+    rightSlot.appendChild(dateEl);
+
+    if (remindAt) {
+      const isOverdue = remindAt <= Date.now();
+      const reminderEl = document.createElement('span');
+      reminderEl.className = 'card-reminder card-foot-secondary' + (isOverdue ? ' overdue' : '');
+      reminderEl.textContent = '🔔 ' + formatReminder(remindAt);
+      reminderEl.title = isOverdue ? 'Overdue' : new Date(remindAt).toLocaleString();
+      rightSlot.appendChild(reminderEl);
+      rightSlot.addEventListener('mouseenter', () => {
+        rightSlot.classList.add('card-foot-flipped');
+        updateDebug();
+        log(`[${title}] hover → reminder`, 'ev-hover');
+      });
+      rightSlot.addEventListener('mouseleave', () => {
+        rightSlot.classList.remove('card-foot-flipped');
+        updateDebug();
+        log(`[${title}] hover end → date`, 'ev-unflip');
+      });
+    }
+    footer.appendChild(rightSlot);
+    card.appendChild(footer);
+
+    // Debug panel
+    const debug = document.createElement('div');
+    debug.className = 'debug';
+    function updateDebug() {
+      const lf = leftSlot.classList.contains('card-foot-flipped');
+      const rf = rightSlot.classList.contains('card-foot-flipped');
+      debug.innerHTML =
+        `<span>left: ${hasOwner && branch ? (lf ? 'branch' : 'owner') : hasOwner ? 'owner only' : branch ? 'branch only' : '—'}</span>` +
+        `<span>right: ${remindAt ? (rf ? 'reminder' : 'date') : 'date only'}</span>` +
+        (timerCtrl ? `<span>timer: ${globalPaused ? 'paused' : globalInterval / 1000 + 's'}</span>` : '');
+    }
+    updateDebug();
+
+    // keep debug in sync when timer fires
+    const _orig = timerCtrl;
+    if (_orig) {
+      const origStart = _orig.start.bind(_orig);
+      _orig.start = (ms) => { origStart(ms); };
+    }
+
+    if (!document.getElementById('showDebug').checked) debug.style.display = 'none';
+    card.appendChild(debug);
+
+    return { card, updateDebug };
+  }
+
+  // ── Scenarios ─────────────────────────────────────────────────────────────────
+  const now = Date.now();
+
+  // Left slot grid
+  const leftScenarios = [
+    { title: 'Owner + Branch',   body: 'Both present → auto-rotate & hover.',  accent: '#FFD166', owner: 'Hiba Chaabnia', branch: 'feat/phase-7' },
+    { title: 'Owner only',       body: 'No branch → static badge.',             accent: '#06D6D6', owner: 'Hiba Chaabnia' },
+    { title: 'Branch only',      body: 'No owner → static badge.',              accent: '#EF6C57', branch: 'fix/checkbox' },
+    { title: 'No owner/branch',  body: 'Nothing in left slot.',                 accent: '#A8D8A8' },
+  ];
+
+  // Right slot grid
+  const rightScenarios = [
+    { title: 'Date + Reminder',  body: 'Hover right → reminder appears.',       accent: '#FFD166', createdAt: now - 86400000, updatedAt: now - 3600000, remindAt: now + 7200000 },
+    { title: 'Overdue reminder', body: 'Hover right → overdue in red.',         accent: '#EF6C57', createdAt: now - 86400000, updatedAt: now - 3600000, remindAt: now - 3600000 },
+    { title: 'Date only',        body: 'No reminder → static date.',            accent: '#06D6D6', createdAt: now - 86400000, updatedAt: now - 1800000 },
+    { title: 'Just created',     body: 'Created = updated → "created" label.',  accent: '#A8D8A8', createdAt: now - 60000,   updatedAt: now - 60000 },
+  ];
+
+  // Combined grid
+  const comboScenarios = [
+    { title: 'Full card',   body: 'Owner + branch + upcoming reminder.', accent: '#FFD166', owner: 'Hiba Chaabnia', branch: 'feat/phase-7', createdAt: now - 86400000, updatedAt: now - 7200000, remindAt: now + 7200000 },
+    { title: 'All edges',   body: 'Branch + overdue reminder.',          accent: '#EF6C57', branch: 'hotfix/urgent',  createdAt: now - 172800000, updatedAt: now - 86400000, remindAt: now - 1800000 },
+  ];
+
+  [
+    { grid: 'leftGrid',  scenarios: leftScenarios  },
+    { grid: 'rightGrid', scenarios: rightScenarios },
+    { grid: 'comboGrid', scenarios: comboScenarios  },
+  ].forEach(({ grid, scenarios }) => {
+    const el = document.getElementById(grid);
+    scenarios.forEach(s => {
+      const { card } = buildCard(s);
+      el.appendChild(card);
+    });
+  });
+</script>
+</body>
+</html>
