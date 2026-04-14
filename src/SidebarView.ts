@@ -1057,7 +1057,10 @@ export class SidebarView implements vscode.WebviewViewProvider {
   }
   .card-row-2:empty { display: none; }
 
-  .card-row-3 { /* content area */ }
+  .card-row-3 {
+    border-top: 1px solid rgba(128,128,128,.08);
+    padding-top: 5px;
+  }
 
   /* Color picker popover */
   .color-pop {
@@ -1140,10 +1143,11 @@ export class SidebarView implements vscode.WebviewViewProvider {
     color: var(--card-text);
     opacity: .85;
     cursor: text;
+    width: 100%;
   }
 
   /* Rendered markdown preview */
-  .card-preview { pointer-events: none; }
+  .card-preview { user-select: none; cursor: text; }
   .card-preview p { margin: 0 0 4px; }
   .card-preview ul, .card-preview ol { padding-left: 1.2em; margin: 0 0 4px; }
   .card-preview li { margin: 1px 0; }
@@ -1158,35 +1162,28 @@ export class SidebarView implements vscode.WebviewViewProvider {
   .card-preview em { font-style: italic; }
   .card-preview.clamped {
     display: -webkit-box;
-    -webkit-line-clamp: 4;
+    -webkit-line-clamp: 3;
     -webkit-box-orient: vertical;
     overflow: hidden;
   }
 
-  /* Textarea for quick editing */
-  .card-editor {
-    display: none;
-    width: 100%;
-    background: rgba(0,0,0,.06);
-    border: none;
-    border-radius: 5px;
-    padding: 6px 8px;
-    font-size: 12px;
-    font-family: var(--vscode-font-family);
-    color: var(--card-text);
-    resize: vertical;
-    min-height: 60px;
+  /* Preview in edit mode */
+  .card-preview[contenteditable="true"] {
+    user-select: text;
     outline: none;
-    line-height: 1.55;
+    -webkit-line-clamp: unset;
+    display: block;
+    overflow: visible;
   }
 
   .show-more {
     font-size: 11px;
     cursor: pointer;
-    opacity: .6;
+    opacity: .5;
     text-align: right;
     color: var(--card-text);
     display: none;
+    user-select: none;
   }
   .show-more:hover { opacity: 1; }
 
@@ -2850,7 +2847,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
     preview.innerHTML = searchQuery ? matchSnippet(note.content, searchQuery) : simpleMarkdown(note.content);
 
     const showMore = mkEl('div', 'show-more', '▾ more');
-    const isLong   = note.content.split('\\n').length > 4 || note.content.length > 200;
+    const isLong   = note.content.split('\\n').length > 3 || note.content.length > 180;
     if (isLong) showMore.style.display = 'block';
 
     let expanded = false;
@@ -2860,36 +2857,42 @@ export class SidebarView implements vscode.WebviewViewProvider {
       showMore.textContent = expanded ? '▴ less' : '▾ more';
     });
 
-    const editor = mkEl('textarea', 'card-editor');
-    editor.value = note.content;
-    editor.placeholder = 'Write something…';
-    editor.rows = 4;
-
-    preview.addEventListener('click', () => {
-      preview.style.display = 'none';
+    preview.addEventListener('click', e => {
+      if (preview.contentEditable === 'true') return;
+      const { clientX: x, clientY: y } = e;
+      preview.classList.remove('clamped');
       showMore.style.display = 'none';
-      editor.style.display   = 'block';
-      editor.focus();
+      preview.contentEditable = 'true';
+      requestAnimationFrame(() => {
+        preview.focus();
+        if (document.caretPositionFromPoint) {
+          const pos = document.caretPositionFromPoint(x, y);
+          if (pos) window.getSelection().collapse(pos.offsetNode, pos.offset);
+        } else if (document.caretRangeFromPoint) {
+          const range = document.caretRangeFromPoint(x, y);
+          if (range) { const sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(range); }
+        }
+      });
     });
 
-    editor.addEventListener('blur', () => {
-      const newContent = editor.value;
+    preview.addEventListener('blur', () => {
+      preview.contentEditable = 'false';
+      const newContent = htmlToMarkdown(preview.innerHTML);
       if (newContent !== note.content) {
+        note.content = newContent;
         vscode.postMessage({ type: 'updateNote', id: note.id, changes: { content: newContent } });
-        preview.innerHTML = simpleMarkdown(newContent);
-        const stillLong = newContent.split('\\n').length > 4 || newContent.length > 200;
-        showMore.style.display = stillLong ? 'block' : 'none';
       }
-      preview.style.display = '';
-      showMore.style.display = isLong ? 'block' : 'none';
-      editor.style.display   = 'none';
+      preview.innerHTML = simpleMarkdown(note.content);
+      if (!expanded) preview.classList.add('clamped');
+      const stillLong = note.content.split('\\n').length > 3 || note.content.length > 180;
+      showMore.style.display = (stillLong && !expanded) ? 'block' : 'none';
     });
 
-    editor.addEventListener('keydown', e => {
-      if (e.key === 'Escape') editor.blur();
+    preview.addEventListener('keydown', e => {
+      if (e.key === 'Escape') preview.blur();
     });
 
-    contentWrap.append(preview, showMore, editor);
+    contentWrap.append(preview, showMore);
     row3.appendChild(contentWrap);
     card.appendChild(row3);
 
@@ -3048,6 +3051,27 @@ export class SidebarView implements vscode.WebviewViewProvider {
     return sameDay
       ? d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
       : d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  }
+
+  function htmlToMarkdown(html) {
+    const tmp = document.createElement('div');
+    tmp.innerHTML = html;
+    function walk(node) {
+      if (node.nodeType === 3) return node.textContent.replace(/ /g, '');
+      if (node.nodeType !== 1) return '';
+      const tag = node.tagName.toLowerCase();
+      const inner = Array.from(node.childNodes).map(walk).join('');
+      switch (tag) {
+        case 'strong': case 'b':  return \`**\${inner}**\`;
+        case 'em':     case 'i':  return \`*\${inner}*\`;
+        case 'code':              return \`\\\`\${inner}\\\`\`;
+        case 'del':    case 's':  return \`~~\${inner}~~\`;
+        case 'br':                return '\\n';
+        case 'p':      case 'div': return inner ? inner + '\\n' : '\\n';
+        default:                  return inner;
+      }
+    }
+    return Array.from(tmp.childNodes).map(walk).join('').replace(/\\n$/, '');
   }
 
   function simpleMarkdown(md) {
