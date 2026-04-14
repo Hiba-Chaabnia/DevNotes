@@ -1007,6 +1007,22 @@ export class SidebarView implements vscode.WebviewViewProvider {
     min-height: 24px;
   }
 
+  .card-overflow-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 15px;
+    line-height: 1;
+    padding: 0 2px;
+    color: var(--card-text);
+    opacity: 0;
+    transition: opacity .12s;
+    flex-shrink: 0;
+    border-radius: 4px;
+  }
+  .card:hover .card-overflow-btn { opacity: .5; }
+  .card-overflow-btn:hover { opacity: 1 !important; background: rgba(128,128,128,.15); }
+
   .star-btn {
     background: none; border: none; cursor: pointer;
     font-size: 14px; padding: 0; line-height: 1;
@@ -2693,6 +2709,11 @@ export class SidebarView implements vscode.WebviewViewProvider {
     });
     title.addEventListener('keydown', e => { if (e.key === 'Enter') title.blur(); });
 
+    const overflowBtn = mkEl('button', 'card-overflow-btn');
+    overflowBtn.textContent = '⋯';
+    overflowBtn.title = 'More actions';
+    overflowBtn.setAttribute('aria-label', 'More actions');
+
     const starBtn = mkEl('button', 'star-btn' + (note.starred ? ' on' : ''));
     starBtn.textContent = '★';
     starBtn.title = note.starred ? 'Unstar' : 'Star';
@@ -2700,7 +2721,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
       vscode.postMessage({ type: 'updateNote', id: note.id, changes: { starred: !note.starred } });
     });
 
-    row1.append(title, starBtn);
+    row1.append(title, overflowBtn, starBtn);
     card.append(row1);
 
     // ── Row 2: Metadata chips ──
