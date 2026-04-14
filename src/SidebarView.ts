@@ -740,6 +740,9 @@ export class SidebarView implements vscode.WebviewViewProvider {
   .ovf-item.active .ovf-check { opacity: 1; }
   .ovf-item.active .ovf-label { font-weight: 600; }
   .ovf-divider { border: none; border-top: 1px solid var(--vscode-panel-border); margin: 4px 0; }
+  .ovf-item.danger       { color: #e05252; }
+  .ovf-item.danger:hover { background: rgba(224,82,82,.12); }
+  .ovf-item.confirm      { color: #e05252; font-weight: 600; }
 
   .overflow-btn.active { opacity: 1; background: var(--vscode-toolbar-hoverBackground); }
 
@@ -1085,6 +1088,17 @@ export class SidebarView implements vscode.WebviewViewProvider {
   .card:hover .card-overflow-btn { opacity: .5; }
   .card-overflow-btn:hover { opacity: 1 !important; background: rgba(128,128,128,.15); }
 
+  .card-color-btn {
+    background: none; border: none; cursor: pointer;
+    padding: 2px; line-height: 0;
+    color: var(--card-text); opacity: 0;
+    flex-shrink: 0;
+    border-radius: 4px;
+    transition: opacity .15s;
+  }
+  .card:hover .card-color-btn { opacity: .5; }
+  .card-color-btn:hover { opacity: 1 !important; background: rgba(128,128,128,.15); }
+
   .star-btn {
     background: none; border: none; cursor: pointer;
     font-size: 14px; padding: 0; line-height: 1;
@@ -1093,6 +1107,21 @@ export class SidebarView implements vscode.WebviewViewProvider {
   }
   .star-btn.on { opacity: 1; }
   .star-btn:hover { opacity: .8; }
+
+  #card-color-pop {
+    position: fixed;
+    background: var(--vscode-editorWidget-background, #252526);
+    border: 1px solid var(--vscode-panel-border);
+    border-radius: 8px;
+    padding: 8px;
+    display: none;
+    flex-direction: column;
+    gap: 5px;
+    z-index: 200;
+    box-shadow: 0 4px 16px rgba(0,0,0,.28);
+  }
+  #card-color-pop.open { display: flex; }
+  #card-color-pop .color-swatch { width: 20px; height: 20px; }
 
   .card-title {
     flex: 1;
@@ -2080,6 +2109,12 @@ export class SidebarView implements vscode.WebviewViewProvider {
 <!-- ── Card list ── -->
 <div class="card-list" id="card-list"></div>
 
+<!-- ── Card-level overflow menu ── -->
+<div class="overflow-menu" id="card-ovf-menu"></div>
+
+<!-- ── Card color picker popup ── -->
+<div id="card-color-pop"></div>
+
 <!-- ── Overflow menu (⋯ button) ── -->
 <div class="overflow-menu" id="overflow-menu">
   <button class="ovf-item mine-filter-btn" id="btn-mine-filter" style="display:none">
@@ -2906,6 +2941,18 @@ export class SidebarView implements vscode.WebviewViewProvider {
     overflowBtn.textContent = '⋯';
     overflowBtn.title = 'More actions';
     overflowBtn.setAttribute('aria-label', 'More actions');
+    overflowBtn.addEventListener('click', e => {
+      e.stopPropagation();
+      openCardMenu(note, overflowBtn);
+    });
+
+    const cardColorBtn = mkEl('button', 'card-color-btn');
+    cardColorBtn.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="8.5" cy="9" r="1.5" fill="currentColor"/><circle cx="15.5" cy="9" r="1.5" fill="currentColor"/><circle cx="12" cy="15" r="1.5" fill="currentColor"/></svg>';
+    cardColorBtn.title = 'Change color';
+    cardColorBtn.addEventListener('click', e => {
+      e.stopPropagation();
+      openCardColorPop(note, cardColorBtn);
+    });
 
     const starBtn = mkEl('button', 'star-btn' + (note.starred ? ' on' : ''));
     starBtn.textContent = '★';
@@ -2914,7 +2961,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
       vscode.postMessage({ type: 'updateNote', id: note.id, changes: { starred: !note.starred } });
     });
 
-    row1.append(title, overflowBtn, starBtn);
+    row1.append(title, overflowBtn, cardColorBtn, starBtn);
     card.append(row1);
 
     // ── Row 2: Metadata chips ──
@@ -3292,6 +3339,123 @@ export class SidebarView implements vscode.WebviewViewProvider {
     return card;
   }
 
+  // ── Card-level overflow menu ────────────────────────────────────────────
+  const cardOvfMenu = document.getElementById('card-ovf-menu');
+  let cardOvfTarget = null; // note currently shown in the menu
+
+  function openCardMenu(note, btn) {
+    const isOpen = cardOvfMenu.classList.contains('open') && cardOvfTarget?.id === note.id;
+    closeAllPops();
+    if (isOpen) return; // toggle off
+
+    // ── Position ──
+    const rect = btn.getBoundingClientRect();
+    cardOvfMenu.style.top   = (rect.bottom + 4) + 'px';
+    cardOvfMenu.style.right = (window.innerWidth - rect.right) + 'px';
+    cardOvfMenu.style.left  = 'auto';
+
+    // ── Populate ──
+    cardOvfMenu.innerHTML = '';
+    cardOvfTarget = note;
+
+    function item(icon, label, cls, handler) {
+      const btn = mkEl('button', 'ovf-item' + (cls ? ' ' + cls : ''));
+      btn.innerHTML = \`<span class="ovf-icon">\${icon}</span><span class="ovf-label">\${label}</span>\`;
+      btn.addEventListener('click', e => { e.stopPropagation(); handler(btn); });
+      cardOvfMenu.appendChild(btn);
+      return btn;
+    }
+    function divider() { cardOvfMenu.appendChild(mkEl('hr', 'ovf-divider')); }
+
+    const SVG = {
+      edit:     '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>',
+      remind:   '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>',
+      dup:      '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>',
+      link:     '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>',
+      unlink:   '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M18.84 12.25l1.72-1.71a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M5.17 11.75l-1.72 1.71a5 5 0 0 0 7.07 7.07l1.71-1.71"/><line x1="8" y1="2" x2="8" y2="5"/><line x1="2" y1="8" x2="5" y2="8"/><line x1="16" y1="19" x2="16" y2="22"/><line x1="19" y1="16" x2="22" y2="16"/></svg>',
+      archive:  '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/></svg>',
+      share:    '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>',
+      export:   '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>',
+      trash:    '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>',
+    };
+
+    // ── Group 1: Actions ──
+    item(SVG.edit,   'Edit in editor', '',
+      () => { vscode.postMessage({ type: 'openEditor', noteId: note.id }); closeAllPops(); });
+
+    item(SVG.remind, note.remindAt ? 'Change reminder' : 'Set reminder', '',
+      () => { vscode.postMessage({ type: 'setReminder', noteId: note.id }); closeAllPops(); });
+
+    item(SVG.dup, 'Duplicate', '',
+      () => { vscode.postMessage({ type: 'duplicateNote', noteId: note.id }); closeAllPops(); });
+
+    if (note.codeLink) {
+      item(SVG.unlink, 'Remove file link', '',
+        () => { vscode.postMessage({ type: 'removeCodeLink', noteId: note.id }); closeAllPops(); });
+    } else {
+      item(SVG.link, 'Link to current file', '',
+        () => { vscode.postMessage({ type: 'linkToEditor', noteId: note.id }); closeAllPops(); });
+    }
+
+    divider();
+
+    // ── Group 2: Visibility ──
+    item(SVG.archive, note.archived ? 'Unarchive' : 'Archive', '',
+      () => { vscode.postMessage({ type: note.archived ? 'unarchiveNote' : 'archiveNote', id: note.id }); closeAllPops(); });
+
+    item(SVG.share, note.shared ? 'Unshare' : 'Share', '',
+      () => { vscode.postMessage({ type: 'updateNote', id: note.id, changes: { shared: !note.shared } }); closeAllPops(); });
+
+    divider();
+
+    // ── Group 4: Danger ──
+    item(SVG.export, 'Export', '',
+      () => { vscode.postMessage({ type: 'exportNotes', noteIds: [note.id] }); closeAllPops(); });
+
+    item(SVG.trash, 'Delete', 'danger', deleteBtn => {
+      if (!deleteBtn.classList.contains('confirm')) {
+        deleteBtn.classList.add('confirm');
+        deleteBtn.querySelector('.ovf-label').textContent = 'Confirm delete?';
+      } else {
+        vscode.postMessage({ type: 'deleteNote', id: note.id });
+        closeAllPops();
+      }
+    });
+
+    cardOvfMenu.classList.add('open');
+  }
+
+  // ── Card color picker ───────────────────────────────────────────────────
+  const cardColorPop = document.getElementById('card-color-pop');
+  let cardColorTarget = null;
+
+  function openCardColorPop(note, btn) {
+    const isOpen = cardColorPop.classList.contains('open') && cardColorTarget?.id === note.id;
+    closeAllPops();
+    if (isOpen) return;
+
+    const rect = btn.getBoundingClientRect();
+    cardColorPop.style.top   = (rect.bottom + 4) + 'px';
+    cardColorPop.style.left  = Math.max(4, rect.left - 4) + 'px';
+
+    cardColorPop.innerHTML = '';
+    cardColorTarget = note;
+
+    Object.entries(COLORS).forEach(([key, hex]) => {
+      const sw = mkEl('button', 'color-swatch' + (note.color === key ? ' selected' : ''));
+      sw.style.background = hex;
+      sw.title = key.charAt(0).toUpperCase() + key.slice(1);
+      sw.addEventListener('click', e => {
+        e.stopPropagation();
+        vscode.postMessage({ type: 'updateNote', id: note.id, changes: { color: key } });
+        closeAllPops();
+      });
+      cardColorPop.appendChild(sw);
+    });
+
+    cardColorPop.classList.add('open');
+  }
+
   // ── Close all popover on outside click ─────────────────────────────────
   document.addEventListener('click', () => {
     closeAllPops();
@@ -3304,6 +3468,10 @@ export class SidebarView implements vscode.WebviewViewProvider {
     openMgrColorPop = null;
     overflowMenu.classList.remove('open');
     btnOverflow.classList.remove('active');
+    cardOvfMenu.classList.remove('open');
+    cardOvfTarget = null;
+    cardColorPop.classList.remove('open');
+    cardColorTarget = null;
   }
 
   // ── Helpers ─────────────────────────────────────────────────────────────
