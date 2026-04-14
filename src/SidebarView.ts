@@ -1207,6 +1207,69 @@ export class SidebarView implements vscode.WebviewViewProvider {
   }
   .card-reminder.overdue { color: #c0392b; opacity: 1; }
 
+  /* ── Format bar (replaces row 4 while editing) ───────── */
+  .card-fmtbar {
+    display: none;
+    align-items: center;
+    gap: 2px;
+    border-top: 1px solid rgba(128,128,128,.08);
+    padding-top: 5px;
+    margin-top: 1px;
+  }
+  .card-fmt-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 12px;
+    padding: 1px 5px;
+    border-radius: 3px;
+    color: var(--card-text);
+    opacity: .55;
+    line-height: 1.4;
+    transition: opacity .1s, background .1s;
+  }
+  .card-fmt-btn:hover { opacity: 1; background: rgba(128,128,128,.12); }
+  .card-fmt-sep { flex: 1; }
+  .card-fmt-done {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 2px 7px;
+    border-radius: 3px;
+    color: var(--card-text);
+    opacity: .5;
+    transition: opacity .1s, background .1s;
+  }
+  .card-fmt-done:hover { opacity: 1; background: rgba(128,128,128,.12); }
+
+  /* Task / checklist items */
+  .task-list { list-style: none; padding-left: 4px; margin: 2px 0; }
+  .task-item { display: flex; align-items: center; gap: 5px; }
+  .task-item input[type="checkbox"] {
+    cursor: pointer; width: 13px; height: 13px; flex-shrink: 0;
+    accent-color: var(--card-accent, #FFD166);
+  }
+  .task-item.done > span { opacity: .5; text-decoration: line-through; }
+
+  /* Rich block content inside preview */
+  .card-preview h2 { font-size: 1em; font-weight: 700; margin: 2px 0; }
+  .card-preview h3 { font-size: .9em; font-weight: 600; margin: 2px 0; opacity: .85; }
+  .card-preview pre {
+    background: rgba(128,128,128,.1); border-radius: 3px;
+    padding: 4px 6px; font-family: monospace; font-size: .85em;
+    margin: 2px 0; white-space: pre-wrap;
+  }
+  .card-preview ol  { padding-left: 18px; margin: 2px 0; }
+  .card-preview ul:not(.task-list) { padding-left: 18px; margin: 2px 0; }
+
+  /* Format bar separator between button groups */
+  .card-fmt-sep-bar {
+    width: 1px; height: 14px; background: rgba(128,128,128,.22);
+    margin: 0 2px; flex-shrink: 0;
+  }
+
   .card-tags { display: contents; } /* flattened into row2 */
 
   .tag-ghost {
@@ -2871,7 +2934,28 @@ export class SidebarView implements vscode.WebviewViewProvider {
       showMore.textContent = expanded ? '▴ less' : '▾ more';
     });
 
+    // Intercept checkbox mousedown to prevent focus-steal (which triggers blur = "done" effect)
+    preview.addEventListener('mousedown', e => {
+      if (e.target.type !== 'checkbox') return;
+      e.preventDefault(); // block focus change in both view and edit mode
+      const newChecked = !e.target.checked;
+      e.target.checked = newChecked;
+      // Sync the HTML attribute so preview.innerHTML reflects the new state
+      if (newChecked) e.target.setAttribute('checked', '');
+      else            e.target.removeAttribute('checked');
+      const li = e.target.closest('.task-item');
+      if (li) li.classList.toggle('done', e.target.checked);
+      if (preview.contentEditable !== 'true') {
+        const newContent = htmlToMarkdown(preview.innerHTML);
+        if (newContent !== note.content) {
+          note.content = newContent;
+          vscode.postMessage({ type: 'updateNote', id: note.id, changes: { content: newContent } });
+        }
+      }
+    });
+
     preview.addEventListener('click', e => {
+      if (e.target.type === 'checkbox') { e.preventDefault(); return; } // prevent browser re-toggle; handled by mousedown
       if (preview.contentEditable === 'true') return;
       const { clientX: x, clientY: y } = e;
       preview.classList.remove('clamped');
@@ -2891,6 +2975,8 @@ export class SidebarView implements vscode.WebviewViewProvider {
 
     preview.addEventListener('blur', () => {
       preview.contentEditable = 'false';
+      fmtBar.style.display = 'none';
+      footer.style.display = '';
       const newContent = htmlToMarkdown(preview.innerHTML);
       if (newContent !== note.content) {
         note.content = newContent;
@@ -2952,6 +3038,59 @@ export class SidebarView implements vscode.WebviewViewProvider {
     }
     footer.appendChild(rightEl);
     card.appendChild(footer);
+
+    // ── Format bar (swaps with footer while editing) ──
+    const fmtBar = mkEl('div', 'card-fmtbar');
+
+    const addFmt = (label, title, cmd, arg) => {
+      const btn = mkEl('button', 'card-fmt-btn');
+      btn.innerHTML = label;
+      btn.title = title;
+      btn.addEventListener('mousedown', e => { e.preventDefault(); document.execCommand(cmd, false, arg || null); });
+      fmtBar.appendChild(btn);
+    };
+    const addCustom = (label, title, fn) => {
+      const btn = mkEl('button', 'card-fmt-btn');
+      btn.innerHTML = label;
+      btn.title = title;
+      btn.addEventListener('mousedown', e => { e.preventDefault(); fn(); });
+      fmtBar.appendChild(btn);
+    };
+    const addSepBar = () => fmtBar.appendChild(mkEl('span', 'card-fmt-sep-bar'));
+
+    // Inline formatting
+    addFmt('<b>B</b>',  'Bold',          'bold');
+    addFmt('<i>I</i>',  'Italic',        'italic');
+    addFmt('<u>U</u>',  'Underline',     'underline');
+    addFmt('<s>S</s>',  'Strikethrough', 'strikeThrough');
+    addSepBar();
+    // Block formatting
+    addCustom('H',   'Heading (toggle H2)',  () => {
+      const cur = document.queryCommandValue('formatBlock');
+      document.execCommand('formatBlock', false, cur === 'h2' ? 'p' : 'h2');
+    });
+    addFmt('≡',   'Bullet list',    'insertUnorderedList');
+    addFmt('1.',  'Numbered list',  'insertOrderedList');
+    addCustom('☑', 'Checklist item', () =>
+      document.execCommand('insertHTML', false,
+        '<ul class="task-list"><li class="task-item"><input type="checkbox" class="task-check"> <span>​</span></li></ul>'));
+    addFmt('&lt;/&gt;', 'Code block', 'formatBlock', 'pre');
+    addSepBar();
+    // Indent / outdent / clear
+    addFmt('→',  'Indent',  'indent');
+    addFmt('←',  'Outdent', 'outdent');
+    addCustom('✕', 'Clear formatting', () => document.execCommand('removeFormat', false, null));
+
+    const fmtDone = mkEl('button', 'card-fmt-done', '✓');
+    fmtDone.title = 'Done editing';
+    fmtDone.addEventListener('mousedown', e => { e.preventDefault(); preview.blur(); });
+    fmtBar.append(mkEl('span', 'card-fmt-sep'), fmtDone);
+    card.appendChild(fmtBar);
+
+    preview.addEventListener('focus', () => {
+      footer.style.display = 'none';
+      fmtBar.style.display = 'flex';
+    });
 
     // ── Keyboard shortcuts ──
     card.tabIndex = 0;
@@ -3090,37 +3229,87 @@ export class SidebarView implements vscode.WebviewViewProvider {
     const tmp = document.createElement('div');
     tmp.innerHTML = html;
     function walk(node) {
-      if (node.nodeType === 3) return node.textContent.replace(/ /g, '');
+      if (node.nodeType === 3) return node.textContent.replace(/ /g, ' ');
       if (node.nodeType !== 1) return '';
       const tag = node.tagName.toLowerCase();
       const inner = Array.from(node.childNodes).map(walk).join('');
       switch (tag) {
-        case 'strong': case 'b':  return \`**\${inner}**\`;
-        case 'em':     case 'i':  return \`*\${inner}*\`;
-        case 'code':              return \`\\\`\${inner}\\\`\`;
-        case 'del':    case 's':  return \`~~\${inner}~~\`;
-        case 'br':                return '\\n';
-        case 'p':      case 'div': return inner ? inner + '\\n' : '\\n';
-        default:                  return inner;
+        case 'strong': case 'b':               return \`**\${inner}**\`;
+        case 'em':     case 'i':               return \`*\${inner}*\`;
+        case 'code':                           return \`\\\`\${inner}\\\`\`;
+        case 'del':    case 's': case 'strike': return \`~~\${inner}~~\`;
+        case 'u':                              return \`++\${inner}++\`;
+        case 'h1':                             return \`# \${inner}\\n\`;
+        case 'h2':                             return \`## \${inner}\\n\`;
+        case 'h3':                             return \`### \${inner}\\n\`;
+        case 'pre':                            return \`\\\`\\\`\\\`\\n\${node.textContent.trim()}\\n\\\`\\\`\\\`\\n\`;
+        case 'br':                             return '\\n';
+        case 'li': {
+          const cb = node.querySelector('input[type="checkbox"]');
+          if (cb) {
+            const txt = Array.from(node.childNodes)
+              .filter(n => !(n.nodeType === 1 && n.tagName.toLowerCase() === 'input'))
+              .map(walk).join('').trim();
+            return \`- [\${cb.checked ? 'x' : ' '}] \${txt}\\n\`;
+          }
+          return \`- \${inner}\\n\`;
+        }
+        case 'ul':     case 'ol':              return inner;
+        case 'p':      case 'div':             return inner ? inner + '\\n' : '\\n';
+        default:                               return inner;
       }
     }
     return Array.from(tmp.childNodes).map(walk).join('').replace(/\\n$/, '');
   }
 
-  function simpleMarkdown(md) {
+    function simpleMarkdown(md) {
     if (!md) return '';
     const esc = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-    return md.split('\\n').map(line => {
-      let l = esc(line)
+    const inline = raw => {
+      let l = esc(raw)
         .replace(/\\*\\*(.+?)\\*\\*/g, '<strong>$1</strong>')
-        .replace(/\\*(.+?)\\*/g, '<em>$1</em>')
-        .replace(/\`(.+?)\`/g, '<code>$1</code>')
-        .replace(/~~(.+?)~~/g, '<del>$1</del>');
-      if (/^#{1,3}\\s/.test(line)) {
-        l = \`<strong>\${l.replace(/^#+\\s/, '')}</strong>\`;
+        .replace(/\\*(.+?)\\*/g,        '<em>$1</em>')
+        .replace(/\`(.+?)\`/g,          '<code>$1</code>')
+        .replace(/~~(.+?)~~/g,          '<del>$1</del>')
+        .replace(/\\+\\+(.+?)\\+\\+/g,  '<u>$1</u>');
+      if (/^(#{1,3})\\s/.test(raw)) {
+        const lvl = raw.match(/^(#+)/)[1].length;
+        l = \`<h\${lvl}>\${l.replace(/^#+\\s/, '')}</h\${lvl}>\`;
       }
-      return \`<p>\${l || '&nbsp;'}</p>\`;
-    }).join('');
+      return l;
+    };
+    const lines = md.split('\\n');
+    const out = [];
+    let i = 0;
+    while (i < lines.length) {
+      if (lines[i].startsWith('\`\`\`')) {
+        const codeLines = [];
+        i++;
+        while (i < lines.length && !lines[i].startsWith('\`\`\`')) { codeLines.push(esc(lines[i])); i++; }
+        if (i < lines.length) i++; // skip closing fence line
+        out.push(\`<pre>\${codeLines.join('\\n')}</pre>\`);
+        continue;
+      }
+      if (/^[-*]\\s/.test(lines[i])) {
+        const items = [];
+        while (i < lines.length && /^[-*]\\s/.test(lines[i])) {
+          const tm = lines[i].match(/^[-*]\\s\\[([ x])\\]\\s(.*)/);
+          if (tm) {
+            const chk = tm[1] === 'x';
+            items.push(\`<li class="task-item\${chk ? ' done' : ''}"><input type="checkbox" class="task-check"\${chk ? ' checked' : ''}> <span>\${inline(tm[2])}</span></li>\`);
+          } else {
+            items.push(\`<li>\${inline(lines[i].slice(2))}</li>\`);
+          }
+          i++;
+        }
+        out.push(\`<ul class="task-list">\${items.join('')}</ul>\`);
+      } else {
+        const l = inline(lines[i]);
+        out.push(\`<p>\${l || '&nbsp;'}</p>\`);
+        i++;
+      }
+    }
+    return out.join('');
   }
 
 })();
