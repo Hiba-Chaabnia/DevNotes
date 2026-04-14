@@ -1194,7 +1194,18 @@ export class SidebarView implements vscode.WebviewViewProvider {
     justify-content: space-between;
     flex-wrap: wrap;
     gap: 4px;
+    border-top: 1px solid rgba(128,128,128,.08);
+    padding-top: 5px;
+    margin-top: 1px;
   }
+
+  .card-reminder {
+    font-size: 10px;
+    white-space: nowrap;
+    color: #d4900a;
+    opacity: .9;
+  }
+  .card-reminder.overdue { color: #c0392b; opacity: 1; }
 
   .card-tags { display: contents; } /* flattened into row2 */
 
@@ -1590,15 +1601,17 @@ export class SidebarView implements vscode.WebviewViewProvider {
   .owner-badge {
     display: inline-flex;
     align-items: center;
-    gap: 3px;
+    gap: 4px;
     color: var(--card-text);
-    opacity: .6;
-    max-width: 80px;
+    opacity: .7;
+    max-width: 100px;
+    overflow: hidden;
   }
   .owner-initials {
-    width: 15px; height: 15px;
+    width: 16px; height: 16px;
     border-radius: 50%;
-    background: rgba(0,0,0,.2);
+    background: var(--card-accent, #FFD166);
+    opacity: .75;
     font-size: 8px;
     font-weight: 700;
     display: inline-flex;
@@ -1606,6 +1619,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
     justify-content: center;
     flex-shrink: 0;
     letter-spacing: -.5px;
+    color: #1a1a2e;
   }
   .owner-name {
     font-size: 10px;
@@ -2897,27 +2911,46 @@ export class SidebarView implements vscode.WebviewViewProvider {
     card.appendChild(row3);
 
     // ── Row 4: Footer ──
-    const footer  = mkEl('div', 'card-row-4');
-    const leftEl  = mkEl('span', '');
-    if (note.branch) {
+    const footer = mkEl('div', 'card-row-4');
+
+    // Left slot: owner if present, branch if scoped but no owner, else empty
+    const leftEl = mkEl('span', '');
+    const INVALID_OWNERS = ['undefined', 'null', 'unknown', ''];
+    const hasOwner = note.owner && typeof note.owner === 'string'
+      && !INVALID_OWNERS.includes(note.owner.trim());
+    if (hasOwner) {
+      const owner     = note.owner.trim();
+      const ownerEl   = mkEl('span', 'owner-badge');
+      ownerEl.title   = owner;
+      const circle    = mkEl('span', 'owner-initials', initials(owner));
+      const firstName = owner.split(/\s+/)[0] || owner;
+      const nameEl    = mkEl('span', 'owner-name', firstName);
+      ownerEl.append(circle, nameEl);
+      leftEl.appendChild(ownerEl);
+    } else if (note.branch) {
       const badge = mkEl('span', 'branch-badge', '⎇ ' + note.branch);
       leftEl.appendChild(badge);
     }
-    const INVALID_OWNERS = ['undefined', 'null', 'unknown', ''];
-    if (note.owner && typeof note.owner === 'string' && !INVALID_OWNERS.includes(note.owner.trim())) {
-      const owner    = note.owner.trim();
-      const ownerEl  = mkEl('span', 'owner-badge');
-      ownerEl.title  = owner;
-      const circle   = mkEl('span', 'owner-initials', initials(owner));
-      const firstName = owner.split(/\s+/)[0] || owner;
-      const nameEl   = mkEl('span', 'owner-name', firstName);
-      ownerEl.appendChild(circle);
-      ownerEl.appendChild(nameEl);
-      leftEl.appendChild(ownerEl);
-    }
     footer.appendChild(leftEl);
-    const dateEl = mkEl('span', 'card-date', formatDate(note.updatedAt));
-    footer.appendChild(dateEl);
+
+    // Right slot: reminder if set, otherwise date
+    let rightEl;
+    if (note.remindAt) {
+      const isOverdue = note.remindAt <= Date.now();
+      rightEl = mkEl('span', 'card-reminder' + (isOverdue ? ' overdue' : ''));
+      rightEl.textContent = '🔔 ' + formatReminder(note.remindAt);
+      rightEl.title = isOverdue
+        ? 'Overdue — open overflow menu to reschedule'
+        : new Date(note.remindAt).toLocaleString();
+    } else {
+      const wasEdited = note.updatedAt - note.createdAt > 5000;
+      rightEl = mkEl('span', 'card-date');
+      rightEl.textContent = formatDate(wasEdited ? note.updatedAt : note.createdAt);
+      rightEl.title = wasEdited
+        ? 'Updated ' + new Date(note.updatedAt).toLocaleString()
+        : 'Created ' + new Date(note.createdAt).toLocaleString();
+    }
+    footer.appendChild(rightEl);
     card.appendChild(footer);
 
     // ── Keyboard shortcuts ──
