@@ -9,6 +9,7 @@ import {
   Palette, SquarePen, Bell, Copy, Link2, Unlink2, Share2, Download,
   Trash2, GitBranch, ArrowLeftRight, Star, FolderGit, FolderOpen,
   ClockArrowDown, ArrowDownAZ, Tag as TagIcon,
+  Lightbulb, ListTodo, Bug, Presentation, BookMarked,
 } from 'lucide';
 import type { IconNode as LucideNode } from 'lucide';
 
@@ -21,6 +22,10 @@ function svgIcon(nodes: LucideNode, size = 14, style = ''): string {
   }).join('');
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"${style ? ` style="${style}"` : ''}>${inner}</svg>`;
 }
+
+const TAG_ICON_MAP: Record<string, LucideNode> = {
+  Lightbulb, ListTodo, Bug, Presentation, BookMarked,
+};
 
 // ─── Message types ────────────────────────────────────────────────────────────
 
@@ -133,7 +138,10 @@ export class SidebarView implements vscode.WebviewViewProvider {
     this.view.webview.postMessage({
       type              : 'init',
       notes,
-      tags              : this.storage.getTags(),
+      tags              : this.storage.getTags().map(t => ({
+        ...t,
+        iconSvg: t.icon && TAG_ICON_MAP[t.icon] ? svgIcon(TAG_ICON_MAP[t.icon], 11) : undefined,
+      })),
       templates         : this.storage.getTemplates(),
       defaultTagIds     : DEFAULT_TAGS.map(t => t.id),
       projectName       : this.projectName,
@@ -1532,8 +1540,12 @@ export class SidebarView implements vscode.WebviewViewProvider {
     font-weight: 600;
     color: #1a1a2e;
     cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
   }
   .tag-pill:hover { filter: brightness(.9); }
+  .tag-icon { display: inline-flex; align-items: center; flex-shrink: 0; }
 
   .card-date {
     font-size: 10px;
@@ -2712,7 +2724,8 @@ export class SidebarView implements vscode.WebviewViewProvider {
     tags.forEach(tag => {
       const chip = mkEl('button', 'tag-chip' + (newTags.includes(tag.id) ? ' active' : ''));
       chip.type = 'button';
-      chip.textContent = tag.label;
+      if (tag.iconSvg) { const ico = mkEl('span', 'tag-icon'); ico.innerHTML = tag.iconSvg; chip.appendChild(ico); }
+      chip.appendChild(mkEl('span', '', tag.label));
       chip.style.background = tag.color;
       chip.addEventListener('click', () => {
         newTags = newTags.includes(tag.id)
@@ -2759,6 +2772,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
 
       const chip = mkEl('button', 'tag-chip' + (activeTagIds.includes(tag.id) ? ' active' : ''));
       chip.style.background = tag.color;
+      if (tag.iconSvg) { const ico = mkEl('span', 'tag-icon'); ico.innerHTML = tag.iconSvg; chip.appendChild(ico); }
       chip.appendChild(mkEl('span', '', tag.label));
 
       if (!isDefault) {
@@ -3109,8 +3123,10 @@ export class SidebarView implements vscode.WebviewViewProvider {
     note.tags.forEach(tid => {
       const tag = tags.find(t => t.id === tid);
       if (!tag) return;
-      const pill = mkEl('span', 'tag-pill', tag.label);
+      const pill = mkEl('span', 'tag-pill');
       pill.style.background = tag.color;
+      if (tag.iconSvg) { const ico = mkEl('span', 'tag-icon'); ico.innerHTML = tag.iconSvg; pill.appendChild(ico); }
+      pill.appendChild(mkEl('span', '', tag.label));
       pill.title = 'Filter by ' + tag.label;
       pill.addEventListener('click', () => {
         if (!activeTagIds.includes(tid)) {

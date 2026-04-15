@@ -86,7 +86,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
   tools: [
     {
       name       : 'create_note',
-      description: 'Create a new DevNote in the current workspace. Use when asked to capture, document, or save any information. Tags can be: bug, todo, idea, meeting, important, reference (or any custom tag id). Colors: yellow, orange, purple, cyan, green, pink, blue, white.',
+      description: 'Create a new DevNote in the current workspace. Use when asked to capture, document, or save any information. Tags can be: bug, todo, idea, meeting, reference (or any custom tag id). Colors: yellow, orange, purple, cyan, green, pink, blue, white.',
       inputSchema: {
         type      : 'object',
         properties: {

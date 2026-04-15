@@ -49,6 +49,7 @@ export interface Tag {
   id: string;
   label: string;
   color: string;         // hex color for the tag pill
+  icon?: string;         // lucide icon name for built-in tags
 }
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -65,12 +66,11 @@ export const NOTE_COLORS: Record<string, string> = {
 };
 
 export const DEFAULT_TAGS: Tag[] = [
-  { id: 'idea',      label: 'Idea',      color: '#FFD166' },
-  { id: 'todo',      label: 'Todo',      color: '#06D6D6' },
-  { id: 'bug',       label: 'Bug',       color: '#EF6C57' },
-  { id: 'meeting',   label: 'Meeting',   color: '#B5A4E8' },
-  { id: 'important', label: 'Important', color: '#C5E17A' },
-  { id: 'reference', label: 'Reference', color: '#74B9FF' },
+  { id: 'idea',      label: 'Idea',      color: '#FFD166', icon: 'Lightbulb'    },
+  { id: 'todo',      label: 'Todo',      color: '#06D6D6', icon: 'ListTodo'     },
+  { id: 'bug',       label: 'Bug',       color: '#EF6C57', icon: 'Bug'          },
+  { id: 'meeting',   label: 'Meeting',   color: '#B5A4E8', icon: 'Presentation' },
+  { id: 'reference', label: 'Reference', color: '#74B9FF', icon: 'BookMarked'   },
 ];
 
 export const BUILTIN_TEMPLATES: Template[] = [
