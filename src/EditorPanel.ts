@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { NoteStorage, BUILTIN_TEMPLATES } from './NoteStorage';
+import { PLATFORM_COLORS } from './colors';
 
 // ─── Panel ───────────────────────────────────────────────────────────────────
 
@@ -347,7 +348,7 @@ export class EditorPanel {
     cursor: default;
   }
   .ProseMirror img.ProseMirror-selectednode {
-    outline: 2px solid var(--vscode-focusBorder, #0078d4);
+    outline: 2px solid var(--vscode-focusBorder, ${PLATFORM_COLORS.vsFocusBorder});
     border-radius: 5px;
   }
 

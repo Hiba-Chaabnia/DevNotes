@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { NoteStorage, Note } from './NoteStorage';
+import { ACTIVITY_PALETTE, UI_COLORS } from './colors';
 
 // ─── Entry model ─────────────────────────────────────────────────────────────
 
@@ -133,7 +134,7 @@ export class ActivityFeedView implements vscode.WebviewViewProvider {
     justify-content: center;
     font-size: 10px;
     font-weight: 700;
-    color: #fff;
+    color: ${UI_COLORS.white};
     flex-shrink: 0;
     margin-top: 1px;
     letter-spacing: -.3px;
@@ -166,13 +167,13 @@ export class ActivityFeedView implements vscode.WebviewViewProvider {
     font-weight: 700;
     padding: 1px 5px;
     border-radius: 3px;
-    background: #7B61FF;
-    color: #fff;
+    background: ${UI_COLORS.activityBg};
+    color: ${UI_COLORS.white};
     flex-shrink: 0;
     letter-spacing: .02em;
   }
   .avatar-claude {
-    background: #7B61FF !important;
+    background: ${UI_COLORS.activityBg} !important;
   }
   .action-label {
     font-size: 11px;
@@ -359,11 +360,10 @@ export class ActivityFeedView implements vscode.WebviewViewProvider {
   // ── Helpers ──────────────────────────────────────────────────────────────
 
   function ownerColor(name) {
-    const palette = ['#EF6C57','#B5A4E8','#06D6D6','#C5E17A','#FF9EBA','#74B9FF','#FFD166'];
-    if (!name) return palette[0];
+    if (!name) return ACTIVITY_PALETTE[0];
     let h = 0;
     for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
-    return palette[h % palette.length];
+    return ACTIVITY_PALETTE[h % ACTIVITY_PALETTE.length];
   }
 
   function initials(name) {

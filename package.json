@@ -46,12 +46,6 @@
         "category": "DevNotes"
       },
       {
-        "command": "devnotes.simPhase7",
-        "title": "Simulate Phase 7 Footer Animations",
-        "icon": "$(beaker)",
-        "category": "DevNotes"
-      },
-      {
         "command": "devnotes.jumpToLink",
         "title": "Jump to Linked File",
         "category": "DevNotes"

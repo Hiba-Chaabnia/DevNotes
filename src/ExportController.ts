@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import { Note, Tag, NOTE_COLORS } from './NoteStorage';
+import { UI_COLORS, EXPORT_COLORS as EX } from './colors';
 
 // ─── Public entry point ───────────────────────────────────────────────────────
 
@@ -123,26 +124,26 @@ function toHtml(notes: Note[], tags: Tag[]): string {
 <title>DevNotes Export</title>
 <style>
   *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f8f9fa;color:#1a1a2e;padding:40px 20px;line-height:1.7}
+  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:${EX.pageBg};color:${UI_COLORS.text};padding:40px 20px;line-height:1.7}
   .container{max-width:780px;margin:0 auto}
-  .header{margin-bottom:32px;padding-bottom:20px;border-bottom:2px solid #e2e8f0}
+  .header{margin-bottom:32px;padding-bottom:20px;border-bottom:2px solid ${EX.border}}
   .header h1{font-size:1.6em;font-weight:800;margin-bottom:6px}
-  .header p{font-size:13px;color:#64748b}
-  .note{background:#fff;border-radius:12px;padding:28px;margin-bottom:24px;box-shadow:0 1px 4px rgba(0,0,0,.07)}
+  .header p{font-size:13px;color:${EX.mutedText}}
+  .note{background:${UI_COLORS.white};border-radius:12px;padding:28px;margin-bottom:24px;box-shadow:0 1px 4px rgba(0,0,0,.07)}
   .note-title{font-size:1.3em;font-weight:700;margin-bottom:16px}
   .note-body h1,.note-body h2,.note-body h3{font-weight:700;margin:1em 0 .4em;line-height:1.3}
   .note-body h1{font-size:1.4em}.note-body h2{font-size:1.2em}.note-body h3{font-size:1.05em}
   .note-body p{margin-bottom:.7em}
   .note-body ul,.note-body ol{padding-left:1.5em;margin-bottom:.7em}
   .note-body li{margin:2px 0}
-  .note-body code{background:#f1f5f9;padding:1px 5px;border-radius:3px;font-family:monospace;font-size:.875em}
-  .note-body pre{background:#f1f5f9;padding:14px 18px;border-radius:8px;overflow-x:auto;margin-bottom:.7em}
+  .note-body code{background:${EX.codeBg};padding:1px 5px;border-radius:3px;font-family:monospace;font-size:.875em}
+  .note-body pre{background:${EX.codeBg};padding:14px 18px;border-radius:8px;overflow-x:auto;margin-bottom:.7em}
   .note-body pre code{background:none;padding:0}
-  .note-body blockquote{border-left:3px solid #cbd5e1;margin:.7em 0;padding-left:1em;color:#64748b}
+  .note-body blockquote{border-left:3px solid ${EX.blockquoteBorder};margin:.7em 0;padding-left:1em;color:${EX.mutedText}}
   .note-body input[type=checkbox]{margin-right:6px}
-  .note-meta{margin-top:20px;padding-top:14px;border-top:1px solid #e2e8f0;font-size:12px;color:#64748b;display:flex;flex-wrap:wrap;gap:10px}
-  .tag{display:inline-block;padding:1px 8px;border-radius:10px;font-size:11px;font-weight:600;color:#1a1a2e;margin-right:3px}
-  .footer{text-align:center;font-size:12px;color:#94a3b8;margin-top:40px}
+  .note-meta{margin-top:20px;padding-top:14px;border-top:1px solid ${EX.border};font-size:12px;color:${EX.mutedText};display:flex;flex-wrap:wrap;gap:10px}
+  .tag{display:inline-block;padding:1px 8px;border-radius:10px;font-size:11px;font-weight:600;color:${UI_COLORS.text};margin-right:3px}
+  .footer{text-align:center;font-size:12px;color:${UI_COLORS.muted};margin-top:40px}
 </style>
 </head>
 <body>

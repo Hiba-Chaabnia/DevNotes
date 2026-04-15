@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import * as https from 'https';
 import * as path from 'path';
 import { NoteStorage, Note, Tag, Template, GitHubLink, NOTE_COLORS, DEFAULT_TAGS } from './NoteStorage';
+import { UI_COLORS as C, GH_COLORS as GH, NOTE_COLORS as NC, RGB, PLATFORM_COLORS as PLATFORM } from './colors';
 import { detectProjectIdentity } from './GitDetector';
 import {
   Plus, Search, X, Ellipsis, User, Archive, Clock, LayoutList, Bot,
@@ -10,6 +11,8 @@ import {
   Trash2, GitBranch, ArrowLeftRight, Star, FolderGit, FolderOpen,
   ClockArrowDown, ArrowDownAZ, Tag as TagIcon,
   Lightbulb, ListTodo, Bug, Presentation, BookMarked,
+  Link, FileSymlink, TriangleAlert,
+  GitPullRequest, GitPullRequestClosed, GitMerge, CircleDot, CircleCheck,
 } from 'lucide';
 import type { IconNode as LucideNode } from 'lucide';
 
@@ -150,53 +153,6 @@ export class SidebarView implements vscode.WebviewViewProvider {
       availableBranches : this.availableBranches,
       githubConnected   : this._githubConnected,
     });
-  }
-
-  /** Push mock notes into the webview to simulate Phase 7 footer animations. */
-  pushSim(): void {
-    if (!this.view?.visible) return;
-    const now = Date.now();
-    const mockNotes: Note[] = [
-      {
-        id: 'sim-1', title: 'Owner + Branch — hover for branch',
-        content: 'Left: hover owner to reveal branch.\nRight: reminder > 24 h away → date shown, hover to peek reminder.',
-        color: 'yellow', tags: [], starred: true, createdAt: now - 86400000, updatedAt: now - 3600000,
-        owner: this.currentUser ?? 'Hiba Chaabnia', branch: this.currentBranch ?? 'feat/phase-7',
-        remindAt: now + 172800000, // 48 h away — not urgent
-      },
-      {
-        id: 'sim-2', title: 'Reminder within 24 h — shown by default',
-        content: 'Right: reminder is imminent (< 24 h) → reminder shown by default, hover to see date.',
-        color: 'orange', tags: [], starred: false, createdAt: now - 43200000, updatedAt: now - 1800000,
-        owner: this.currentUser ?? 'Hiba Chaabnia', branch: this.currentBranch ?? 'feat/phase-7',
-        remindAt: now + 7200000, // 2 h away — imminent
-      },
-      {
-        id: 'sim-3', title: 'Overdue reminder — shown by default',
-        content: 'Right: reminder is overdue → shown in red by default, hover to see date.',
-        color: 'red', tags: [], starred: false, createdAt: now - 172800000, updatedAt: now - 86400000,
-        owner: this.currentUser ?? 'Hiba Chaabnia',
-        remindAt: now - 3600000, // 1 h overdue
-      },
-      {
-        id: 'sim-4', title: 'Branch only + far reminder',
-        content: 'Left: static branch badge.\nRight: date shown, hover reveals reminder.',
-        color: 'green', tags: [], starred: false, createdAt: now - 7200000, updatedAt: now - 7200000,
-        branch: this.currentBranch ?? 'fix/checkbox',
-        remindAt: now + 259200000, // 3 days away
-      },
-      {
-        id: 'sim-5', title: 'No owner, no branch, no reminder',
-        content: 'Both slots static — date only.',
-        color: 'purple', tags: [], starred: false, createdAt: now - 3600000, updatedAt: now - 3600000,
-      },
-      {
-        id: 'sim-6', title: 'Just created',
-        content: 'createdAt ≈ updatedAt → shows "created" timestamp.',
-        color: 'blue', tags: [], starred: false, createdAt: now - 30000, updatedAt: now - 30000,
-      },
-    ];
-    this.view.webview.postMessage({ type: 'sim', notes: mockNotes });
   }
 
   // ── Message handler ──────────────────────────────────────────────────────
@@ -655,8 +611,18 @@ export class SidebarView implements vscode.WebviewViewProvider {
       folderOpen:  JSON.stringify(svgIcon(FolderOpen, 13, 'flex-shrink:0')),
       branch:      JSON.stringify(svgIcon(GitBranch,     11, 'flex-shrink:0')),
       branchSwitch: JSON.stringify(svgIcon(ArrowLeftRight, 11, 'flex-shrink:0')),
-      sortUpdated: JSON.stringify(svgIcon(ClockArrowDown, 13)),
-      sortAlpha:   JSON.stringify(svgIcon(ArrowDownAZ, 13)),
+      sortUpdated:   JSON.stringify(svgIcon(ClockArrowDown,        13)),
+      sortAlpha:     JSON.stringify(svgIcon(ArrowDownAZ,           13)),
+      noteLinkIcon:  JSON.stringify(svgIcon(Link,                  11)),
+      codeLinkIcon:  JSON.stringify(svgIcon(FileSymlink,           11)),
+      conflictIcon:  JSON.stringify(svgIcon(TriangleAlert,         11)),
+      archiveIcon:   JSON.stringify(svgIcon(Archive,               11)),
+      bellSmall:     JSON.stringify(svgIcon(Bell,                  11)),
+      ghPrOpen:      JSON.stringify(svgIcon(GitPullRequest,        11)),
+      ghPrClosed:    JSON.stringify(svgIcon(GitPullRequestClosed,  11)),
+      ghPrMerged:    JSON.stringify(svgIcon(GitMerge,              11)),
+      ghIssueOpen:   JSON.stringify(svgIcon(CircleDot,             11)),
+      ghIssueClosed: JSON.stringify(svgIcon(CircleCheck,           11)),
     };
 
     return /* html */`<!DOCTYPE html>
@@ -862,9 +828,9 @@ export class SidebarView implements vscode.WebviewViewProvider {
   .ovf-item.active .ovf-check { opacity: 1; }
   .ovf-item.active .ovf-label { font-weight: 600; }
   .ovf-divider { border: none; border-top: 1px solid var(--vscode-panel-border); margin: 4px 0; }
-  .ovf-item.danger       { color: #e05252; }
-  .ovf-item.danger:hover { background: rgba(224,82,82,.12); }
-  .ovf-item.confirm      { color: #e05252; font-weight: 600; }
+  .ovf-item.danger       { color: ${C.danger}; }
+  .ovf-item.danger:hover { background: rgba(${RGB.danger},.12); }
+  .ovf-item.confirm      { color: ${C.danger}; font-weight: 600; }
 
   .overflow-btn.active { opacity: 1; background: var(--vscode-toolbar-hoverBackground); }
 
@@ -913,9 +879,9 @@ export class SidebarView implements vscode.WebviewViewProvider {
     border-radius: 50%;
     flex-shrink: 0;
   }
-  .github-filter-bar .gh-chip.open-chip  .gh-dot { background: #06d6a0; }
-  .github-filter-bar .gh-chip.closed-chip .gh-dot { background: #888; }
-  .github-filter-bar .gh-chip.merged-chip .gh-dot { background: #8250df; }
+  .github-filter-bar .gh-chip.open-chip  .gh-dot { background: ${GH.open}; }
+  .github-filter-bar .gh-chip.closed-chip .gh-dot { background: ${GH.closed}; }
+  .github-filter-bar .gh-chip.merged-chip .gh-dot { background: ${GH.merged}; }
   .github-filter-bar .gh-filter-label {
     font-size: 10px;
     opacity: .5;
@@ -930,7 +896,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
     border: 1.5px solid transparent;
     cursor: pointer;
     font-weight: 500;
-    color: #1a1a2e;
+    color: ${C.text};
     transition: opacity .12s;
     white-space: nowrap;
     display: inline-flex;
@@ -938,7 +904,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
     gap: 2px;
   }
   .tag-chip:hover { opacity: .85; }
-  .tag-chip.active { border-color: #1a1a2e; }
+  .tag-chip.active { border-color: ${C.text}; }
   .tag-chip.all { background: var(--vscode-button-secondaryBackground); color: var(--vscode-button-secondaryForeground); }
   .tag-chip.all.active { background: var(--vscode-button-background); color: var(--vscode-button-foreground); border-color: transparent; }
 
@@ -956,8 +922,8 @@ export class SidebarView implements vscode.WebviewViewProvider {
   }
   .tag-chip:hover .tag-chip-delete { opacity: .65; }
   .tag-chip-delete:hover { opacity: 1 !important; background: rgba(0,0,0,.15); border-radius: 50%; }
-  .tag-chip.confirming { outline: 2px solid #EF6C57; outline-offset: 1px; }
-  .tag-chip.confirming .tag-chip-delete { opacity: 1; color: #EF6C57; font-weight: 700; }
+  .tag-chip.confirming { outline: 2px solid ${NC.orange}; outline-offset: 1px; }
+  .tag-chip.confirming .tag-chip-delete { opacity: 1; color: ${NC.orange}; font-weight: 700; }
 
   .add-tag-btn {
     font-size: 11px;
@@ -1080,8 +1046,8 @@ export class SidebarView implements vscode.WebviewViewProvider {
   }
   .tag-mgr-confirm-msg { flex: 1; opacity: .8; }
   .tag-mgr-confirm-yes {
-    background: #EF6C57;
-    color: #fff;
+    background: ${NC.orange};
+    color: ${C.white};
     border: none;
     border-radius: 3px;
     padding: 2px 8px;
@@ -1129,7 +1095,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
     position: absolute;
     left: 22px;
     top: 22px;
-    background: var(--vscode-editorWidget-background, #fff);
+    background: var(--vscode-editorWidget-background, ${C.white});
     border: 1px solid var(--vscode-panel-border);
     border-radius: 8px;
     padding: 8px;
@@ -1141,21 +1107,6 @@ export class SidebarView implements vscode.WebviewViewProvider {
     box-shadow: 0 4px 16px rgba(0,0,0,.18);
   }
   .tag-mgr-color-pop.open { display: flex; }
-
-  /* ── Simulation banner ───────────────────────────────── */
-  .sim-banner {
-    display: flex; align-items: center; justify-content: space-between;
-    gap: 6px; padding: 5px 10px;
-    background: rgba(255, 180, 0, .12);
-    border-bottom: 1px solid rgba(255, 180, 0, .25);
-    font-size: 10px;
-  }
-  .sim-label { opacity: .8; }
-  .sim-exit {
-    background: none; border: 1px solid rgba(255,180,0,.4); border-radius: 3px;
-    color: inherit; font-size: 10px; padding: 1px 6px; cursor: pointer; opacity: .7;
-  }
-  .sim-exit:hover { opacity: 1; background: rgba(255,180,0,.15); }
 
   /* ── Card list ───────────────────────────────────────── */
   .card-list {
@@ -1175,7 +1126,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
     flex-direction: column;
     gap: 6px;
     background: var(--vscode-editorWidget-background, var(--vscode-sideBar-background));
-    border-left: 3px solid var(--card-accent, #FFD166);
+    border-left: 3px solid var(--card-accent, ${NC.yellow});
     box-shadow: 0 1px 4px rgba(0,0,0,.1);
     transition: box-shadow .15s, transform .15s;
     color: var(--card-text);
@@ -1184,7 +1135,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
   .card:hover { box-shadow: 0 4px 14px rgba(0,0,0,.15); transform: translateY(-1px); }
   .card:focus { outline: 2px solid var(--vscode-focusBorder); outline-offset: 1px; box-shadow: 0 4px 14px rgba(0,0,0,.15); }
   .card.hidden { display: none; }
-  .card.is-shared { border-left-color: rgba(6, 214, 214, 0.85); }
+  .card.is-shared { border-left-color: rgba(${RGB.cyan},0.85); }
 
   /* ── Card rows ───────────────────────────────────────── */
   .card-row-1 {
@@ -1233,7 +1184,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
 
   #card-color-pop {
     position: fixed;
-    background: var(--vscode-editorWidget-background, #252526);
+    background: var(--vscode-editorWidget-background, ${PLATFORM.vsDarkBg});
     border: 1px solid var(--vscode-panel-border);
     border-radius: 8px;
     padding: 8px;
@@ -1280,7 +1231,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
   .color-pop {
     position: absolute;
     top: 30px; right: 8px;
-    background: var(--vscode-editorWidget-background, #fff);
+    background: var(--vscode-editorWidget-background, ${C.white});
     border: 1px solid var(--vscode-panel-border);
     border-radius: 8px;
     padding: 8px;
@@ -1302,13 +1253,13 @@ export class SidebarView implements vscode.WebviewViewProvider {
     box-shadow: 0 1px 4px rgba(0,0,0,.18);
   }
   .color-swatch:hover { transform: scale(1.15); }
-  .color-swatch.selected { border-color: #1a1a2e; }
+  .color-swatch.selected { border-color: ${C.text}; }
 
   /* Tag assignment popover */
   .tag-pop {
     position: absolute;
     top: 30px; right: 8px;
-    background: var(--vscode-editorWidget-background, #fff);
+    background: var(--vscode-editorWidget-background, ${C.white});
     border: 1px solid var(--vscode-panel-border);
     border-radius: 8px;
     padding: 5px;
@@ -1327,7 +1278,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
     font-size: 11px;
     padding: 6px 8px;
     opacity: .55;
-    color: #1a1a2e;
+    color: ${C.text};
   }
   .tag-pop-item {
     display: flex;
@@ -1338,7 +1289,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
     cursor: pointer;
     font-size: 11px;
     font-weight: 600;
-    color: #1a1a2e;
+    color: ${C.text};
     transition: filter .1s;
   }
   .tag-pop-item:hover { filter: brightness(.93); }
@@ -1449,10 +1400,10 @@ export class SidebarView implements vscode.WebviewViewProvider {
   .card-reminder {
     font-size: 10px;
     white-space: nowrap;
-    color: #d4900a;
+    color: ${C.remindWarn};
     opacity: .9;
   }
-  .card-reminder.overdue { color: #c0392b; opacity: 1; }
+  .card-reminder.overdue { color: ${C.remindOver}; opacity: 1; }
 
   /* ── Format bar (replaces row 4 while editing) ───────── */
   .card-fmtbar {
@@ -1496,7 +1447,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
   .task-item { display: flex; align-items: center; gap: 5px; }
   .task-item input[type="checkbox"] {
     cursor: pointer; width: 13px; height: 13px; flex-shrink: 0;
-    accent-color: var(--card-accent, #FFD166);
+    accent-color: var(--card-accent, ${NC.yellow});
   }
   .task-item.done > span { opacity: .5; text-decoration: line-through; }
 
@@ -1538,7 +1489,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
     padding: 1px 6px;
     border-radius: 10px;
     font-weight: 600;
-    color: #1a1a2e;
+    color: ${C.text};
     cursor: pointer;
     display: inline-flex;
     align-items: center;
@@ -1571,7 +1522,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
     width: 100%;
     max-height: 65vh;
     border-radius: 12px;
-    background: var(--nc-bg, #FFD166);
+    background: var(--nc-bg, ${NC.yellow});
     box-shadow: 0 8px 32px rgba(0,0,0,.35), 0 2px 8px rgba(0,0,0,.18);
     display: flex;
     flex-direction: column;
@@ -1597,7 +1548,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
     background: none;
     border: none;
     cursor: pointer;
-    color: rgba(26,26,46,.5);
+    color: rgba(${RGB.text},.5);
     width: 22px;
     height: 22px;
     border-radius: 50%;
@@ -1608,7 +1559,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
     transition: background .12s, color .12s;
     padding: 0;
   }
-  .note-card-close:hover { background: rgba(26,26,46,.12); color: #1a1a2e; }
+  .note-card-close:hover { background: rgba(${RGB.text},.12); color: ${C.text}; }
 
   .note-card-title {
     background: transparent;
@@ -1616,12 +1567,12 @@ export class SidebarView implements vscode.WebviewViewProvider {
     outline: none;
     font-size: 14px;
     font-weight: 700;
-    color: #1a1a2e;
+    color: ${C.text};
     padding: 0 12px 6px;
     width: 100%;
     font-family: var(--vscode-font-family);
   }
-  .note-card-title::placeholder { color: rgba(26,26,46,.4); }
+  .note-card-title::placeholder { color: rgba(${RGB.text},.4); }
 
   .note-card-body {
     cursor: text;
@@ -1636,7 +1587,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
     min-height: 88px;
     padding: 0 12px 10px;
     font-size: 12.5px;
-    color: #1a1a2e;
+    color: ${C.text};
     font-family: var(--vscode-font-family);
     line-height: 1.55;
   }
@@ -1645,7 +1596,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
   .note-card-body .ProseMirror li { margin: 0; }
   .note-card-body.is-empty .ProseMirror p:first-child::before {
     content: attr(data-placeholder);
-    color: rgba(26,26,46,.38);
+    color: rgba(${RGB.text},.38);
     pointer-events: none;
     float: left;
     height: 0;
@@ -1653,7 +1604,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
 
   .note-card-footer {
     background: rgba(0,0,0,.08);
-    border-top: 1px solid rgba(26,26,46,.1);
+    border-top: 1px solid rgba(${RGB.text},.1);
     padding: 7px 10px;
     display: flex;
     flex-direction: column;
@@ -1670,7 +1621,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
     background: none;
     border: none;
     cursor: pointer;
-    color: rgba(26,26,46,.55);
+    color: rgba(${RGB.text},.55);
     font-size: 12px;
     width: 24px;
     height: 22px;
@@ -1681,13 +1632,13 @@ export class SidebarView implements vscode.WebviewViewProvider {
     font-family: var(--vscode-font-family);
     transition: background .1s, color .1s;
   }
-  .fmt-btn:hover { background: rgba(26,26,46,.1); color: #1a1a2e; }
-  .fmt-btn.active { background: rgba(26,26,46,.18); color: #1a1a2e; }
+  .fmt-btn:hover { background: rgba(${RGB.text},.1); color: ${C.text}; }
+  .fmt-btn.active { background: rgba(${RGB.text},.18); color: ${C.text}; }
 
   .fmt-btn-sep {
     width: 1px;
     height: 14px;
-    background: rgba(26,26,46,.18);
+    background: rgba(${RGB.text},.18);
     margin: 0 3px;
     flex-shrink: 0;
   }
@@ -1701,10 +1652,10 @@ export class SidebarView implements vscode.WebviewViewProvider {
   }
 
   .note-card-confirm {
-    background: rgba(26,26,46,.15);
+    background: rgba(${RGB.text},.15);
     border: none;
     cursor: pointer;
-    color: #1a1a2e;
+    color: ${C.text};
     font-size: 14px;
     font-weight: 700;
     width: 28px;
@@ -1717,15 +1668,15 @@ export class SidebarView implements vscode.WebviewViewProvider {
     transition: background .12s;
     margin-left: auto;
   }
-  .note-card-confirm:hover { background: rgba(26,26,46,.25); }
+  .note-card-confirm:hover { background: rgba(${RGB.text},.25); }
 
   .note-card-header .color-swatch { width: 18px; height: 18px; }
 
   .nc-select {
-    background: rgba(26,26,46,.12);
-    border: 1px solid rgba(26,26,46,.2);
+    background: rgba(${RGB.text},.12);
+    border: 1px solid rgba(${RGB.text},.2);
     border-radius: 5px;
-    color: #1a1a2e;
+    color: ${C.text};
     font-size: 11px;
     padding: 2px 4px;
     cursor: pointer;
@@ -1734,7 +1685,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
     max-width: 105px;
     flex-shrink: 0;
   }
-  .nc-select:focus { border-color: rgba(26,26,46,.4); }
+  .nc-select:focus { border-color: rgba(${RGB.text},.4); }
 
   .color-strip {
     display: flex;
@@ -1792,7 +1743,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
     top: 7px; left: 7px;
     width: 17px; height: 17px;
     border-radius: 4px;
-    border: 2px solid rgba(26,26,46,.3);
+    border: 2px solid rgba(${RGB.text},.3);
     background: rgba(255,255,255,.88);
     z-index: 5;
     align-items: center;
@@ -1866,22 +1817,29 @@ export class SidebarView implements vscode.WebviewViewProvider {
 
 
   .branch-filter-btn.active { color: var(--vscode-button-background) !important; opacity: 1; }
-  .github-connect-btn.connected { color: #06d6a0 !important; opacity: 1; }
+  .github-connect-btn.connected { color: ${GH.open} !important; opacity: 1; }
   .archive-view-btn.active { color: var(--vscode-button-background) !important; opacity: 1; }
   .card.is-archived { opacity: .7; filter: grayscale(.25); }
-  .card.conflict { border-left-color: #EF6C57; background: rgba(239,108,87,.06); }
-  .archived-badge {
+  .card.conflict { border-left-color: ${NC.orange}; background: rgba(${RGB.orange},.06); }
+  /* ── Shared metadata chip base (mirrors .tag-pill) ─────── */
+  .meta-chip {
+    font-size: 10px;
+    padding: 1px 6px;
+    border-radius: 10px;
+    font-weight: 600;
+    color: ${C.text};
+    cursor: pointer;
     display: inline-flex;
     align-items: center;
     gap: 3px;
-    font-size: 10px;
-    padding: 2px 6px;
-    border-radius: 4px;
-    background: rgba(0,0,0,.1);
-    border: 1px solid rgba(0,0,0,.15);
-    color: var(--card-text);
-    opacity: .65;
+    white-space: nowrap;
+    transition: filter .12s;
+    border: none;
+    outline: none;
   }
+  .meta-chip:hover { filter: brightness(.9); }
+
+  .archived-badge { background: ${C.muted}; }
 
   /* Off-branch card — dimmed but still accessible */
   .card.off-branch { opacity: .42; }
@@ -1935,7 +1893,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
   .owner-initials {
     width: 16px; height: 16px;
     border-radius: 50%;
-    background: var(--card-accent, #FFD166);
+    background: var(--card-accent, ${NC.yellow});
     opacity: .75;
     font-size: 8px;
     font-weight: 700;
@@ -1944,7 +1902,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
     justify-content: center;
     flex-shrink: 0;
     letter-spacing: -.5px;
-    color: #1a1a2e;
+    color: ${C.text};
   }
   .owner-name {
     font-size: 10px;
@@ -1954,81 +1912,20 @@ export class SidebarView implements vscode.WebviewViewProvider {
     max-width: 56px;
   }
   .mine-filter-btn.active { color: var(--vscode-button-background) !important; opacity: 1; }
-  .stale-filter-btn.active { color: #EF6C57 !important; opacity: 1; }
+  .stale-filter-btn.active { color: ${NC.orange} !important; opacity: 1; }
 
   /* ── Conflict indicator ─────────────────────────────── */
-  .conflict-badge {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    font-size: 10px;
-    font-weight: 700;
-    padding: 3px 8px;
-    border-radius: 4px;
-    background: rgba(239,108,87,.18);
-    border: 1px solid rgba(239,108,87,.4);
-    color: var(--card-text);
-    cursor: pointer;
-    transition: background .1s;
-  }
-  .conflict-badge:hover { background: rgba(239,108,87,.3); }
+  .conflict-badge { background: ${NC.orange}; }
 
   /* ── Reminder badge ─────────────────────────────────── */
-  .reminder-badge {
-    display: inline-flex;
-    align-items: center;
-    gap: 3px;
-    font-size: 10px;
-    padding: 2px 7px;
-    border-radius: 4px;
-    background: rgba(0,0,0,.1);
-    border: 1px solid rgba(0,0,0,.1);
-    color: var(--card-text);
-    opacity: .75;
-    white-space: nowrap;
-  }
-  .reminder-badge.overdue {
-    background: rgba(239,108,87,.22);
-    border-color: rgba(239,108,87,.35);
-    opacity: 1;
-  }
+  .reminder-badge         { background: ${NC.yellow}; }
+  .reminder-badge.overdue { background: ${NC.orange}; }
 
   /* ── GitHub status badge ────────────────────────────── */
-  .github-badge {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    font-size: 10px;
-    padding: 2px 7px;
-    border-radius: 4px;
-    color: var(--card-text);
-    white-space: nowrap;
-    cursor: pointer;
-    transition: filter .1s;
-    text-decoration: none;
-  }
-  .github-badge:hover { filter: brightness(.9); }
-  .github-badge.gh-open {
-    background: rgba(6,214,160,.18);
-    border: 1px solid rgba(6,214,160,.45);
-  }
-  .github-badge.gh-closed {
-    background: rgba(0,0,0,.1);
-    border: 1px solid rgba(0,0,0,.18);
-    opacity: .7;
-  }
-  .github-badge.gh-merged {
-    background: rgba(130,80,255,.18);
-    border: 1px solid rgba(130,80,255,.4);
-  }
-  .github-badge-dot {
-    width: 7px; height: 7px;
-    border-radius: 50%;
-    flex-shrink: 0;
-  }
-  .gh-open  .github-badge-dot { background: #06d6a0; }
-  .gh-closed .github-badge-dot { background: #888; }
-  .gh-merged .github-badge-dot { background: #8250df; }
+  .github-badge.gh-open   { background: ${GH.open};   }
+  .github-badge.gh-closed { background: ${C.muted};   }
+  .github-badge.gh-merged { background: ${GH.merged}; color: ${C.white}; }
+
 
   /* ── Empty state ─────────────────────────────────────── */
   .empty {
@@ -2047,42 +1944,18 @@ export class SidebarView implements vscode.WebviewViewProvider {
 
   /* ── Code link chip ──────────────────────────────────── */
   .code-link-chip {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
+    background: ${NC.blue};
     font-family: var(--vscode-editor-font-family, monospace);
-    font-size: 10px;
-    padding: 2px 7px;
-    border-radius: 4px;
-    background: rgba(0,0,0,.12);
-    border: 1px solid rgba(0,0,0,.18);
-    color: var(--card-text);
-    cursor: pointer;
-    white-space: nowrap;
+    max-width: 200px;
     overflow: hidden;
     text-overflow: ellipsis;
-    max-width: 200px;
     flex-shrink: 0;
-    opacity: .75;
-    transition: opacity .12s, background .12s;
-  }
-  .code-link-chip::before {
-    content: '{}';
-    font-size: 9px;
-    opacity: .55;
-    flex-shrink: 0;
-  }
-  .code-link-chip:hover {
-    opacity: 1;
-    background: rgba(0,0,0,.2);
   }
   .code-link-chip.stale {
     opacity: .5;
     text-decoration: line-through;
     cursor: default;
     pointer-events: none;
-    border-color: rgba(239,108,87,.4);
-    color: #EF6C57;
   }
   .code-link-remove {
     opacity: 0;
@@ -2098,30 +1971,11 @@ export class SidebarView implements vscode.WebviewViewProvider {
 
   .note-links-row { display: contents; } /* flattened into row2 */
   .note-link-chip {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    font-size: 10px;
-    padding: 2px 7px;
-    border-radius: 4px;
-    background: rgba(0,0,0,.1);
-    border: 1px solid rgba(0,0,0,.15);
-    color: var(--card-text);
-    cursor: pointer;
-    white-space: nowrap;
+    background: ${NC.purple};
     max-width: 160px;
     overflow: hidden;
     text-overflow: ellipsis;
-    opacity: .8;
-    transition: opacity .12s, background .12s;
   }
-  .note-link-chip::before {
-    content: '↗';
-    font-size: 9px;
-    opacity: .6;
-    flex-shrink: 0;
-  }
-  .note-link-chip:hover { opacity: 1; background: rgba(0,0,0,.18); }
   .note-link-unlink {
     opacity: 0;
     font-size: 8px;
@@ -2147,7 +2001,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
   .nc-hint {
     margin-left: auto;
     font-size: 10px;
-    color: rgba(26,26,46,.38);
+    color: rgba(${RGB.text},.38);
     white-space: nowrap;
     pointer-events: none;
     user-select: none;
@@ -2222,12 +2076,6 @@ export class SidebarView implements vscode.WebviewViewProvider {
 
 <!-- ── Tag manager panel ── -->
 <div class="tag-manager" id="tag-manager" style="display:none"></div>
-
-<!-- ── Simulation banner (hidden unless sim mode active) ── -->
-<div class="sim-banner" id="sim-banner" style="display:none">
-  <span class="sim-label">⚗ Phase 7 simulation</span>
-  <button class="sim-exit" id="sim-exit">× Exit</button>
-</div>
 
 <!-- ── Card list ── -->
 <div class="card-list" id="card-list" role="list" aria-label="Notes"></div>
@@ -2309,7 +2157,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
   let newColor          = COLOR_KEYS[0];
   let newTags           = [];
   let newTemplateId     = null;
-  let tagColor          = '#74B9FF';
+  let tagColor          = '${NC.blue}';
   let currentBranch      = null;
   let currentUser        = null;
   let availableBranches  = [];
@@ -2329,8 +2177,6 @@ export class SidebarView implements vscode.WebviewViewProvider {
   let openMgrColorPop = null;
 
   // ── DOM refs ────────────────────────────────────────────────────────────
-  const simBanner      = document.getElementById('sim-banner');
-  const simExit        = document.getElementById('sim-exit');
   const projectName    = document.getElementById('project-name');
   projectName.addEventListener('click', () => vscode.postMessage({ type: 'openFolder' }));
   const cardList       = document.getElementById('card-list');
@@ -2578,16 +2424,6 @@ export class SidebarView implements vscode.WebviewViewProvider {
       highlightSwatch(tagColorsEl, tagColor);
     }
 
-    if (msg.type === 'sim') {
-      notes = msg.notes ?? [];
-      simBanner.style.display = '';
-      renderCards();
-    }
-  });
-
-  simExit.addEventListener('click', () => {
-    simBanner.style.display = 'none';
-    vscode.postMessage({ type: 'ready' }); // triggers a full push() with real data
   });
 
   // ── Search ──────────────────────────────────────────────────────────────
@@ -3142,13 +2978,14 @@ export class SidebarView implements vscode.WebviewViewProvider {
       note.linkedNoteIds.forEach(targetId => {
         const target = notes.find(n => n.id === targetId);
         if (!target) return;
-        const chip = mkEl('button', 'note-link-chip');
+        const chip = mkEl('button', 'meta-chip note-link-chip');
+        const ico = mkEl('span', 'tag-icon'); ico.innerHTML = ${jsSvg.noteLinkIcon};
         const label = mkEl('span', '', target.title);
         const unlinkBtn = mkEl('span', 'note-link-unlink');
         unlinkBtn.innerHTML = ${jsSvg.unlinkSmall};
         unlinkBtn.title = 'Remove link';
         chip.title = target.title;
-        chip.append(label, unlinkBtn);
+        chip.append(ico, label, unlinkBtn);
         chip.addEventListener('click', e => {
           if (e.target === unlinkBtn || unlinkBtn.contains(e.target)) {
             e.stopPropagation();
@@ -3162,7 +2999,9 @@ export class SidebarView implements vscode.WebviewViewProvider {
     }
 
     if (note.conflicted) {
-      const badge = mkEl('button', 'conflict-badge', '⚠ Conflict — click to resolve');
+      const badge = mkEl('button', 'meta-chip conflict-badge');
+      const conflictIco = mkEl('span', 'tag-icon'); conflictIco.innerHTML = ${jsSvg.conflictIcon};
+      badge.append(conflictIco, mkEl('span', '', 'Conflict — click to resolve'));
       badge.setAttribute('aria-label', 'Merge conflict — click to open conflict resolution');
       badge.addEventListener('click', e => {
         e.stopPropagation();
@@ -3172,28 +3011,34 @@ export class SidebarView implements vscode.WebviewViewProvider {
     }
 
     if (note.archived) {
-      const ab = mkEl('span', 'archived-badge', '📦 Archived');
+      const ab = mkEl('span', 'meta-chip archived-badge');
+      const archiveIco = mkEl('span', 'tag-icon'); archiveIco.innerHTML = ${jsSvg.archiveIcon};
+      ab.append(archiveIco, mkEl('span', '', 'Archived'));
       ab.setAttribute('aria-label', 'This note is archived');
       row2.appendChild(ab);
     }
 
     if (note.remindAt) {
       const isOverdue = note.remindAt <= Date.now();
-      const badge = mkEl('span', 'reminder-badge' + (isOverdue ? ' overdue' : ''));
-      badge.textContent = '🔔 ' + formatReminder(note.remindAt);
-      badge.title = isOverdue ? 'Overdue — click 🔔 to reschedule' : new Date(note.remindAt).toLocaleString();
+      const badge = mkEl('span', 'meta-chip reminder-badge' + (isOverdue ? ' overdue' : ''));
+      const bellIco = mkEl('span', 'tag-icon'); bellIco.innerHTML = ${jsSvg.bellSmall};
+      badge.append(bellIco, mkEl('span', '', formatReminder(note.remindAt)));
+      badge.title = isOverdue ? 'Overdue — click bell to reschedule' : new Date(note.remindAt).toLocaleString();
       row2.appendChild(badge);
     }
 
     if (note.github) {
       const gh     = note.github;
       const status = gh.status ?? 'open';
-      const badge  = mkEl('button', \`github-badge gh-\${status}\`);
-      const dot    = mkEl('span', 'github-badge-dot');
+      const badge  = mkEl('button', \`meta-chip github-badge gh-\${status}\`);
+      const ghIco  = mkEl('span', 'tag-icon');
+      ghIco.innerHTML = gh.type === 'pr'
+        ? (status === 'merged' ? ${jsSvg.ghPrMerged} : status === 'closed' ? ${jsSvg.ghPrClosed} : ${jsSvg.ghPrOpen})
+        : (status === 'closed' || status === 'merged' ? ${jsSvg.ghIssueClosed} : ${jsSvg.ghIssueOpen});
       const typeLabel = gh.type === 'pr' ? 'PR' : '#';
       const label  = mkEl('span', '', \`\${typeLabel}\${gh.number} \${status}\`);
       badge.title  = gh.title ? gh.title : gh.url;
-      badge.append(dot, label);
+      badge.append(ghIco, label);
       badge.addEventListener('click', e => {
         e.stopPropagation();
         vscode.postMessage({ type: 'openGitHubLink', url: gh.url });
@@ -3202,7 +3047,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
     }
 
     if (note.codeLink) {
-      const chip = mkEl('button', 'code-link-chip' + (note.codeLinkStale ? ' stale' : ''));
+      const chip = mkEl('button', 'meta-chip code-link-chip' + (note.codeLinkStale ? ' stale' : ''));
       const shortName = note.codeLink.file.split('/').pop() || note.codeLink.file;
       const staleTitle = note.codeLink.file + ':' + note.codeLink.line + ' — file not found';
       chip.title = note.codeLinkStale
@@ -3212,8 +3057,9 @@ export class SidebarView implements vscode.WebviewViewProvider {
         ? 'Broken link: ' + staleTitle
         : 'Jump to ' + note.codeLink.file + ' line ' + note.codeLink.line
       );
-      const chipLabel = mkEl('span', '', (note.codeLinkStale ? '⚠ ' : '') + shortName + ':' + note.codeLink.line);
-      chip.appendChild(chipLabel);
+      const codeIco = mkEl('span', 'tag-icon'); codeIco.innerHTML = ${jsSvg.codeLinkIcon};
+      const chipLabel = mkEl('span', '', shortName + ':' + note.codeLink.line);
+      chip.append(codeIco, chipLabel);
       if (!note.codeLinkStale) {
         chip.addEventListener('click', e => {
           e.stopPropagation();

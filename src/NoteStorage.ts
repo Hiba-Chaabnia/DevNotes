@@ -1,5 +1,7 @@
 import * as vscode from 'vscode';
 import { parseFrontmatter, serializeFrontmatter } from './Frontmatter';
+import { NOTE_COLORS } from './colors';
+export { NOTE_COLORS };
 
 // ─── Data model ──────────────────────────────────────────────────────────────
 
@@ -54,23 +56,13 @@ export interface Tag {
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
-export const NOTE_COLORS: Record<string, string> = {
-  yellow : '#FFD166',
-  orange : '#EF6C57',
-  purple : '#B5A4E8',
-  cyan   : '#06D6D6',
-  green  : '#C5E17A',
-  pink   : '#FF9EBA',
-  blue   : '#74B9FF',
-  white  : '#F8F9FA',
-};
 
 export const DEFAULT_TAGS: Tag[] = [
-  { id: 'idea',      label: 'Idea',      color: '#FFD166', icon: 'Lightbulb'    },
-  { id: 'todo',      label: 'Todo',      color: '#06D6D6', icon: 'ListTodo'     },
-  { id: 'bug',       label: 'Bug',       color: '#EF6C57', icon: 'Bug'          },
-  { id: 'meeting',   label: 'Meeting',   color: '#B5A4E8', icon: 'Presentation' },
-  { id: 'reference', label: 'Reference', color: '#74B9FF', icon: 'BookMarked'   },
+  { id: 'idea',      label: 'Idea',      color: NOTE_COLORS.yellow, icon: 'Lightbulb'    },
+  { id: 'todo',      label: 'Todo',      color: NOTE_COLORS.cyan,   icon: 'ListTodo'     },
+  { id: 'bug',       label: 'Bug',       color: NOTE_COLORS.orange, icon: 'Bug'          },
+  { id: 'meeting',   label: 'Meeting',   color: NOTE_COLORS.purple, icon: 'Presentation' },
+  { id: 'reference', label: 'Reference', color: NOTE_COLORS.blue,   icon: 'BookMarked'   },
 ];
 
 export const BUILTIN_TEMPLATES: Template[] = [

@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { NoteStorage, Note, Tag, NOTE_COLORS } from './NoteStorage';
+import { UI_COLORS, RGB } from './colors';
 
 export class ConflictPanel {
   static current?: ConflictPanel;
@@ -116,7 +117,7 @@ export class ConflictPanel {
     padding: 16px 24px;
     border-bottom: 1px solid var(--vscode-panel-border);
     flex-shrink: 0;
-    background: rgba(239,108,87,.08);
+    background: rgba(${RGB.orange},.08);
   }
   .conflict-icon { font-size: 1.5em; flex-shrink: 0; }
   .conflict-title { font-size: 1.05em; font-weight: 700; margin-bottom: 3px; }
@@ -148,8 +149,8 @@ export class ConflictPanel {
     padding: 2px 7px;
     border-radius: 3px;
   }
-  .label-ours   { background: rgba(6,214,214,.2);   color: var(--vscode-foreground); }
-  .label-theirs { background: rgba(239,108,87,.2);  color: var(--vscode-foreground); }
+  .label-ours   { background: rgba(${RGB.cyan},.2);   color: var(--vscode-foreground); }
+  .label-theirs { background: rgba(${RGB.orange},.2);  color: var(--vscode-foreground); }
   .col-ref {
     font-size: 11px;
     font-family: var(--vscode-editor-font-family, monospace);
@@ -179,8 +180,8 @@ export class ConflictPanel {
   .field-value { font-size: 12px; }
 
   .field-row.changed {
-    background: rgba(255,200,0,.1);
-    border-left: 3px solid rgba(255,200,0,.6);
+    background: rgba(${RGB.amber},.1);
+    border-left: 3px solid rgba(${RGB.amber},.6);
     padding: 6px 8px;
     border-radius: 0 4px 4px 0;
     margin-left: -8px;
@@ -200,7 +201,7 @@ export class ConflictPanel {
     border-radius: 10px;
     font-size: 11px;
     font-weight: 600;
-    color: #1a1a2e;
+    color: ${UI_COLORS.text};
     margin-right: 3px;
   }
 
@@ -349,7 +350,7 @@ export class ConflictPanel {
     const colorEl = document.createElement('div');
     const swatch  = document.createElement('span');
     swatch.className = 'color-swatch';
-    swatch.style.background = COLORS[note.color] || '#FFD166';
+    swatch.style.background = COLORS[note.color] || NOTE_COLORS.yellow;
     colorEl.appendChild(swatch);
     colorEl.appendChild(document.createTextNode(note.color));
     appendFieldEl(container, 'Color', colorEl, note.color !== other.color);
