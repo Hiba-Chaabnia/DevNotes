@@ -4,6 +4,23 @@ import * as https from 'https';
 import * as path from 'path';
 import { NoteStorage, Note, Tag, Template, GitHubLink, NOTE_COLORS, DEFAULT_TAGS } from './NoteStorage';
 import { detectProjectIdentity } from './GitDetector';
+import {
+  Plus, Search, X, Ellipsis, User, Archive, Clock, LayoutList, Bot,
+  Palette, SquarePen, Bell, Copy, Link2, Unlink2, Share2, Download,
+  Trash2, GitBranch, ArrowLeftRight, Star, FolderGit, FolderOpen,
+  ClockArrowDown, ArrowDownAZ, Tag as TagIcon,
+} from 'lucide';
+import type { IconNode as LucideNode } from 'lucide';
+
+// ─── Lucide icon helper ───────────────────────────────────────────────────────
+
+function svgIcon(nodes: LucideNode, size = 14, style = ''): string {
+  const inner = nodes.map(([tag, attrs]) => {
+    const a = Object.entries(attrs).map(([k, v]) => `${k}="${v}"`).join(' ');
+    return `<${tag} ${a}/>`;
+  }).join('');
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"${style ? ` style="${style}"` : ''}>${inner}</svg>`;
+}
 
 // ─── Message types ────────────────────────────────────────────────────────────
 
@@ -36,15 +53,18 @@ type ToExt =
   | { type: 'duplicateNote';  noteId: string }
   | { type: 'linkNote'; noteId: string }
   | { type: 'unlinkNote'; noteId: string; targetId: string }
-  | { type: 'openLinkedNote'; noteId: string };
+  | { type: 'openLinkedNote'; noteId: string }
+  | { type: 'switchBranch' }
+  | { type: 'openFolder' };
 
 // ─── Provider ────────────────────────────────────────────────────────────────
 
 export class SidebarView implements vscode.WebviewViewProvider {
   private view?: vscode.WebviewView;
-  private projectName      = 'DevNotes';
+  private projectName        = 'DevNotes';
   private currentBranch: string | undefined;
   private currentUser:   string | undefined;
+  private availableBranches: string[] = [];
   private _branchFilterActive = false;
   private _githubConnected    = false;
 
@@ -69,6 +89,11 @@ export class SidebarView implements vscode.WebviewViewProvider {
 
   setCurrentUser(user: string | undefined): void {
     this.currentUser = user;
+    this.push();
+  }
+
+  setAvailableBranches(branches: string[]): void {
+    this.availableBranches = branches;
     this.push();
   }
 
@@ -106,15 +131,16 @@ export class SidebarView implements vscode.WebviewViewProvider {
       return { ...n, codeLinkStale: !fs.existsSync(absPath) };
     });
     this.view.webview.postMessage({
-      type            : 'init',
+      type              : 'init',
       notes,
-      tags            : this.storage.getTags(),
-      templates       : this.storage.getTemplates(),
-      defaultTagIds   : DEFAULT_TAGS.map(t => t.id),
-      projectName     : this.projectName,
-      currentBranch   : this.currentBranch ?? null,
-      currentUser     : this.currentUser   ?? null,
-      githubConnected : this._githubConnected,
+      tags              : this.storage.getTags(),
+      templates         : this.storage.getTemplates(),
+      defaultTagIds     : DEFAULT_TAGS.map(t => t.id),
+      projectName       : this.projectName,
+      currentBranch     : this.currentBranch     ?? null,
+      currentUser       : this.currentUser       ?? null,
+      availableBranches : this.availableBranches,
+      githubConnected   : this._githubConnected,
     });
   }
 
@@ -579,6 +605,14 @@ export class SidebarView implements vscode.WebviewViewProvider {
         this.onOpenEditor(msg.noteId);
         break;
 
+      case 'switchBranch':
+        vscode.commands.executeCommand('git.checkout');
+        break;
+
+      case 'openFolder':
+        vscode.commands.executeCommand('workbench.action.openRecent');
+        break;
+
       case 'registerMcp':
         vscode.commands.executeCommand('devnotes.registerMcp');
         break;
@@ -593,6 +627,29 @@ export class SidebarView implements vscode.WebviewViewProvider {
     const sidebarEditorUri  = webview.asWebviewUri(
       vscode.Uri.joinPath(this.context.extensionUri, 'media', 'sidebar-editor.js')
     );
+
+    // SVG strings injected into the webview script (browser side can't import lucide)
+    const jsSvg = {
+      edit:        JSON.stringify(svgIcon(SquarePen, 14)),
+      remind:      JSON.stringify(svgIcon(Bell,      14)),
+      dup:         JSON.stringify(svgIcon(Copy,      14)),
+      link:        JSON.stringify(svgIcon(Link2,     14)),
+      unlink:      JSON.stringify(svgIcon(Unlink2,   14)),
+      archive:     JSON.stringify(svgIcon(Archive,   14)),
+      share:       JSON.stringify(svgIcon(Share2,    14)),
+      export:      JSON.stringify(svgIcon(Download,  14)),
+      trash:       JSON.stringify(svgIcon(Trash2,    14)),
+      colorPicker: JSON.stringify(svgIcon(Palette,   13)),
+      overflow:    JSON.stringify(svgIcon(Ellipsis,  14)),
+      star:        JSON.stringify(svgIcon(Star,      14)),
+      unlinkSmall: JSON.stringify(svgIcon(X,           10)),
+      folderGit:   JSON.stringify(svgIcon(FolderGit,  13, 'flex-shrink:0')),
+      folderOpen:  JSON.stringify(svgIcon(FolderOpen, 13, 'flex-shrink:0')),
+      branch:      JSON.stringify(svgIcon(GitBranch,     11, 'flex-shrink:0')),
+      branchSwitch: JSON.stringify(svgIcon(ArrowLeftRight, 11, 'flex-shrink:0')),
+      sortUpdated: JSON.stringify(svgIcon(ClockArrowDown, 13)),
+      sortAlpha:   JSON.stringify(svgIcon(ArrowDownAZ, 13)),
+    };
 
     return /* html */`<!DOCTYPE html>
 <html lang="en">
@@ -637,17 +694,73 @@ export class SidebarView implements vscode.WebviewViewProvider {
     gap: 6px;
   }
 
-  .project-name {
+  .project-pill {
     font-size: 11px;
-    font-weight: 700;
-    letter-spacing: .04em;
-    text-transform: uppercase;
-    color: var(--vscode-descriptionForeground);
-    flex: 1;
+    font-weight: 600;
+    padding: 2px 8px 2px 6px;
+    border-radius: 10px;
+    background: var(--vscode-badge-background);
+    color: var(--vscode-badge-foreground);
+    min-width: 0;
+    flex-shrink: 1;
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+    position: relative;
+    overflow: hidden;
+    height: 20px;
+  }
+  .project-pill:hover {
+    background: var(--vscode-button-secondaryBackground, rgba(255,255,255,.12));
+    color: var(--vscode-button-secondaryForeground, var(--vscode-badge-foreground));
+  }
+  .project-pill:hover .pill-primary { opacity: 0; transform: translateY(-5px); }
+  .project-pill:hover .pill-action  { opacity: 1; transform: translateY(0); }
+
+  .pill-primary {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    overflow: hidden;
+    min-width: 0;
+    transition: opacity .15s, transform .15s;
+  }
+  .pill-label {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    min-width: 0;
   }
+  .pill-action {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 8px 2px 6px;
+    overflow: hidden;
+    opacity: 0;
+    transform: translateY(5px);
+    transition: opacity .15s, transform .15s;
+    font-style: italic;
+  }
+
+  .new-note-pill {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    background: var(--vscode-button-background);
+    color: var(--vscode-button-foreground);
+    border: none;
+    border-radius: 10px;
+    padding: 2px 9px 2px 6px;
+    font-size: 11px;
+    font-weight: 500;
+    cursor: pointer;
+    flex-shrink: 0;
+    line-height: 1.4;
+  }
+  .new-note-pill:hover { background: var(--vscode-button-hoverBackground); }
 
   .icon-btn {
     background: none;
@@ -664,6 +777,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
   .icon-btn:hover { opacity: 1; background: var(--vscode-toolbar-hoverBackground); }
 
   .search-row {
+    flex: 1;
     display: flex;
     align-items: center;
     gap: 6px;
@@ -688,8 +802,8 @@ export class SidebarView implements vscode.WebviewViewProvider {
     color: var(--vscode-descriptionForeground);
     cursor: pointer;
     padding: 0 2px;
-    font-size: 11px;
-    line-height: 1;
+    display: flex;
+    align-items: center;
     opacity: .7;
     flex-shrink: 0;
   }
@@ -1101,11 +1215,12 @@ export class SidebarView implements vscode.WebviewViewProvider {
 
   .star-btn {
     background: none; border: none; cursor: pointer;
-    font-size: 14px; padding: 0; line-height: 1;
+    padding: 0; display: flex; align-items: center;
     color: var(--card-text); opacity: .4;
     flex-shrink: 0;
   }
   .star-btn.on { opacity: 1; }
+  .star-btn.on svg { fill: currentColor; }
   .star-btn:hover { opacity: .8; }
 
   #card-color-pop {
@@ -1470,7 +1585,6 @@ export class SidebarView implements vscode.WebviewViewProvider {
     background: none;
     border: none;
     cursor: pointer;
-    font-size: 13px;
     color: rgba(26,26,46,.5);
     width: 22px;
     height: 22px;
@@ -1715,18 +1829,29 @@ export class SidebarView implements vscode.WebviewViewProvider {
   /* ── Branch indicator & filter ──────────────────────── */
   .branch-pill {
     font-size: 10px;
-    padding: 1px 6px;
+    padding: 1px 6px 1px 5px;
     border-radius: 10px;
     background: var(--vscode-badge-background);
     color: var(--vscode-badge-foreground);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    max-width: 110px;
+    min-width: 0;
     flex-shrink: 1;
     display: none;
+    align-items: center;
+    position: relative;
+    overflow: hidden;
+    height: 18px;
   }
-  .branch-pill.visible { display: inline-block; }
+  .branch-pill.visible { display: flex; }
+
+  .branch-pill.can-switch { cursor: pointer; }
+  .branch-pill.can-switch:hover {
+    background: var(--vscode-button-secondaryBackground, rgba(255,255,255,.12));
+    color: var(--vscode-button-secondaryForeground, var(--vscode-badge-foreground));
+  }
+  .branch-pill.can-switch:hover .pill-primary { opacity: 0; transform: translateY(-5px); }
+  .branch-pill.can-switch:hover .pill-action  { opacity: 1; transform: translateY(0); }
+  .branch-pill .pill-action { padding: 1px 6px 1px 5px; }
+
 
   .branch-filter-btn.active { color: var(--vscode-button-background) !important; opacity: 1; }
   .github-connect-btn.connected { color: #06d6a0 !important; opacity: 1; }
@@ -1997,13 +2122,6 @@ export class SidebarView implements vscode.WebviewViewProvider {
   .note-link-chip:hover .note-link-unlink { opacity: .55; }
   .note-link-unlink:hover { opacity: 1 !important; }
 
-  .sort-btn {
-    font-size: 10px;
-    font-weight: 600;
-    letter-spacing: -.3px;
-    min-width: 22px;
-    padding: 0 3px;
-  }
   .sort-btn.active { color: var(--vscode-button-background); opacity: 1; }
 
   /* ── New-note highlight flash ────────────────────────── */
@@ -2030,28 +2148,26 @@ export class SidebarView implements vscode.WebviewViewProvider {
 <!-- ── Top bar ── -->
 <div class="topbar">
   <div class="topbar-row">
-    <span class="project-name" id="project-name">Loading…</span>
+    <span class="project-pill" id="project-name"><span class="pill-primary">${svgIcon(FolderGit, 13, 'flex-shrink:0')}<span class="pill-label">Loading…</span></span><span class="pill-action">${svgIcon(FolderOpen, 13, 'flex-shrink:0')}<span class="pill-label">Open recent folder</span></span></span>
     <span class="branch-pill" id="branch-pill"></span>
-    <button class="icon-btn branch-filter-btn" id="btn-branch-filter" title="Show current branch only" style="display:none">⎇</button>
-    <button class="icon-btn sort-btn" id="btn-sort" title="Sort: last updated">↓U</button>
-    <button class="icon-btn" id="btn-new" title="New Note">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
-        <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
-      </svg>
-    </button>
-    <button class="icon-btn overflow-btn" id="btn-overflow" title="More options">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
-        <circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/>
-      </svg>
+    <div style="flex:1"></div>
+    <button class="new-note-pill" id="btn-new" title="New Note">
+      ${svgIcon(Plus, 11)}
+      New
     </button>
   </div>
 
-  <div class="search-row">
-    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" style="opacity:.5;flex-shrink:0">
-      <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
-    </svg>
-    <input id="search" type="text" placeholder="Search notes…" autocomplete="off">
-    <button class="search-clear" id="search-clear" title="Clear search" style="display:none">✕</button>
+  <div class="topbar-row">
+    <div class="search-row">
+      ${svgIcon(Search, 12, 'opacity:.5;flex-shrink:0')}
+      <input id="search" type="text" placeholder="Search notes…" autocomplete="off">
+      <button class="search-clear" id="search-clear" title="Clear search" style="display:none">${svgIcon(X, 11)}</button>
+    </div>
+    <button class="icon-btn branch-filter-btn" id="btn-branch-filter" title="Show current branch only" style="display:none">${svgIcon(GitBranch, 13)}</button>
+    <button class="icon-btn sort-btn" id="btn-sort" title="Sort: last updated">${svgIcon(ClockArrowDown, 13)}</button>
+    <button class="icon-btn overflow-btn" id="btn-overflow" title="More options">
+      ${svgIcon(Ellipsis, 14)}
+    </button>
   </div>
 </div>
 
@@ -2060,7 +2176,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
   <div class="note-card" id="note-card">
     <div class="note-card-header">
       <div class="color-strip" id="new-colors"></div>
-      <button class="note-card-close" id="btn-cancel-new" title="Cancel">✕</button>
+      <button class="note-card-close" id="btn-cancel-new" title="Cancel">${svgIcon(X, 12)}</button>
     </div>
     <input class="note-card-title" id="new-title" type="text" placeholder="Note title…" maxlength="120" autocomplete="off">
     <div class="note-card-body is-empty" id="new-body" data-placeholder="Start writing…"></div>
@@ -2113,22 +2229,22 @@ export class SidebarView implements vscode.WebviewViewProvider {
 <!-- ── Overflow menu (⋯ button) ── -->
 <div class="overflow-menu" id="overflow-menu">
   <button class="ovf-item mine-filter-btn" id="btn-mine-filter" style="display:none">
-    <span class="ovf-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span>
+    <span class="ovf-icon">${svgIcon(User, 14)}</span>
     <span class="ovf-label">My notes only</span>
     <span class="ovf-check">✓</span>
   </button>
   <button class="ovf-item" id="btn-archive-view">
-    <span class="ovf-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/></svg></span>
+    <span class="ovf-icon">${svgIcon(Archive, 14)}</span>
     <span class="ovf-label">Archived notes</span>
     <span class="ovf-check">✓</span>
   </button>
   <button class="ovf-item stale-filter-btn" id="btn-stale-filter">
-    <span class="ovf-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 6 12 12 16 14"/></svg></span>
+    <span class="ovf-icon">${svgIcon(Clock, 14)}</span>
     <span class="ovf-label">Stale notes</span>
     <span class="ovf-check">✓</span>
   </button>
   <button class="ovf-item" id="btn-select">
-    <span class="ovf-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><rect x="3" y="5" width="5" height="5" rx="1"/><line x1="12" y1="7.5" x2="21" y2="7.5"/><rect x="3" y="14" width="5" height="5" rx="1"/><line x1="12" y1="16.5" x2="21" y2="16.5"/></svg></span>
+    <span class="ovf-icon">${svgIcon(LayoutList, 14)}</span>
     <span class="ovf-label">Selection mode</span>
     <span class="ovf-check">✓</span>
   </button>
@@ -2139,7 +2255,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
     <span class="ovf-check">✓</span>
   </button>
   <button class="ovf-item" id="btn-register-mcp">
-    <span class="ovf-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="8" width="18" height="13" rx="2"/><circle cx="9" cy="14" r="1" fill="currentColor" stroke="none"/><circle cx="15" cy="14" r="1" fill="currentColor" stroke="none"/><line x1="9" y1="18" x2="15" y2="18"/><line x1="12" y1="8" x2="12" y2="4"/><circle cx="12" cy="3" r="1.5"/></svg></span>
+    <span class="ovf-icon">${svgIcon(Bot, 14)}</span>
     <span class="ovf-label">Register MCP</span>
   </button>
 </div>
@@ -2148,10 +2264,10 @@ export class SidebarView implements vscode.WebviewViewProvider {
 <div class="export-bar" id="export-bar">
   <span class="export-count" id="export-count">0 notes selected</span>
   <button class="btn btn-ghost btn-sel-all" id="btn-sel-all" title="Select all visible notes">All</button>
-  <button class="btn btn-ghost" id="btn-archive-sel" title="Archive selected">📦</button>
-  <button class="btn btn-ghost" id="btn-tag-sel" title="Assign tag to selected">#</button>
-  <button class="btn btn-ghost" id="btn-export-sel" title="Export selected">↓</button>
-  <button class="btn btn-ghost btn-danger" id="btn-delete-sel" title="Delete selected">✕</button>
+  <button class="btn btn-ghost" id="btn-archive-sel" title="Archive selected">${svgIcon(Archive, 13)}</button>
+  <button class="btn btn-ghost" id="btn-tag-sel" title="Assign tag to selected">${svgIcon(TagIcon, 13)}</button>
+  <button class="btn btn-ghost" id="btn-export-sel" title="Export selected">${svgIcon(Download, 13)}</button>
+  <button class="btn btn-ghost btn-danger" id="btn-delete-sel" title="Delete selected">${svgIcon(X, 13)}</button>
   <button class="btn btn-ghost" id="btn-cancel-sel">Cancel</button>
 </div>
 
@@ -2184,6 +2300,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
   let tagColor          = '#74B9FF';
   let currentBranch      = null;
   let currentUser        = null;
+  let availableBranches  = [];
   let branchFilterActive  = false;
   let mineFilterActive    = false;
   let githubConnected     = false;
@@ -2203,6 +2320,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
   const simBanner      = document.getElementById('sim-banner');
   const simExit        = document.getElementById('sim-exit');
   const projectName    = document.getElementById('project-name');
+  projectName.addEventListener('click', () => vscode.postMessage({ type: 'openFolder' }));
   const cardList       = document.getElementById('card-list');
   const tagBar         = document.getElementById('tag-bar');
   const searchEl       = document.getElementById('search');
@@ -2271,15 +2389,14 @@ export class SidebarView implements vscode.WebviewViewProvider {
 
   // ── Sort mode cycle ──────────────────────────────────────────────────────
   const SORT_MODES = [
-    { key: 'updated', label: '↓U', title: 'Sort: last updated' },
-    { key: 'created', label: '↓C', title: 'Sort: date created' },
-    { key: 'alpha',   label: 'A–Z', title: 'Sort: alphabetical' },
+    { key: 'updated', icon: ${jsSvg.sortUpdated}, title: 'Sort: last updated' },
+    { key: 'alpha',   icon: ${jsSvg.sortAlpha},   title: 'Sort: alphabetical' },
   ];
   btnSort.addEventListener('click', () => {
     const idx = SORT_MODES.findIndex(m => m.key === sortMode);
     const next = SORT_MODES[(idx + 1) % SORT_MODES.length];
     sortMode = next.key;
-    btnSort.textContent = next.label;
+    btnSort.innerHTML = next.icon;
     btnSort.title = next.title;
     btnSort.classList.toggle('active', sortMode !== 'updated');
     renderCards();
@@ -2300,7 +2417,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
   btnStaleFilter.addEventListener('click', () => {
     staleFilterActive = !staleFilterActive;
     btnStaleFilter.classList.toggle('active', staleFilterActive);
-    btnStaleFilter.title = staleFilterActive ? 'Show all notes' : 'Show stale notes (14+ days old with open todos or bug tag)';
+    btnStaleFilter.title = staleFilterActive ? 'Show all notes' : 'Show stale notes (14+ days old with overdue reminder, open todos, or broken file link)';
     if (staleFilterActive && showArchived) {
       showArchived = false;
       btnArchiveView.classList.remove('active');
@@ -2407,12 +2524,19 @@ export class SidebarView implements vscode.WebviewViewProvider {
       tags          = msg.tags          ?? [];
       templates     = msg.templates     ?? [];
       defaultTagIds = msg.defaultTagIds ?? [];
-      currentBranch   = msg.currentBranch   ?? null;
-      currentUser     = msg.currentUser     ?? null;
-      githubConnected = msg.githubConnected ?? false;
-      if (msg.projectName) projectName.textContent = msg.projectName;
-      // Show mine-filter button only when a git user is detected
-      btnMineFilter.style.display = currentUser ? '' : 'none';
+      currentBranch     = msg.currentBranch     ?? null;
+      currentUser       = msg.currentUser       ?? null;
+      availableBranches = msg.availableBranches ?? [];
+      githubConnected   = msg.githubConnected   ?? false;
+      if (msg.projectName) projectName.innerHTML = '<span class="pill-primary">' + ${jsSvg.folderGit} + '<span class="pill-label">' + esc(msg.projectName) + '</span></span><span class="pill-action">' + ${jsSvg.folderOpen} + '<span class="pill-label">Open recent folder</span></span>';
+      // Show mine-filter button only when another user's note exists in this repo
+      const hasOtherOwners = currentUser && notes.some(n => n.owner && n.owner !== currentUser);
+      btnMineFilter.style.display = hasOtherOwners ? '' : 'none';
+      // Show stale filter only when at least one stale note exists
+      const cutoff = Date.now() - 14 * 24 * 60 * 60 * 1000;
+      const hasStale = notes.some(n => !n.archived && n.updatedAt <= cutoff &&
+        (n.remindAt && n.remindAt < Date.now() || /- \[ \]/.test(n.content ?? '') || n.codeLinkStale));
+      btnStaleFilter.style.display = hasStale ? '' : 'none';
       // Reflect GitHub connection status on the overflow item
       btnGithub.classList.toggle('connected', githubConnected);
       btnGithub.classList.toggle('active', githubConnected);
@@ -2602,9 +2726,9 @@ export class SidebarView implements vscode.WebviewViewProvider {
 
   function renderBranchIndicator() {
     if (currentBranch) {
-      branchPillEl.textContent = '⎇ ' + currentBranch;
+      branchPillEl.innerHTML = '<span class="pill-primary">' + ${jsSvg.branch} + '<span class="pill-label">' + esc(currentBranch) + '</span></span><span class="pill-action">' + ${jsSvg.branchSwitch} + '<span class="pill-label">Switch branch</span></span>';
       branchPillEl.classList.add('visible');
-      branchFilterBtn.style.display = '';
+      branchFilterBtn.style.display = availableBranches.length > 1 ? '' : 'none';
       branchScopeLabel.classList.add('visible');
       branchScopeNameEl.textContent = currentBranch;
     } else {
@@ -2612,7 +2736,15 @@ export class SidebarView implements vscode.WebviewViewProvider {
       branchFilterBtn.style.display = 'none';
       branchScopeLabel.classList.remove('visible');
     }
+    const otherBranches = availableBranches.filter(b => b !== currentBranch);
+    branchPillEl.classList.toggle('can-switch', otherBranches.length > 0);
   }
+
+  branchPillEl.addEventListener('click', () => {
+    if (branchPillEl.classList.contains('can-switch')) {
+      vscode.postMessage({ type: 'switchBranch' });
+    }
+  });
 
   // ── Tag bar ─────────────────────────────────────────────────────────────
   function renderTagBar() {
@@ -2821,9 +2953,10 @@ export class SidebarView implements vscode.WebviewViewProvider {
       if (staleFilterActive) {
         const cutoff = Date.now() - 14 * 24 * 60 * 60 * 1000;
         if (n.updatedAt > cutoff) return false;
-        const hasBugTag    = n.tags.includes('bug');
-        const hasOpenTodos = /- \[ \]/.test(n.content);
-        if (!hasBugTag && !hasOpenTodos) return false;
+        const hasOverdueReminder = n.remindAt && n.remindAt < Date.now();
+        const hasOpenTodos       = /- \[ \]/.test(n.content ?? '');
+        const hasBrokenLink      = n.codeLinkStale;
+        if (!hasOverdueReminder && !hasOpenTodos && !hasBrokenLink) return false;
       }
       return true;
     });
@@ -2886,8 +3019,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
       .sort((a, b) => {
         const starDiff = (b.starred ? 1 : 0) - (a.starred ? 1 : 0);
         if (starDiff !== 0) return starDiff;
-        if (sortMode === 'alpha')   return a.title.localeCompare(b.title);
-        if (sortMode === 'created') return b.createdAt - a.createdAt;
+        if (sortMode === 'alpha') return a.title.localeCompare(b.title);
         return b.updatedAt - a.updatedAt;
       })
       .forEach(note => cardList.appendChild(buildCard(note)));
@@ -2938,7 +3070,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
     title.addEventListener('keydown', e => { if (e.key === 'Enter') title.blur(); });
 
     const overflowBtn = mkEl('button', 'card-overflow-btn');
-    overflowBtn.textContent = '⋯';
+    overflowBtn.innerHTML = ${jsSvg.overflow};
     overflowBtn.title = 'More actions';
     overflowBtn.setAttribute('aria-label', 'More actions');
     overflowBtn.setAttribute('aria-expanded', 'false');
@@ -2949,7 +3081,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
     });
 
     const cardColorBtn = mkEl('button', 'card-color-btn');
-    cardColorBtn.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="8.5" cy="9" r="1.5" fill="currentColor"/><circle cx="15.5" cy="9" r="1.5" fill="currentColor"/><circle cx="12" cy="15" r="1.5" fill="currentColor"/></svg>';
+    cardColorBtn.innerHTML = ${jsSvg.colorPicker};
     cardColorBtn.title = 'Change color';
     cardColorBtn.setAttribute('aria-label', 'Change note color');
     cardColorBtn.setAttribute('aria-expanded', 'false');
@@ -2960,7 +3092,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
     });
 
     const starBtn = mkEl('button', 'star-btn' + (note.starred ? ' on' : ''));
-    starBtn.textContent = '★';
+    starBtn.innerHTML = ${jsSvg.star};
     starBtn.title = note.starred ? 'Unstar' : 'Star';
     starBtn.setAttribute('aria-pressed', note.starred ? 'true' : 'false');
     starBtn.setAttribute('aria-label', note.starred ? 'Unstar note' : 'Star note');
@@ -2996,7 +3128,8 @@ export class SidebarView implements vscode.WebviewViewProvider {
         if (!target) return;
         const chip = mkEl('button', 'note-link-chip');
         const label = mkEl('span', '', target.title);
-        const unlinkBtn = mkEl('span', 'note-link-unlink', '✕');
+        const unlinkBtn = mkEl('span', 'note-link-unlink');
+        unlinkBtn.innerHTML = ${jsSvg.unlinkSmall};
         unlinkBtn.title = 'Remove link';
         chip.title = target.title;
         chip.append(label, unlinkBtn);
@@ -3070,7 +3203,8 @@ export class SidebarView implements vscode.WebviewViewProvider {
           e.stopPropagation();
           vscode.postMessage({ type: 'jumpToLink', file: note.codeLink.file, line: note.codeLink.line });
         });
-        const removeBtn = mkEl('span', 'code-link-remove', '✕');
+        const removeBtn = mkEl('span', 'code-link-remove');
+        removeBtn.innerHTML = ${jsSvg.unlinkSmall};
         removeBtn.title = 'Remove code link';
         removeBtn.addEventListener('click', e => {
           e.stopPropagation();
@@ -3383,15 +3517,15 @@ export class SidebarView implements vscode.WebviewViewProvider {
     function divider() { cardOvfMenu.appendChild(mkEl('hr', 'ovf-divider')); }
 
     const SVG = {
-      edit:     '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>',
-      remind:   '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>',
-      dup:      '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>',
-      link:     '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>',
-      unlink:   '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M18.84 12.25l1.72-1.71a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M5.17 11.75l-1.72 1.71a5 5 0 0 0 7.07 7.07l1.71-1.71"/><line x1="8" y1="2" x2="8" y2="5"/><line x1="2" y1="8" x2="5" y2="8"/><line x1="16" y1="19" x2="16" y2="22"/><line x1="19" y1="16" x2="22" y2="16"/></svg>',
-      archive:  '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/></svg>',
-      share:    '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>',
-      export:   '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>',
-      trash:    '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>',
+      edit:    ${jsSvg.edit},
+      remind:  ${jsSvg.remind},
+      dup:     ${jsSvg.dup},
+      link:    ${jsSvg.link},
+      unlink:  ${jsSvg.unlink},
+      archive: ${jsSvg.archive},
+      share:   ${jsSvg.share},
+      export:  ${jsSvg.export},
+      trash:   ${jsSvg.trash},
     };
 
     // ── Group 1: Actions ──

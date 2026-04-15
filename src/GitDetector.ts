@@ -87,6 +87,41 @@ export function detectProjectIdentity(): ProjectIdentity | undefined {
   return { id, displayName: id };
 }
 
+/**
+ * Lists all local branch names by reading `.git/refs/heads/` (unpacked refs)
+ * and `.git/packed-refs` (packed refs). Returns a sorted, deduplicated array.
+ * Returns an empty array when the directory is not a git repository.
+ */
+export function getLocalBranches(workspaceRootPath: string): string[] {
+  const branches = new Set<string>();
+
+  // Unpacked refs
+  const headsDir = path.join(workspaceRootPath, '.git', 'refs', 'heads');
+  try { collectBranchRefs(headsDir, '', branches); } catch { /* not a git repo */ }
+
+  // Packed refs
+  const packedRefs = path.join(workspaceRootPath, '.git', 'packed-refs');
+  try {
+    for (const line of fs.readFileSync(packedRefs, 'utf8').split('\n')) {
+      if (line.startsWith('#') || line.startsWith('^')) continue;
+      const m = line.match(/^\S+ refs\/heads\/(.+)$/);
+      if (m) branches.add(m[1].trim());
+    }
+  } catch { /* no packed-refs */ }
+
+  return [...branches].sort();
+}
+
+function collectBranchRefs(dir: string, prefix: string, out: Set<string>): void {
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    if (entry.isDirectory()) {
+      collectBranchRefs(path.join(dir, entry.name), `${prefix}${entry.name}/`, out);
+    } else {
+      out.add(prefix + entry.name);
+    }
+  }
+}
+
 // ─── Helpers ───────────────────────────────────────────────────────────────
 
 /**

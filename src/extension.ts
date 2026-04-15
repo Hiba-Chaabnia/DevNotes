@@ -9,7 +9,8 @@ import { ReminderController } from './ReminderController';
 import { ActivityFeedView } from './ActivityFeedView';
 import { ConflictPanel } from './ConflictPanel';
 import { runExport } from './ExportController';
-import { detectProjectIdentity, getCurrentBranch, getGitUser } from './GitDetector';
+import { detectProjectIdentity, getCurrentBranch, getGitUser, getLocalBranches } from './GitDetector';
+import { spawnSync } from 'child_process';
 import { registerDevNotesMcp, isClaudeCodeInstalled } from './McpRegistration';
 import { StatusBarController } from './StatusBarController';
 
@@ -415,6 +416,7 @@ async function notifyConflict(
 function refreshBranch(sidebar: SidebarView, rootPath: string): void {
   try {
     sidebar.setCurrentBranch(getCurrentBranch(rootPath));
+    sidebar.setAvailableBranches(getLocalBranches(rootPath));
   } catch (err) {
     console.error('[DevNotes] refreshBranch error:', err);
   }
