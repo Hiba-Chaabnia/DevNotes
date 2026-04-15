@@ -13,6 +13,7 @@ import {
   Lightbulb, ListTodo, Bug, Presentation, BookMarked,
   Link, FileSymlink, TriangleAlert,
   GitPullRequest, GitPullRequestClosed, GitMerge, CircleDot, CircleCheck,
+  PanelTop,
 } from 'lucide';
 import type { IconNode as LucideNode } from 'lucide';
 
@@ -63,7 +64,8 @@ type ToExt =
   | { type: 'unlinkNote'; noteId: string; targetId: string }
   | { type: 'openLinkedNote'; noteId: string }
   | { type: 'switchBranch' }
-  | { type: 'openFolder' };
+  | { type: 'openFolder' }
+  | { type: 'setCardStyle'; style: 'modern' | 'classic' };
 
 // ─── Provider ────────────────────────────────────────────────────────────────
 
@@ -75,6 +77,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
   private availableBranches: string[] = [];
   private _branchFilterActive = false;
   private _githubConnected    = false;
+  private _cardStyle: 'modern' | 'classic';
 
   isBranchFilterActive(): boolean { return this._branchFilterActive; }
 
@@ -83,7 +86,9 @@ export class SidebarView implements vscode.WebviewViewProvider {
     private readonly storage: NoteStorage,
     private readonly onOpenEditor: (noteId: string) => void,
     private readonly onNoteLinkChanged: () => void = () => {},
-  ) {}
+  ) {
+    this._cardStyle = (context.globalState.get<string>('devnotes.cardStyle') ?? 'modern') as 'modern' | 'classic';
+  }
 
   setProjectName(name: string): void {
     this.projectName = name;
@@ -152,6 +157,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
       currentUser       : this.currentUser       ?? null,
       availableBranches : this.availableBranches,
       githubConnected   : this._githubConnected,
+      cardStyle         : this._cardStyle,
     });
   }
 
@@ -580,6 +586,12 @@ export class SidebarView implements vscode.WebviewViewProvider {
       case 'registerMcp':
         vscode.commands.executeCommand('devnotes.registerMcp');
         break;
+
+      case 'setCardStyle':
+        this._cardStyle = msg.style;
+        await this.context.globalState.update('devnotes.cardStyle', msg.style);
+        this.push();
+        break;
     }
   }
 
@@ -639,6 +651,9 @@ export class SidebarView implements vscode.WebviewViewProvider {
     --radius: 10px;
     --gap: 10px;
     --card-text: var(--vscode-foreground);
+    --hdr-bg-pct: 25%;
+    --hdr-div-pct: 30%;
+    --card-border-pct: 50%;
   }
 
   body {
@@ -1121,12 +1136,12 @@ export class SidebarView implements vscode.WebviewViewProvider {
   /* ── Card ────────────────────────────────────────────── */
   .card {
     border-radius: var(--radius);
-    padding: 10px 12px 8px;
+    padding: 0 12px 8px;
     display: flex;
     flex-direction: column;
     gap: 6px;
     background: var(--vscode-editorWidget-background, var(--vscode-sideBar-background));
-    border-left: 3px solid var(--card-accent, ${NC.yellow});
+    border: 1px solid color-mix(in srgb, var(--card-accent, ${NC.yellow}) var(--card-border-pct, 55%), transparent);
     box-shadow: 0 1px 4px rgba(0,0,0,.1);
     transition: box-shadow .15s, transform .15s;
     color: var(--card-text);
@@ -1135,7 +1150,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
   .card:hover { box-shadow: 0 4px 14px rgba(0,0,0,.15); transform: translateY(-1px); }
   .card:focus { outline: 2px solid var(--vscode-focusBorder); outline-offset: 1px; box-shadow: 0 4px 14px rgba(0,0,0,.15); }
   .card.hidden { display: none; }
-  .card.is-shared { border-left-color: rgba(${RGB.cyan},0.85); }
+  .card.is-shared { border-color: rgba(${RGB.cyan},0.85); }
 
   /* ── Card rows ───────────────────────────────────────── */
   .card-row-1 {
@@ -1143,7 +1158,13 @@ export class SidebarView implements vscode.WebviewViewProvider {
     align-items: center;
     gap: 4px;
     min-height: 24px;
+    margin: 0 -12px;
+    padding: 8px 12px 8px;
+    background: color-mix(in srgb, var(--card-accent, ${NC.yellow}) var(--hdr-bg-pct, 14%), transparent);
+    border-radius: 9px 9px 0 0;
+    border-bottom: 1px solid color-mix(in srgb, var(--card-accent, ${NC.yellow}) var(--hdr-div-pct, 30%), transparent);
   }
+  .card-row-1 .card-title { color: var(--card-accent, ${NC.yellow}); }
 
   .card-overflow-btn {
     background: none;
@@ -1178,8 +1199,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
     color: var(--card-text); opacity: .4;
     flex-shrink: 0;
   }
-  .star-btn.on { opacity: 1; }
-  .star-btn.on svg { fill: currentColor; }
+  .star-btn.on { opacity: 1; color: var(--card-accent, ${NC.yellow}); }
   .star-btn:hover { opacity: .8; }
 
   #card-color-pop {
@@ -1820,7 +1840,27 @@ export class SidebarView implements vscode.WebviewViewProvider {
   .github-connect-btn.connected { color: ${GH.open} !important; opacity: 1; }
   .archive-view-btn.active { color: var(--vscode-button-background) !important; opacity: 1; }
   .card.is-archived { opacity: .7; filter: grayscale(.25); }
-  .card.conflict { border-left-color: ${NC.orange}; background: rgba(${RGB.orange},.06); }
+  .card.conflict { border-color: ${NC.orange}; background: rgba(${RGB.orange},.06); }
+
+  /* ── Classic card style overrides ───────────────────────── */
+  body.card-style-classic .card {
+    border: none;
+    border-left: 3px solid var(--card-accent, ${NC.yellow});
+    padding: 10px 12px 8px;
+  }
+  body.card-style-classic .card.is-shared   { border-left-color: rgba(${RGB.cyan},.85); }
+  body.card-style-classic .card.conflict    { border-left-color: ${NC.orange}; }
+  body.card-style-classic .card-row-1 {
+    margin: 0;
+    padding: 0;
+    background: none;
+    border-radius: 0;
+    border-bottom: none;
+  }
+  body.card-style-classic .card-row-1 .card-title { color: var(--card-text); }
+  body.card-style-classic .star-btn.on { color: var(--card-text); }
+  body.card-style-classic .star-btn.on svg { fill: currentColor; }
+
   /* ── Shared metadata chip base (mirrors .tag-pill) ─────── */
   .meta-chip {
     font-size: 10px;
@@ -2108,6 +2148,11 @@ export class SidebarView implements vscode.WebviewViewProvider {
     <span class="ovf-label">Selection mode</span>
     <span class="ovf-check">✓</span>
   </button>
+  <button class="ovf-item" id="btn-card-style">
+    <span class="ovf-icon">${svgIcon(PanelTop, 14)}</span>
+    <span class="ovf-label" id="ovf-card-style-label">Classic card style</span>
+    <span class="ovf-check">✓</span>
+  </button>
   <hr class="ovf-divider"/>
   <button class="ovf-item github-connect-btn" id="btn-github-connect">
     <span class="ovf-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.477 2 2 6.477 2 12c0 4.418 2.865 8.166 6.839 9.489.5.092.682-.217.682-.482 0-.237-.009-.868-.013-1.703-2.782.604-3.369-1.34-3.369-1.34-.454-1.154-1.11-1.462-1.11-1.462-.908-.62.069-.608.069-.608 1.003.07 1.531 1.03 1.531 1.03.892 1.529 2.341 1.087 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.11-4.555-4.943 0-1.091.39-1.984 1.029-2.683-.103-.253-.446-1.27.098-2.647 0 0 .84-.269 2.75 1.025A9.578 9.578 0 0 1 12 6.836a9.59 9.59 0 0 1 2.504.337c1.909-1.294 2.747-1.025 2.747-1.025.546 1.377.202 2.394.1 2.647.64.699 1.028 1.592 1.028 2.683 0 3.842-2.339 4.687-4.566 4.935.359.309.678.919.678 1.852 0 1.336-.012 2.415-.012 2.743 0 .267.18.578.688.48C19.138 20.163 22 16.418 22 12c0-5.523-4.477-10-10-10z"/></svg></span>
@@ -2171,6 +2216,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
   let selectMode         = false;
   let selectedIds        = [];
   let knownNoteIds       = null; // null on first load — skip highlight; Set afterwards
+  let cardStyle          = 'modern'; // 'modern' | 'classic'
   let openColorPop    = null;
   let openTagPop      = null;
   let isManagingTags  = false;
@@ -2193,6 +2239,8 @@ export class SidebarView implements vscode.WebviewViewProvider {
   const btnMineFilter     = document.getElementById('btn-mine-filter');
   const btnStaleFilter    = document.getElementById('btn-stale-filter');
   const btnSelect         = document.getElementById('btn-select');
+  const btnCardStyle      = document.getElementById('btn-card-style');
+  const ovfCardStyleLabel = document.getElementById('ovf-card-style-label');
   const exportBar         = document.getElementById('export-bar');
   const branchPillEl         = document.getElementById('branch-pill');
   const githubFilterBar      = document.getElementById('github-filter-bar');
@@ -2327,6 +2375,19 @@ export class SidebarView implements vscode.WebviewViewProvider {
     cardList.classList.add('select-mode');
   });
 
+  function applyCardStyle() {
+    document.body.classList.toggle('card-style-classic', cardStyle === 'classic');
+    btnCardStyle.classList.toggle('active', cardStyle === 'classic');
+    ovfCardStyleLabel.textContent = cardStyle === 'classic' ? 'Modern card style' : 'Classic card style';
+  }
+  applyCardStyle();
+
+  btnCardStyle.addEventListener('click', () => {
+    cardStyle = cardStyle === 'classic' ? 'modern' : 'classic';
+    applyCardStyle();
+    vscode.postMessage({ type: 'setCardStyle', style: cardStyle });
+  });
+
   // Select / deselect all visible
   btnSelAll.addEventListener('click', () => {
     const allCards = [...cardList.querySelectorAll('.card[tabindex="0"]')];
@@ -2386,6 +2447,10 @@ export class SidebarView implements vscode.WebviewViewProvider {
       currentUser       = msg.currentUser       ?? null;
       availableBranches = msg.availableBranches ?? [];
       githubConnected   = msg.githubConnected   ?? false;
+      if (msg.cardStyle && msg.cardStyle !== cardStyle) {
+        cardStyle = msg.cardStyle;
+        applyCardStyle();
+      }
       if (msg.projectName) projectName.innerHTML = '<span class="pill-primary">' + ${jsSvg.folderGit} + '<span class="pill-label">' + esc(msg.projectName) + '</span></span><span class="pill-action">' + ${jsSvg.folderOpen} + '<span class="pill-label">Open recent folder</span></span>';
       // Show mine-filter button only when another user's note exists in this repo
       const hasOtherOwners = currentUser && notes.some(n => n.owner && n.owner !== currentUser);
