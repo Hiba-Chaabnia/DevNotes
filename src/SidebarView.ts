@@ -18,12 +18,12 @@ import type { IconNode as LucideNode } from 'lucide';
 
 // ─── Lucide icon helper ───────────────────────────────────────────────────────
 
-function svgIcon(nodes: LucideNode, size = 14, style = ''): string {
+function svgIcon(nodes: LucideNode, size = 14, style = '', fill = 'none'): string {
   const inner = nodes.map(([tag, attrs]) => {
     const a = Object.entries(attrs).map(([k, v]) => `${k}="${v}"`).join(' ');
     return `<${tag} ${a}/>`;
   }).join('');
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"${style ? ` style="${style}"` : ''}>${inner}</svg>`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24" fill="${fill}" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"${style ? ` style="${style}"` : ''}>${inner}</svg>`;
 }
 
 const TAG_ICON_MAP: Record<string, LucideNode> = {
@@ -605,6 +605,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
       trash:       JSON.stringify(svgIcon(Trash2,    14)),
       overflow:    JSON.stringify(svgIcon(Ellipsis,  14)),
       star:        JSON.stringify(svgIcon(Star,      14)),
+      starFilled:  JSON.stringify(svgIcon(Star,      14, '', 'currentColor')),
       unlinkSmall: JSON.stringify(svgIcon(X,           10)),
       folderGit:   JSON.stringify(svgIcon(FolderGit,  13, 'flex-shrink:0')),
       folderOpen:  JSON.stringify(svgIcon(FolderOpen, 13, 'flex-shrink:0')),
@@ -1136,8 +1137,6 @@ export class SidebarView implements vscode.WebviewViewProvider {
   }
   .card:focus { outline: 2px solid var(--vscode-focusBorder); outline-offset: 1px; }
   .card.hidden { display: none; }
-  .card.is-shared { border-color: rgba(${RGB.cyan},.85); }
-  .card.conflict  { border-color: ${NC.orange}; }
 
   /* ── Card rows ───────────────────────────────────────── */
   .card-row-1 {
@@ -1875,8 +1874,9 @@ export class SidebarView implements vscode.WebviewViewProvider {
   .mine-filter-btn.active { color: var(--vscode-button-background) !important; opacity: 1; }
   .stale-filter-btn.active { color: ${NC.orange} !important; opacity: 1; }
 
-  /* ── Conflict indicator ─────────────────────────────── */
+  /* ── Conflict / shared indicators ───────────────────── */
   .conflict-badge { background: ${NC.orange}; }
+  .shared-badge   { background: rgba(${RGB.cyan},.85); }
 
   /* ── Reminder badge ─────────────────────────────────── */
   .reminder-badge         { background: ${NC.yellow}; }
@@ -2981,7 +2981,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
     });
 
     const starBtn = mkEl('button', 'star-btn' + (note.starred ? ' on' : ''));
-    starBtn.innerHTML = ${jsSvg.star};
+    starBtn.innerHTML = note.starred ? ${jsSvg.starFilled} : ${jsSvg.star};
     starBtn.title = note.starred ? 'Unstar' : 'Star';
     starBtn.setAttribute('aria-pressed', note.starred ? 'true' : 'false');
     starBtn.setAttribute('aria-label', note.starred ? 'Unstar note' : 'Star note');
@@ -3035,6 +3035,14 @@ export class SidebarView implements vscode.WebviewViewProvider {
         });
         row2.appendChild(chip);
       });
+    }
+
+    if (note.shared) {
+      const badge = mkEl('span', 'meta-chip shared-badge');
+      const shareIco = mkEl('span', 'tag-icon'); shareIco.innerHTML = ${jsSvg.share};
+      badge.append(shareIco, mkEl('span', '', 'Shared'));
+      badge.setAttribute('aria-label', 'This note is shared');
+      row2.appendChild(badge);
     }
 
     if (note.conflicted) {
