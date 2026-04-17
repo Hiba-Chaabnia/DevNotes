@@ -7,13 +7,12 @@ import { UI_COLORS as C, GH_COLORS as GH, NOTE_COLORS as NC, RGB, PLATFORM_COLOR
 import { detectProjectIdentity } from './GitDetector';
 import {
   Plus, Search, X, Ellipsis, User, Archive, Clock, LayoutList, Bot,
-  Palette, SquarePen, Bell, Copy, Link2, Unlink2, Share2, Download,
+  SquarePen, Bell, Copy, Link2, Unlink2, Share2, Download,
   Trash2, GitBranch, ArrowLeftRight, Star, FolderGit, FolderOpen,
   ClockArrowDown, ArrowDownAZ, Tag as TagIcon,
   Lightbulb, ListTodo, Bug, Presentation, BookMarked,
   Link, FileSymlink, TriangleAlert,
   GitPullRequest, GitPullRequestClosed, GitMerge, CircleDot, CircleCheck,
-  PanelTop,
 } from 'lucide';
 import type { IconNode as LucideNode } from 'lucide';
 
@@ -65,7 +64,6 @@ type ToExt =
   | { type: 'openLinkedNote'; noteId: string }
   | { type: 'switchBranch' }
   | { type: 'openFolder' }
-  | { type: 'setCardStyle'; style: 'modern' | 'classic' };
 
 // ─── Provider ────────────────────────────────────────────────────────────────
 
@@ -77,8 +75,6 @@ export class SidebarView implements vscode.WebviewViewProvider {
   private availableBranches: string[] = [];
   private _branchFilterActive = false;
   private _githubConnected    = false;
-  private _cardStyle: 'modern' | 'classic';
-
   isBranchFilterActive(): boolean { return this._branchFilterActive; }
 
   constructor(
@@ -86,9 +82,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
     private readonly storage: NoteStorage,
     private readonly onOpenEditor: (noteId: string) => void,
     private readonly onNoteLinkChanged: () => void = () => {},
-  ) {
-    this._cardStyle = (context.globalState.get<string>('devnotes.cardStyle') ?? 'modern') as 'modern' | 'classic';
-  }
+  ) {}
 
   setProjectName(name: string): void {
     this.projectName = name;
@@ -157,7 +151,6 @@ export class SidebarView implements vscode.WebviewViewProvider {
       currentUser       : this.currentUser       ?? null,
       availableBranches : this.availableBranches,
       githubConnected   : this._githubConnected,
-      cardStyle         : this._cardStyle,
     });
   }
 
@@ -587,11 +580,6 @@ export class SidebarView implements vscode.WebviewViewProvider {
         vscode.commands.executeCommand('devnotes.registerMcp');
         break;
 
-      case 'setCardStyle':
-        this._cardStyle = msg.style;
-        await this.context.globalState.update('devnotes.cardStyle', msg.style);
-        this.push();
-        break;
     }
   }
 
@@ -615,7 +603,6 @@ export class SidebarView implements vscode.WebviewViewProvider {
       share:       JSON.stringify(svgIcon(Share2,    14)),
       export:      JSON.stringify(svgIcon(Download,  14)),
       trash:       JSON.stringify(svgIcon(Trash2,    14)),
-      colorPicker: JSON.stringify(svgIcon(Palette,   13)),
       overflow:    JSON.stringify(svgIcon(Ellipsis,  14)),
       star:        JSON.stringify(svgIcon(Star,      14)),
       unlinkSmall: JSON.stringify(svgIcon(X,           10)),
@@ -651,9 +638,6 @@ export class SidebarView implements vscode.WebviewViewProvider {
     --radius: 10px;
     --gap: 10px;
     --card-text: var(--vscode-foreground);
-    --hdr-bg-pct: 25%;
-    --hdr-div-pct: 30%;
-    --card-border-pct: 50%;
   }
 
   body {
@@ -1136,21 +1120,24 @@ export class SidebarView implements vscode.WebviewViewProvider {
   /* ── Card ────────────────────────────────────────────── */
   .card {
     border-radius: var(--radius);
-    padding: 0 12px 8px;
+    padding: 10px 12px 8px;
     display: flex;
     flex-direction: column;
     gap: 6px;
-    background: var(--vscode-editorWidget-background, var(--vscode-sideBar-background));
-    border: 1px solid color-mix(in srgb, var(--card-accent, ${NC.yellow}) var(--card-border-pct, 55%), transparent);
-    box-shadow: 0 1px 4px rgba(0,0,0,.1);
-    transition: box-shadow .15s, transform .15s;
     color: var(--card-text);
     position: relative;
+    border: 1px solid var(--vscode-panel-border);
+    background: transparent;
+    transition: background .15s, border-color .15s, box-shadow .15s;
   }
-  .card:hover { box-shadow: 0 4px 14px rgba(0,0,0,.15); transform: translateY(-1px); }
-  .card:focus { outline: 2px solid var(--vscode-focusBorder); outline-offset: 1px; box-shadow: 0 4px 14px rgba(0,0,0,.15); }
+  .card:hover {
+    background: var(--vscode-editorWidget-background, var(--vscode-sideBar-background));
+    box-shadow: 0 1px 4px rgba(0,0,0,.12);
+  }
+  .card:focus { outline: 2px solid var(--vscode-focusBorder); outline-offset: 1px; }
   .card.hidden { display: none; }
-  .card.is-shared { border-color: rgba(${RGB.cyan},0.85); }
+  .card.is-shared { border-color: rgba(${RGB.cyan},.85); }
+  .card.conflict  { border-color: ${NC.orange}; }
 
   /* ── Card rows ───────────────────────────────────────── */
   .card-row-1 {
@@ -1158,13 +1145,9 @@ export class SidebarView implements vscode.WebviewViewProvider {
     align-items: center;
     gap: 4px;
     min-height: 24px;
-    margin: 0 -12px;
-    padding: 8px 12px 8px;
-    background: color-mix(in srgb, var(--card-accent, ${NC.yellow}) var(--hdr-bg-pct, 14%), transparent);
-    border-radius: 9px 9px 0 0;
-    border-bottom: 1px solid color-mix(in srgb, var(--card-accent, ${NC.yellow}) var(--hdr-div-pct, 30%), transparent);
+    padding: 0;
   }
-  .card-row-1 .card-title { color: var(--card-accent, ${NC.yellow}); }
+  .card-row-1 .card-title { color: var(--card-text); }
 
   .card-overflow-btn {
     background: none;
@@ -1182,40 +1165,14 @@ export class SidebarView implements vscode.WebviewViewProvider {
   .card:hover .card-overflow-btn { opacity: .5; }
   .card-overflow-btn:hover { opacity: 1 !important; background: rgba(128,128,128,.15); }
 
-  .card-color-btn {
-    background: none; border: none; cursor: pointer;
-    padding: 2px; line-height: 0;
-    color: var(--card-text); opacity: 0;
-    flex-shrink: 0;
-    border-radius: 4px;
-    transition: opacity .15s;
-  }
-  .card:hover .card-color-btn { opacity: .5; }
-  .card-color-btn:hover { opacity: 1 !important; background: rgba(128,128,128,.15); }
-
   .star-btn {
     background: none; border: none; cursor: pointer;
     padding: 0; display: flex; align-items: center;
     color: var(--card-text); opacity: .4;
     flex-shrink: 0;
   }
-  .star-btn.on { opacity: 1; color: var(--card-accent, ${NC.yellow}); }
+  .star-btn.on { opacity: 1; color: var(--card-text); }
   .star-btn:hover { opacity: .8; }
-
-  #card-color-pop {
-    position: fixed;
-    background: var(--vscode-editorWidget-background, ${PLATFORM.vsDarkBg});
-    border: 1px solid var(--vscode-panel-border);
-    border-radius: 8px;
-    padding: 8px;
-    display: none;
-    flex-direction: column;
-    gap: 5px;
-    z-index: 200;
-    box-shadow: 0 4px 16px rgba(0,0,0,.28);
-  }
-  #card-color-pop.open { display: flex; }
-  #card-color-pop .color-swatch { width: 20px; height: 20px; }
 
   .card-title {
     flex: 1;
@@ -1246,23 +1203,6 @@ export class SidebarView implements vscode.WebviewViewProvider {
     border-top: 1px solid rgba(128,128,128,.08);
     padding-top: 5px;
   }
-
-  /* Color picker popover */
-  .color-pop {
-    position: absolute;
-    top: 30px; right: 8px;
-    background: var(--vscode-editorWidget-background, ${C.white});
-    border: 1px solid var(--vscode-panel-border);
-    border-radius: 8px;
-    padding: 8px;
-    display: none;
-    gap: 6px;
-    flex-wrap: wrap;
-    width: 128px;
-    z-index: 50;
-    box-shadow: 0 4px 16px rgba(0,0,0,.18);
-  }
-  .color-pop.open { display: flex; }
 
   .color-swatch {
     width: 26px; height: 26px;
@@ -1467,7 +1407,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
   .task-item { display: flex; align-items: center; gap: 5px; }
   .task-item input[type="checkbox"] {
     cursor: pointer; width: 13px; height: 13px; flex-shrink: 0;
-    accent-color: var(--card-accent, ${NC.yellow});
+    accent-color: var(--vscode-button-background);
   }
   .task-item.done > span { opacity: .5; text-decoration: line-through; }
 
@@ -1542,7 +1482,8 @@ export class SidebarView implements vscode.WebviewViewProvider {
     width: 100%;
     max-height: 65vh;
     border-radius: 12px;
-    background: var(--nc-bg, ${NC.yellow});
+    background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
+    border: 1px solid var(--vscode-panel-border);
     box-shadow: 0 8px 32px rgba(0,0,0,.35), 0 2px 8px rgba(0,0,0,.18);
     display: flex;
     flex-direction: column;
@@ -1559,16 +1500,16 @@ export class SidebarView implements vscode.WebviewViewProvider {
   .note-card-header {
     display: flex;
     align-items: center;
-    padding: 8px 10px 6px;
-    gap: 6px;
+    justify-content: flex-end;
+    padding: 6px 10px;
+    border-bottom: 1px solid var(--vscode-panel-border);
   }
-  .note-card-header .color-strip { flex: 1; }
 
   .note-card-close {
     background: none;
     border: none;
     cursor: pointer;
-    color: rgba(${RGB.text},.5);
+    color: var(--vscode-descriptionForeground);
     width: 22px;
     height: 22px;
     border-radius: 50%;
@@ -1579,7 +1520,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
     transition: background .12s, color .12s;
     padding: 0;
   }
-  .note-card-close:hover { background: rgba(${RGB.text},.12); color: ${C.text}; }
+  .note-card-close:hover { background: var(--vscode-list-hoverBackground); color: var(--vscode-foreground); }
 
   .note-card-title {
     background: transparent;
@@ -1587,12 +1528,12 @@ export class SidebarView implements vscode.WebviewViewProvider {
     outline: none;
     font-size: 14px;
     font-weight: 700;
-    color: ${C.text};
+    color: var(--vscode-foreground);
     padding: 0 12px 6px;
     width: 100%;
     font-family: var(--vscode-font-family);
   }
-  .note-card-title::placeholder { color: rgba(${RGB.text},.4); }
+  .note-card-title::placeholder { color: var(--vscode-descriptionForeground); opacity: .6; }
 
   .note-card-body {
     cursor: text;
@@ -1607,7 +1548,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
     min-height: 88px;
     padding: 0 12px 10px;
     font-size: 12.5px;
-    color: ${C.text};
+    color: var(--vscode-foreground);
     font-family: var(--vscode-font-family);
     line-height: 1.55;
   }
@@ -1616,15 +1557,16 @@ export class SidebarView implements vscode.WebviewViewProvider {
   .note-card-body .ProseMirror li { margin: 0; }
   .note-card-body.is-empty .ProseMirror p:first-child::before {
     content: attr(data-placeholder);
-    color: rgba(${RGB.text},.38);
+    color: var(--vscode-descriptionForeground);
+    opacity: .6;
     pointer-events: none;
     float: left;
     height: 0;
   }
 
   .note-card-footer {
-    background: rgba(0,0,0,.08);
-    border-top: 1px solid rgba(${RGB.text},.1);
+    background: var(--vscode-sideBar-background);
+    border-top: 1px solid var(--vscode-panel-border);
     padding: 7px 10px;
     display: flex;
     flex-direction: column;
@@ -1641,7 +1583,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
     background: none;
     border: none;
     cursor: pointer;
-    color: rgba(${RGB.text},.55);
+    color: var(--vscode-descriptionForeground);
     font-size: 12px;
     width: 24px;
     height: 22px;
@@ -1652,13 +1594,13 @@ export class SidebarView implements vscode.WebviewViewProvider {
     font-family: var(--vscode-font-family);
     transition: background .1s, color .1s;
   }
-  .fmt-btn:hover { background: rgba(${RGB.text},.1); color: ${C.text}; }
-  .fmt-btn.active { background: rgba(${RGB.text},.18); color: ${C.text}; }
+  .fmt-btn:hover { background: var(--vscode-list-hoverBackground); color: var(--vscode-foreground); }
+  .fmt-btn.active { background: var(--vscode-list-activeSelectionBackground); color: var(--vscode-foreground); }
 
   .fmt-btn-sep {
     width: 1px;
     height: 14px;
-    background: rgba(${RGB.text},.18);
+    background: var(--vscode-panel-border);
     margin: 0 3px;
     flex-shrink: 0;
   }
@@ -1672,10 +1614,10 @@ export class SidebarView implements vscode.WebviewViewProvider {
   }
 
   .note-card-confirm {
-    background: rgba(${RGB.text},.15);
+    background: var(--vscode-button-background);
     border: none;
     cursor: pointer;
-    color: ${C.text};
+    color: var(--vscode-button-foreground);
     font-size: 14px;
     font-weight: 700;
     width: 28px;
@@ -1688,15 +1630,13 @@ export class SidebarView implements vscode.WebviewViewProvider {
     transition: background .12s;
     margin-left: auto;
   }
-  .note-card-confirm:hover { background: rgba(${RGB.text},.25); }
-
-  .note-card-header .color-swatch { width: 18px; height: 18px; }
+  .note-card-confirm:hover { background: var(--vscode-button-hoverBackground); }
 
   .nc-select {
-    background: rgba(${RGB.text},.12);
-    border: 1px solid rgba(${RGB.text},.2);
+    background: var(--vscode-input-background);
+    border: 1px solid var(--vscode-panel-border);
     border-radius: 5px;
-    color: ${C.text};
+    color: var(--vscode-foreground);
     font-size: 11px;
     padding: 2px 4px;
     cursor: pointer;
@@ -1705,7 +1645,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
     max-width: 105px;
     flex-shrink: 0;
   }
-  .nc-select:focus { border-color: rgba(${RGB.text},.4); }
+  .nc-select:focus { border-color: var(--vscode-focusBorder); }
 
   .color-strip {
     display: flex;
@@ -1840,26 +1780,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
   .github-connect-btn.connected { color: ${GH.open} !important; opacity: 1; }
   .archive-view-btn.active { color: var(--vscode-button-background) !important; opacity: 1; }
   .card.is-archived { opacity: .7; filter: grayscale(.25); }
-  .card.conflict { border-color: ${NC.orange}; background: rgba(${RGB.orange},.06); }
 
-  /* ── Classic card style overrides ───────────────────────── */
-  body.card-style-classic .card {
-    border: none;
-    border-left: 3px solid var(--card-accent, ${NC.yellow});
-    padding: 10px 12px 8px;
-  }
-  body.card-style-classic .card.is-shared   { border-left-color: rgba(${RGB.cyan},.85); }
-  body.card-style-classic .card.conflict    { border-left-color: ${NC.orange}; }
-  body.card-style-classic .card-row-1 {
-    margin: 0;
-    padding: 0;
-    background: none;
-    border-radius: 0;
-    border-bottom: none;
-  }
-  body.card-style-classic .card-row-1 .card-title { color: var(--card-text); }
-  body.card-style-classic .star-btn.on { color: var(--card-text); }
-  body.card-style-classic .star-btn.on svg { fill: currentColor; }
 
   /* ── Shared metadata chip base (mirrors .tag-pill) ─────── */
   .meta-chip {
@@ -1933,7 +1854,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
   .owner-initials {
     width: 16px; height: 16px;
     border-radius: 50%;
-    background: var(--card-accent, ${NC.yellow});
+    background: var(--vscode-badge-background);
     opacity: .75;
     font-size: 8px;
     font-weight: 700;
@@ -2047,6 +1968,101 @@ export class SidebarView implements vscode.WebviewViewProvider {
     user-select: none;
   }
 
+  /* ── Theme preview bar ───────────────────────────────── */
+  .theme-bar {
+    flex-shrink: 0;
+    border-top: 1px solid var(--vscode-panel-border);
+    padding: 4px 8px 5px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--vscode-sideBar-background);
+    position: relative;
+  }
+  .theme-bar-label {
+    font-size: 9px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .07em;
+    color: var(--vscode-descriptionForeground);
+    opacity: .5;
+    flex-shrink: 0;
+    user-select: none;
+  }
+  .theme-step-btn {
+    flex-shrink: 0;
+    width: 20px; height: 20px;
+    display: flex; align-items: center; justify-content: center;
+    border: 1px solid var(--vscode-panel-border);
+    border-radius: 3px;
+    background: none;
+    color: var(--vscode-foreground);
+    font-size: 14px;
+    line-height: 1;
+    cursor: pointer;
+    transition: border-color .12s, background .12s;
+    font-family: var(--vscode-font-family);
+    padding: 0;
+  }
+  .theme-step-btn:hover { border-color: var(--vscode-focusBorder); background: var(--vscode-list-hoverBackground); }
+  .theme-select-btn {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 2px 7px;
+    border-radius: 4px;
+    border: 1px solid var(--vscode-panel-border);
+    background: none;
+    cursor: pointer;
+    font-family: var(--vscode-font-family);
+    font-size: 11px;
+    color: var(--vscode-foreground);
+    transition: border-color .12s, background .12s;
+    min-width: 0;
+  }
+  .theme-select-btn:hover { border-color: var(--vscode-focusBorder); background: var(--vscode-list-hoverBackground); }
+  .theme-select-btn.open  { border-color: var(--vscode-focusBorder); }
+  .theme-select-name { flex: 1; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .theme-select-arrow { font-size: 9px; opacity: .6; flex-shrink: 0; transition: transform .15s; }
+  .theme-select-btn.open .theme-select-arrow { transform: rotate(180deg); }
+  .theme-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    border: 1px solid rgba(128,128,128,.25);
+  }
+  .theme-dropdown {
+    position: absolute;
+    bottom: calc(100% + 4px);
+    left: 8px; right: 8px;
+    background: var(--vscode-editorWidget-background, var(--vscode-sideBar-background));
+    border: 1px solid var(--vscode-panel-border);
+    border-radius: 5px;
+    box-shadow: 0 4px 16px rgba(0,0,0,.25);
+    overflow-y: auto;
+    max-height: 260px;
+    z-index: 999;
+    display: none;
+  }
+  .theme-dropdown.open { display: block; }
+  .theme-option {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 5px 10px;
+    font-size: 11px;
+    color: var(--vscode-foreground);
+    cursor: pointer;
+    transition: background .1s;
+    font-family: var(--vscode-font-family);
+    white-space: nowrap;
+  }
+  .theme-option:hover   { background: var(--vscode-list-hoverBackground); }
+  .theme-option.active  { background: var(--vscode-list-activeSelectionBackground); color: var(--vscode-list-activeSelectionForeground, var(--vscode-foreground)); }
+  .theme-option-check { width: 10px; font-size: 10px; flex-shrink: 0; opacity: 0; }
+  .theme-option.active .theme-option-check { opacity: 1; }
+
 </style>
 </head>
 <body>
@@ -2081,7 +2097,6 @@ export class SidebarView implements vscode.WebviewViewProvider {
 <div class="note-card-overlay" id="note-card-overlay">
   <div class="note-card" id="note-card">
     <div class="note-card-header">
-      <div class="color-strip" id="new-colors"></div>
       <button class="note-card-close" id="btn-cancel-new" title="Cancel">${svgIcon(X, 12)}</button>
     </div>
     <input class="note-card-title" id="new-title" type="text" placeholder="Note title…" maxlength="120" autocomplete="off">
@@ -2123,9 +2138,6 @@ export class SidebarView implements vscode.WebviewViewProvider {
 <!-- ── Card-level overflow menu ── -->
 <div class="overflow-menu" id="card-ovf-menu"></div>
 
-<!-- ── Card color picker popup ── -->
-<div id="card-color-pop"></div>
-
 <!-- ── Overflow menu (⋯ button) ── -->
 <div class="overflow-menu" id="overflow-menu">
   <button class="ovf-item mine-filter-btn" id="btn-mine-filter" style="display:none">
@@ -2146,11 +2158,6 @@ export class SidebarView implements vscode.WebviewViewProvider {
   <button class="ovf-item" id="btn-select">
     <span class="ovf-icon">${svgIcon(LayoutList, 14)}</span>
     <span class="ovf-label">Selection mode</span>
-    <span class="ovf-check">✓</span>
-  </button>
-  <button class="ovf-item" id="btn-card-style">
-    <span class="ovf-icon">${svgIcon(PanelTop, 14)}</span>
-    <span class="ovf-label" id="ovf-card-style-label">Classic card style</span>
     <span class="ovf-check">✓</span>
   </button>
   <hr class="ovf-divider"/>
@@ -2186,11 +2193,24 @@ export class SidebarView implements vscode.WebviewViewProvider {
   </div>
 </div>
 
+<!-- ── Theme preview bar ── -->
+<div class="theme-bar" id="theme-bar">
+  <span class="theme-bar-label">Preview</span>
+  <button class="theme-step-btn" id="theme-prev" title="Previous theme">‹</button>
+  <button class="theme-select-btn" id="theme-select-btn" title="Browse all themes">
+    <span class="theme-dot" id="theme-select-dot"></span>
+    <span class="theme-select-name" id="theme-select-name">Current</span>
+    <span class="theme-select-arrow">▾</span>
+  </button>
+  <button class="theme-step-btn" id="theme-next" title="Next theme">›</button>
+  <div class="theme-dropdown" id="theme-dropdown"></div>
+</div>
+
 <script nonce="${nonce}" src="${sidebarEditorUri}"></script>
 <script nonce="${nonce}">
 (() => {
   const vscode = acquireVsCodeApi();
-  const COLORS  = ${colorsJson};
+  const COLORS     = ${colorsJson};
   const COLOR_KEYS = Object.keys(COLORS);
 
   let notes             = [];
@@ -2199,7 +2219,6 @@ export class SidebarView implements vscode.WebviewViewProvider {
   let defaultTagIds     = [];
   let activeTagIds      = [];
   let searchQuery       = '';
-  let newColor          = COLOR_KEYS[0];
   let newTags           = [];
   let newTemplateId     = null;
   let tagColor          = '${NC.blue}';
@@ -2216,7 +2235,6 @@ export class SidebarView implements vscode.WebviewViewProvider {
   let selectMode         = false;
   let selectedIds        = [];
   let knownNoteIds       = null; // null on first load — skip highlight; Set afterwards
-  let cardStyle          = 'modern'; // 'modern' | 'classic'
   let openColorPop    = null;
   let openTagPop      = null;
   let isManagingTags  = false;
@@ -2233,14 +2251,11 @@ export class SidebarView implements vscode.WebviewViewProvider {
   const noteCardEl      = document.getElementById('note-card');
   const newTitleEl      = document.getElementById('new-title');
   const newBodyEl       = document.getElementById('new-body');
-  const newColorsEl     = document.getElementById('new-colors');
   const newTagsEl       = document.getElementById('new-tags');
   const newTemplateSelectEl = document.getElementById('new-template-select');
   const btnMineFilter     = document.getElementById('btn-mine-filter');
   const btnStaleFilter    = document.getElementById('btn-stale-filter');
   const btnSelect         = document.getElementById('btn-select');
-  const btnCardStyle      = document.getElementById('btn-card-style');
-  const ovfCardStyleLabel = document.getElementById('ovf-card-style-label');
   const exportBar         = document.getElementById('export-bar');
   const branchPillEl         = document.getElementById('branch-pill');
   const githubFilterBar      = document.getElementById('github-filter-bar');
@@ -2375,18 +2390,6 @@ export class SidebarView implements vscode.WebviewViewProvider {
     cardList.classList.add('select-mode');
   });
 
-  function applyCardStyle() {
-    document.body.classList.toggle('card-style-classic', cardStyle === 'classic');
-    btnCardStyle.classList.toggle('active', cardStyle === 'classic');
-    ovfCardStyleLabel.textContent = cardStyle === 'classic' ? 'Modern card style' : 'Classic card style';
-  }
-  applyCardStyle();
-
-  btnCardStyle.addEventListener('click', () => {
-    cardStyle = cardStyle === 'classic' ? 'modern' : 'classic';
-    applyCardStyle();
-    vscode.postMessage({ type: 'setCardStyle', style: cardStyle });
-  });
 
   // Select / deselect all visible
   btnSelAll.addEventListener('click', () => {
@@ -2447,10 +2450,6 @@ export class SidebarView implements vscode.WebviewViewProvider {
       currentUser       = msg.currentUser       ?? null;
       availableBranches = msg.availableBranches ?? [];
       githubConnected   = msg.githubConnected   ?? false;
-      if (msg.cardStyle && msg.cardStyle !== cardStyle) {
-        cardStyle = msg.cardStyle;
-        applyCardStyle();
-      }
       if (msg.projectName) projectName.innerHTML = '<span class="pill-primary">' + ${jsSvg.folderGit} + '<span class="pill-label">' + esc(msg.projectName) + '</span></span><span class="pill-action">' + ${jsSvg.folderOpen} + '<span class="pill-label">Open recent folder</span></span>';
       // Show mine-filter button only when another user's note exists in this repo
       const hasOtherOwners = currentUser && notes.some(n => n.owner && n.owner !== currentUser);
@@ -2483,9 +2482,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
       }
       renderNewNoteTags();
       renderCardTemplatePicker();
-      buildColorStrip(newColorsEl,  c => { newColor = c; highlightSwatch(newColorsEl, c); noteCardEl.style.setProperty('--nc-bg', COLORS[c]); });
       buildColorStrip(tagColorsEl, c => { tagColor = c; highlightSwatch(tagColorsEl, c); });
-      highlightSwatch(newColorsEl, newColor);
       highlightSwatch(tagColorsEl, tagColor);
     }
 
@@ -2525,7 +2522,6 @@ export class SidebarView implements vscode.WebviewViewProvider {
     // note defaults to the current branch — consistent with the user's focus mode.
     const scopeCheckbox = document.getElementById('new-branch-scope');
     if (scopeCheckbox) scopeCheckbox.checked = branchFilterActive && !!currentBranch;
-    noteCardEl.style.setProperty('--nc-bg', COLORS[newColor]);
     noteCardOverlay.classList.add('open');
     newTitleEl.focus();
   });
@@ -2567,12 +2563,9 @@ export class SidebarView implements vscode.WebviewViewProvider {
     window.SidebarEditor?.clear();
     newTags       = [];
     newTemplateId = null;
-    newColor      = COLOR_KEYS[0];
-    noteCardEl.style.setProperty('--nc-bg', COLORS[newColor]);
     const scopeCheckbox = document.getElementById('new-branch-scope');
     if (scopeCheckbox) scopeCheckbox.checked = false;
     renderCardTemplatePicker();
-    highlightSwatch(newColorsEl, newColor);
     renderNewNoteTags();
   }
 
@@ -2596,17 +2589,11 @@ export class SidebarView implements vscode.WebviewViewProvider {
     const id = newTemplateSelectEl.value || null;
     newTemplateId = id;
     if (!id) {
-      newColor = COLOR_KEYS[0];
-      newTags  = [];
+      newTags = [];
     } else {
       const tpl = templates.find(t => t.id === id);
-      if (tpl) {
-        if (tpl.color) newColor = tpl.color;
-        if (tpl.tags?.length) newTags = [...tpl.tags];
-      }
+      if (tpl?.tags?.length) newTags = [...tpl.tags];
     }
-    noteCardEl.style.setProperty('--nc-bg', COLORS[newColor]);
-    highlightSwatch(newColorsEl, newColor);
     renderNewNoteTags();
   });
   function confirmNewNote() {
@@ -2615,7 +2602,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
     const scopeCheckbox = document.getElementById('new-branch-scope');
     const branch = scopeCheckbox?.checked && currentBranch ? currentBranch : undefined;
     const body = window.SidebarEditor?.getMarkdown().trim() || undefined;
-    vscode.postMessage({ type: 'createNote', title, color: newColor, tags: [...newTags], templateId: newTemplateId, branch, body });
+    vscode.postMessage({ type: 'createNote', title, color: 'yellow', tags: [...newTags], templateId: newTemplateId, branch, body });
     closeNewForm();
   }
 
@@ -2941,7 +2928,6 @@ export class SidebarView implements vscode.WebviewViewProvider {
   }
 
   function buildCard(note) {
-    const bg          = COLORS[note.color] || COLORS.yellow;
     const isOffBranch = currentBranch && note.branch && note.branch !== currentBranch;
     const card = mkEl('div', 'card'
       + (note.shared     ? ' is-shared'   : '')
@@ -2950,7 +2936,6 @@ export class SidebarView implements vscode.WebviewViewProvider {
       + (note.archived   ? ' is-archived' : '')
     );
     card.dataset.id = note.id;
-    card.style.setProperty('--card-accent', bg);
     card.setAttribute('role', 'listitem');
     card.setAttribute('aria-label', note.title
       + (note.conflicted ? ' — conflict' : '')
@@ -2995,17 +2980,6 @@ export class SidebarView implements vscode.WebviewViewProvider {
       openCardMenu(note, overflowBtn);
     });
 
-    const cardColorBtn = mkEl('button', 'card-color-btn');
-    cardColorBtn.innerHTML = ${jsSvg.colorPicker};
-    cardColorBtn.title = 'Change color';
-    cardColorBtn.setAttribute('aria-label', 'Change note color');
-    cardColorBtn.setAttribute('aria-expanded', 'false');
-    cardColorBtn.setAttribute('aria-haspopup', 'listbox');
-    cardColorBtn.addEventListener('click', e => {
-      e.stopPropagation();
-      openCardColorPop(note, cardColorBtn);
-    });
-
     const starBtn = mkEl('button', 'star-btn' + (note.starred ? ' on' : ''));
     starBtn.innerHTML = ${jsSvg.star};
     starBtn.title = note.starred ? 'Unstar' : 'Star';
@@ -3015,7 +2989,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
       vscode.postMessage({ type: 'updateNote', id: note.id, changes: { starred: !note.starred } });
     });
 
-    row1.append(title, overflowBtn, cardColorBtn, starBtn);
+    row1.append(title, overflowBtn, starBtn);
     card.append(row1);
 
     // ── Row 2: Metadata chips ──
@@ -3502,56 +3476,21 @@ export class SidebarView implements vscode.WebviewViewProvider {
     btn.setAttribute('aria-expanded', 'true');
   }
 
-  // ── Card color picker ───────────────────────────────────────────────────
-  const cardColorPop = document.getElementById('card-color-pop');
-  let cardColorTarget = null;
-
-  function openCardColorPop(note, btn) {
-    const isOpen = cardColorPop.classList.contains('open') && cardColorTarget?.id === note.id;
-    closeAllPops();
-    if (isOpen) return;
-
-    const rect = btn.getBoundingClientRect();
-    cardColorPop.style.top   = (rect.bottom + 4) + 'px';
-    cardColorPop.style.left  = Math.max(4, rect.left - 4) + 'px';
-
-    cardColorPop.innerHTML = '';
-    cardColorTarget = note;
-
-    Object.entries(COLORS).forEach(([key, hex]) => {
-      const sw = mkEl('button', 'color-swatch' + (note.color === key ? ' selected' : ''));
-      sw.style.background = hex;
-      sw.title = key.charAt(0).toUpperCase() + key.slice(1);
-      sw.addEventListener('click', e => {
-        e.stopPropagation();
-        vscode.postMessage({ type: 'updateNote', id: note.id, changes: { color: key } });
-        closeAllPops();
-      });
-      cardColorPop.appendChild(sw);
-    });
-
-    cardColorPop.classList.add('open');
-    btn.setAttribute('aria-expanded', 'true');
-  }
-
   // ── Close all popover on outside click ─────────────────────────────────
   document.addEventListener('click', () => {
     closeAllPops();
   });
 
   function closeAllPops() {
-    document.querySelectorAll('.color-pop.open, .tag-pop.open, .tag-mgr-color-pop.open').forEach(el => el.classList.remove('open'));
+    document.querySelectorAll('.tag-pop.open, .tag-mgr-color-pop.open').forEach(el => el.classList.remove('open'));
     openColorPop    = null;
     openTagPop      = null;
     openMgrColorPop = null;
     overflowMenu.classList.remove('open');
     btnOverflow.classList.remove('active');
-    // Reset aria-expanded on any card overflow/color opener
     document.querySelectorAll('[aria-expanded="true"]').forEach(el => el.setAttribute('aria-expanded', 'false'));
     cardOvfMenu.classList.remove('open');
     cardOvfTarget = null;
-    cardColorPop.classList.remove('open');
-    cardColorTarget = null;
   }
 
   // ── Helpers ─────────────────────────────────────────────────────────────
@@ -3709,6 +3648,166 @@ export class SidebarView implements vscode.WebviewViewProvider {
     }
     return out.join('');
   }
+
+  // ── Theme preview ────────────────────────────────────────────────────────
+  // Each entry: name shown on chip, dot = sidebar bg color (null for Current), vars = CSS overrides
+  const T = (s,f,df,pb,lh,ew,eb,bb,bf,btn,btf,fb,ib,ifo,lnk,err,sel,bsh,bshf) => ({
+    '--vscode-sideBar-background':             s,
+    '--vscode-foreground':                     f,
+    '--vscode-descriptionForeground':          df,
+    '--vscode-panel-border':                   pb,
+    '--vscode-list-hoverBackground':           lh,
+    '--vscode-editorWidget-background':        ew,
+    '--vscode-editor-background':              eb,
+    '--vscode-badge-background':               bb,
+    '--vscode-badge-foreground':               bf,
+    '--vscode-button-background':              btn,
+    '--vscode-button-foreground':              btf,
+    '--vscode-button-secondaryBackground':     bsh,
+    '--vscode-button-secondaryForeground':     bshf,
+    '--vscode-focusBorder':                    fb,
+    '--vscode-input-background':               ib,
+    '--vscode-input-foreground':               ifo,
+    '--vscode-textLink-foreground':            lnk,
+    '--vscode-errorForeground':                err,
+    '--vscode-list-activeSelectionBackground': sel,
+  });
+
+  const THEMES = [
+    { name: 'Current',         dot: null     , vars: null },
+    // ── Built-in dark ───────────────────────────────────────────────────────
+    { name: 'Dark+',           dot: '#252526', vars: T('#252526','#cccccc','rgba(204,204,204,.7)','#3c3c3c','rgba(255,255,255,.06)','#252526','#1e1e1e','#4d4d4d','#fff','#0e639c','#fff','#007fd4','#3c3c3c','#cccccc','#3794ff','#f48771','#094771','#3a3d41','#cccccc') },
+    { name: 'Dark Modern',     dot: '#1e1e1e', vars: T('#1e1e1e','#cccccc','rgba(204,204,204,.7)','#2d2d2d','rgba(255,255,255,.06)','#1e1e1e','#1e1e1e','#4d4d4d','#fff','#0078d4','#fff','#005fb8','#3c3c3c','#cccccc','#3794ff','#f48771','#0060c0','#45454a','#cccccc') },
+    { name: 'Abyss',           dot: '#060621', vars: T('#060621','#6688cc','rgba(102,136,204,.7)','#2b2b4a','#061940','#262641','#000c18','#0063a5','#aac','#2b3c5d','#aac','#596f99','#181f2f','#6688cc','#3794ff','#f48771','#06141f','#1a1a30','#6688cc') },
+    { name: 'Kimbie Dark',     dot: '#221a0f', vars: T('#221a0f','#d3af86','rgba(211,175,134,.7)','#4b3a2a','rgba(255,255,255,.05)','#2a1f14','#221a0f','#7f5f00','#fff','#dc3958','#fff','#dc3958','#3d2b1f','#d3af86','#d06c76','#dc3958','#4b1818','#3d2b1f','#d3af86') },
+    { name: 'Monokai',         dot: '#1e1f1c', vars: T('#1e1f1c','#f8f8f2','rgba(248,248,242,.7)','#414339','#3e3d32','#1e1f1c','#272822','#75715e','#f8f8f2','#75715e','#f8f8f2','#99947c','#414339','#f8f8f2','#66d9e8','#f92672','#3e3d32','#49483e','#f8f8f2') },
+    { name: 'Monokai Dimmed',  dot: '#1e1e1e', vars: T('#1e1e1e','#c5c8c6','rgba(197,200,198,.7)','#3e3e3e','rgba(255,255,255,.06)','#1e1e1e','#1e1e1e','#4d4d4d','#fff','#52a8ff','#fff','#52a8ff','#3c3c3c','#c5c8c6','#52a8ff','#c94c16','#073655','#3a3d41','#c5c8c6') },
+    { name: 'Red',             dot: '#390000', vars: T('#390000','#f8f8f8','rgba(248,248,248,.7)','#8b0000','rgba(255,255,255,.06)','#3c0000','#390000','#a30000','#fff','#a30000','#fff','#ff0000','#600000','#f8f8f8','#ff8080','#f48771','#6f1313','#600000','#f8f8f8') },
+    { name: 'Sol. Dark',       dot: '#00212b', vars: T('#00212b','#93a1a1','rgba(147,161,161,.7)','#003847','#004454aa','#00212b','#002b36','#047aa6','#fdf6e3','#2aa198','#fdf6e3','#2aa198','#003847','#93a1a1','#2aa198','#dc322f','#003847','#003847','#93a1a1') },
+    { name: 'Sol. Light',      dot: '#eee8d5', vars: T('#eee8d5','#657b83','rgba(101,123,131,.7)','#ddd6c1','#dfca8844','#eee8d5','#fdf6e3','#b58900','#fdf6e3','#ac9d57','#fdf6e3','#b49471','#ddd6c1','#586e75','#2aa198','#dc322f','#dfca8899','#c9c2b0','#657b83') },
+    { name: 'TN Blue',         dot: '#001c40', vars: T('#001c40','#ffffff','rgba(255,255,255,.7)','#00346e','rgba(255,255,255,.1)','#001c40','#002451','#bbdaff','#001733','#bbdaff','#001733','#bbdaff','#001733','#ffffff','#7285b7','#ff9da4','#003e80','#002f6c','#ffffff') },
+    { name: 'HC Dark',         dot: '#000000', vars: T('#000000','#ffffff','rgba(255,255,255,.7)','#6fc3df','rgba(255,255,255,.12)','#000000','#000000','#000000','#ffffff','#0e639c','#ffffff','#f38518','#000000','#ffffff','#3794ff','#f48771','#000000','#1a1a1a','#ffffff') },
+    // ── Built-in light ──────────────────────────────────────────────────────
+    { name: 'Light+',          dot: '#f3f3f3', vars: T('#f3f3f3','#616161','rgba(97,97,97,.7)','#e4e4e4','rgba(0,0,0,.06)','#f3f3f3','#ffffff','#c4c4c4','#333','#007acc','#fff','#0090f1','#ffffff','#616161','#006ab1','#a1260d','#0060c033','#5f6a79','#fff') },
+    { name: 'Light Modern',    dot: '#f8f8f8', vars: T('#f8f8f8','#3b3b3b','rgba(59,59,59,.7)','#e5e5e5','rgba(0,0,0,.06)','#f8f8f8','#ffffff','#c0c0c0','#fff','#0078d4','#fff','#0069ba','#ffffff','#3b3b3b','#006ab1','#a1260d','#0060c033','#5f6a79','#fff') },
+    { name: 'Quiet Light',     dot: '#f5f5f5', vars: T('#f5f5f5','#333333','rgba(51,51,51,.7)','#e4e4e4','rgba(0,0,0,.05)','#f5f5f5','#f5f5f5','#9e9e9e','#fff','#007acc','#fff','#007acc','#ffffff','#333333','#007acc','#e51400','#0000ff1a','#cdcecf','#333') },
+    { name: 'HC Light',        dot: '#ffffff', vars: T('#ffffff','#000000','rgba(0,0,0,.7)','#0f4a85','rgba(0,0,0,.06)','#ffffff','#ffffff','#0f4a85','#fff','#0f4a85','#fff','#0f4a85','#ffffff','#000000','#0000ee','#b5200d','#0f4a851a','#d4d4d4','#000') },
+    // ── Community dark ──────────────────────────────────────────────────────
+    { name: 'One Dark',        dot: '#21252b', vars: T('#21252b','#abb2bf','#abb2bf','#3e4452','#2c313a','#21252b','#282c34','#282c34','#abb2bf','#404754','#abb2bf','#3e4452','#1d1f23','#abb2bf','#61afef','#e06c75','#2c313c','#3e4451','#abb2bf') },
+    { name: 'GH Dark',         dot: '#161b22', vars: T('#161b22','#e6edf3','#8b949e','#30363d','rgba(177,186,196,.12)','#1c2128','#0d1117','#1f6feb','#fff','#238636','#fff','#388bfd','#0d1117','#c9d1d9','#58a6ff','#f85149','#1f6feb33','#21262d','#c9d1d9') },
+    { name: 'GH Dimmed',       dot: '#2d333b', vars: T('#2d333b','#adbac7','rgba(173,186,199,.7)','#444c56','rgba(177,186,196,.1)','#2d333b','#22272e','#388bfd','#fff','#347d39','#cdd9e5','#388bfd','#22272e','#adbac7','#539bf5','#e5534b','#3b5070','#373e47','#adbac7') },
+    { name: 'GH Light',        dot: '#f6f8fa', vars: T('#f6f8fa','#24292f','#57606a','#d0d7de','rgba(234,238,242,.7)','#f6f8fa','#ffffff','#0969da','#fff','#2da44e','#fff','#0969da','#ffffff','#24292f','#0969da','#cf222e','#ddf4ff','#ebecf0','#24292f') },
+    { name: 'Dracula',         dot: '#21222c', vars: T('#21222c','#f8f8f2','rgba(248,248,242,.7)','#6272a4','rgba(255,255,255,.06)','#21222c','#282a36','#ff79c6','#282a36','#bd93f9','#282a36','#ff79c6','#282a36','#f8f8f2','#8be9fd','#ff5555','#44475a','#44475a','#f8f8f2') },
+    { name: 'Nord',            dot: '#2e3440', vars: T('#2e3440','#d8dee9','rgba(216,222,233,.7)','#3b4252','rgba(255,255,255,.05)','#2e3440','#2e3440','#88c0d0','#2e3440','#88c0d0','#2e3440','#88c0d0','#3b4252','#d8dee9','#88c0d0','#bf616a','#4c566a','#3b4252','#d8dee9') },
+    { name: 'Catppuccin',      dot: '#181825', vars: T('#181825','#cdd6f4','rgba(205,214,244,.7)','#313244','rgba(205,214,244,.05)','#1e1e2e','#1e1e2e','#cba6f7','#1e1e2e','#cba6f7','#1e1e2e','#cba6f7','#313244','#cdd6f4','#89b4fa','#f38ba8','#45475a','#45475a','#cdd6f4') },
+    { name: 'Catppuccin M',    dot: '#1e2030', vars: T('#1e2030','#cad3f5','rgba(202,211,245,.7)','#363a4f','rgba(202,211,245,.05)','#24273a','#24273a','#c6a0f6','#24273a','#c6a0f6','#24273a','#c6a0f6','#363a4f','#cad3f5','#8aadf4','#ed8796','#494d64','#494d64','#cad3f5') },
+    { name: 'Catppuccin F',    dot: '#292c3c', vars: T('#292c3c','#c6d0f5','rgba(198,208,245,.7)','#414559','rgba(198,208,245,.05)','#303446','#303446','#ca9ee6','#303446','#ca9ee6','#303446','#ca9ee6','#414559','#c6d0f5','#8caaee','#e78284','#51576d','#51576d','#c6d0f5') },
+    { name: 'Catppuccin L',    dot: '#e6e9ef', vars: T('#e6e9ef','#4c4f69','rgba(76,79,105,.7)','#ccd0da','rgba(0,0,0,.06)','#eff1f5','#eff1f5','#8839ef','#eff1f5','#8839ef','#eff1f5','#8839ef','#eff1f5','#4c4f69','#1e66f5','#d20f39','#8839ef1a','#ccd0da','#4c4f69') },
+    { name: 'Tokyo Night',     dot: '#16161e', vars: T('#16161e','#787c99','#515670','#101014','#13131a','#16161e','#1a1b26','#7e83b230','#acb0d0','#3d59a1','#ffffff','#545c7e','#14141b','#a9b1d6','#7aa2f7','#f7768e','#283457','#24283b','#a9b1d6') },
+    { name: 'TN Storm',        dot: '#1f2335', vars: T('#1f2335','#8089b3','#545c7e','#1b1e2e','#1b1e2e','#1f2335','#24283b','#7e83b233','#a9b1d6','#3d59a1','#ffffff','#545c7e','#1b1e2e','#a9b1d6','#7aa2f7','#f7768e','#2d3f76','#292e42','#a9b1d6') },
+    { name: 'TN Light',        dot: '#d6d8df', vars: T('#d6d8df','#363c4d','#707280','#c1c2c7','#e1e2e8','#d6d8df','#e6e7ed','#97979833','#363c4d','#2959aa','#ffffff','#70728033','#e6e7ed','#363c4d','#2e7de9','#f52a65','#2e7de91a','#b4b6c2','#343b58') },
+    { name: 'Night Owl',       dot: '#011627', vars: T('#011627','#d6deeb','rgba(214,222,235,.7)','#5f7e97','#011627','#021320','#011627','#5f7e97','#fff','#7e57c2','#ffffffcc','#80a4c2','#0b253a','#ffffffcc','#82aaff','#ff6363','#1d3b53','#1d3b53','#d6deeb') },
+    { name: 'Cobalt2',         dot: '#15232d', vars: T('#15232d','#aaaaaa','#aaaaaa','#ffc600','#193549','#15232d','#193549','#ffc600','#000','#0088ff','#fff','#0d3a58','#193549','#ffc600','#80aedf','#ff628c','#1e344d','#193549','#aaaaaa') },
+    { name: 'Gruvbox',         dot: '#282828', vars: T('#282828','#ebdbb2','rgba(235,219,178,.7)','#3c3836','rgba(255,255,255,.05)','#282828','#282828','#d79921','#282828','#98971a','#282828','#d79921','#3c3836','#ebdbb2','#83a598','#cc241d','#504945','#3c3836','#ebdbb2') },
+    { name: 'Material',        dot: '#263238', vars: T('#263238','#b0bec5','rgba(176,190,197,.7)','#2a3a42','rgba(255,255,255,.05)','#263238','#263238','#80cbc4','#263238','#80cbc4','#263238','#80cbc4','#2a3a42','#b0bec5','#80cbc4','#ef5350','#37474f','#2e3c43','#b0bec5') },
+    { name: 'Shades/Purple',   dot: '#1e1e3f', vars: T('#1e1e3f','#a599e9','rgba(165,153,233,.7)','#2d2b55','rgba(255,255,255,.06)','#2d2b55','#2d2b55','#fad000','#1e1e3f','#fad000','#1e1e3f','#fad000','#2d2b55','#a599e9','#fb94ff','#ff628c','#342b6b','#2d2b55','#a599e9') },
+    { name: 'Synthwave',       dot: '#262335', vars: T('#262335','#ffffff','rgba(255,255,255,.7)','#262335','rgba(255,255,255,.06)','#262335','#262335','#f97e72','#262335','#f97e72','#262335','#f97e72','#1a1a2e','#ffffff','#72f1b8','#fe4450','#2e2c3d','#332d4a','#ffffff') },
+    { name: 'Andromeda',       dot: '#1c1e26', vars: T('#1c1e26','#d5ced9','rgba(213,206,217,.7)','#262931','rgba(255,255,255,.05)','#23262e','#23262e','#00e8c6','#1c1e26','#00e8c6','#1c1e26','#00e8c6','#1c1e26','#d5ced9','#00e8c6','#ff5370','#262931','#2d303b','#d5ced9') },
+    { name: 'Moonlight',       dot: '#1e2030', vars: T('#1e2030','#c8d3f5','rgba(200,211,245,.7)','#2f3354','rgba(255,255,255,.06)','#212337','#212337','#82aaff','#212337','#82aaff','#212337','#82aaff','#2f3354','#c8d3f5','#82aaff','#ff5370','#2d3f76','#2f3354','#c8d3f5') },
+    { name: 'Everforest',      dot: '#2d353b', vars: T('#2d353b','#d3c6aa','rgba(211,198,170,.7)','#3a464c','rgba(255,255,255,.05)','#2d353b','#2d353b','#a7c080','#2d353b','#a7c080','#2d353b','#a7c080','#3a464c','#d3c6aa','#7fbbb3','#e67e80','#425047','#3a464c','#d3c6aa') },
+    { name: 'Rose Piné',       dot: '#191724', vars: T('#191724','#e0def4','#908caa','#0000','#6e6a861a','#1f1d2e','#191724','#ebbcba','#191724','#ebbcba','#191724','#6e6a8633','#232034','#e0def4','#9ccfd8','#eb6f92','#403d52','#26233a','#e0def4') },
+    { name: 'Rose Moon',       dot: '#232136', vars: T('#232136','#e0def4','#908caa','#0000','#817c9c14','#2a273f','#232136','#ea9a97','#232136','#ea9a97','#232136','#817c9c26','#322e49','#e0def4','#9ccfd8','#eb6f92','#44415a','#393552','#e0def4') },
+    { name: 'Rose Dawn',       dot: '#faf4ed', vars: T('#faf4ed','#575279','#797593','#0000','#6e6a860d','#fffaf3','#faf4ed','#d7827e','#faf4ed','#d7827e','#faf4ed','#6e6a8614','#f9f2ea','#575279','#286983','#b4637a','#907aa91a','#dfdad9','#575279') },
+    { name: 'Horizon',         dot: '#16181f', vars: T('#16181f','#d5d8da','rgba(213,216,218,.7)','#1c1e2a','rgba(255,255,255,.05)','#1c1e26','#1c1e26','#e93c58','#fff','#e93c58','#fff','#e93c58','#16181f','#d5d8da','#26bbd9','#e93c58','#232530','#232530','#d5d8da') },
+    { name: 'Palenight',       dot: '#242837', vars: T('#242837','#a6accd','rgba(166,172,205,.7)','#2f3347','rgba(255,255,255,.05)','#292d3e','#292d3e','#82aaff','#292d3e','#82aaff','#292d3e','#82aaff','#2f3347','#a6accd','#89ddff','#f07178','#3c4159','#2f3347','#a6accd') },
+  ];
+
+  // Snapshot all theme variable names from VS Code's inline styles at load time
+  const ALL_THEME_VARS = [...new Set(THEMES.flatMap(t => t.vars ? Object.keys(t.vars) : []))];
+  const vsCodeSnapshot = {};
+  const computedRoot = getComputedStyle(document.documentElement);
+  ALL_THEME_VARS.forEach(k => {
+    vsCodeSnapshot[k] = computedRoot.getPropertyValue(k).trim();
+  });
+
+  let activeTheme = null;
+  const themeSelectBtn  = document.getElementById('theme-select-btn');
+  const themeSelectName = document.getElementById('theme-select-name');
+  const themeSelectDot  = document.getElementById('theme-select-dot');
+  const themeDropdown   = document.getElementById('theme-dropdown');
+  const themePrevBtn    = document.getElementById('theme-prev');
+  const themeNextBtn    = document.getElementById('theme-next');
+
+  let activeThemeIndex = 0;
+
+  function applyTheme(theme, index) {
+    activeTheme = theme.name;
+    activeThemeIndex = index;
+    const vars = theme.vars ?? vsCodeSnapshot;
+    Object.entries(vars).forEach(([k, v]) => document.documentElement.style.setProperty(k, v));
+    themeSelectName.textContent = theme.name;
+    themeSelectDot.style.background = theme.dot || '';
+    themeSelectDot.style.display = theme.dot ? '' : 'none';
+    themeDropdown.querySelectorAll('.theme-option').forEach(o =>
+      o.classList.toggle('active', o.dataset.theme === theme.name)
+    );
+  }
+
+  themePrevBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const idx = (activeThemeIndex - 1 + THEMES.length) % THEMES.length;
+    applyTheme(THEMES[idx], idx);
+  });
+
+  themeNextBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const idx = (activeThemeIndex + 1) % THEMES.length;
+    applyTheme(THEMES[idx], idx);
+  });
+
+  THEMES.forEach((theme, index) => {
+    const opt = document.createElement('div');
+    opt.className = 'theme-option' + (theme.name === 'Current' ? ' active' : '');
+    opt.dataset.theme = theme.name;
+
+    const check = document.createElement('span');
+    check.className = 'theme-option-check';
+    check.textContent = '✓';
+    opt.appendChild(check);
+
+    if (theme.dot) {
+      const dot = document.createElement('span');
+      dot.className = 'theme-dot';
+      dot.style.background = theme.dot;
+      opt.appendChild(dot);
+    }
+    opt.appendChild(document.createTextNode(theme.name));
+
+    opt.addEventListener('click', () => {
+      applyTheme(theme, index);
+      themeDropdown.classList.remove('open');
+      themeSelectBtn.classList.remove('open');
+    });
+    themeDropdown.appendChild(opt);
+  });
+
+  themeSelectBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const isOpen = themeDropdown.classList.toggle('open');
+    themeSelectBtn.classList.toggle('open', isOpen);
+    if (isOpen) {
+      const activeOpt = themeDropdown.querySelector('.theme-option.active');
+      if (activeOpt) activeOpt.scrollIntoView({ block: 'nearest' });
+    }
+  });
+
+  document.addEventListener('click', () => {
+    themeDropdown.classList.remove('open');
+    themeSelectBtn.classList.remove('open');
+  });
+
+  // Init dot for Current (no dot)
+  themeSelectDot.style.display = 'none';
 
 })();
 </script>
