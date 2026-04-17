@@ -13,6 +13,8 @@ import {
   Lightbulb, ListTodo, Bug, Presentation, BookMarked,
   Link, FileSymlink, TriangleAlert,
   GitPullRequest, GitPullRequestClosed, GitMerge, CircleDot, CircleCheck,
+  Bold, Italic, Underline, Strikethrough,
+  List, ListOrdered, ListChecks, Code, Indent, Outdent, RemoveFormatting, Check,
 } from 'lucide';
 import type { IconNode as LucideNode } from 'lucide';
 
@@ -623,14 +625,30 @@ export class SidebarView implements vscode.WebviewViewProvider {
       ghPrMerged:    JSON.stringify(svgIcon(GitMerge,              11)),
       ghIssueOpen:   JSON.stringify(svgIcon(CircleDot,             11)),
       ghIssueClosed: JSON.stringify(svgIcon(CircleCheck,           11)),
+      fmtBold:       JSON.stringify(svgIcon(Bold,             13)),
+      fmtItalic:     JSON.stringify(svgIcon(Italic,           13)),
+      fmtUnderline:  JSON.stringify(svgIcon(Underline,        13)),
+      fmtStrike:     JSON.stringify(svgIcon(Strikethrough,    13)),
+      fmtList:       JSON.stringify(svgIcon(List,             13)),
+      fmtListNum:    JSON.stringify(svgIcon(ListOrdered,      13)),
+      fmtChecklist:  JSON.stringify(svgIcon(ListChecks,       13)),
+      fmtCode:       JSON.stringify(svgIcon(Code,             13)),
+      fmtIndent:     JSON.stringify(svgIcon(Indent,           13)),
+      fmtOutdent:    JSON.stringify(svgIcon(Outdent,          13)),
+      fmtClear:      JSON.stringify(svgIcon(RemoveFormatting, 13)),
+      fmtDone:       JSON.stringify(svgIcon(Check,            13)),
     };
+
+    const checkmarkUri = 'data:image/svg+xml,' + encodeURIComponent(
+      '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>'
+    );
 
     return /* html */`<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta http-equiv="Content-Security-Policy"
-  content="default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${nonce}';">
+  content="default-src 'none'; style-src 'unsafe-inline'; img-src data:; script-src 'nonce-${nonce}';">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -1377,12 +1395,12 @@ export class SidebarView implements vscode.WebviewViewProvider {
     background: none;
     border: none;
     cursor: pointer;
-    font-size: 12px;
-    padding: 1px 5px;
+    padding: 2px 4px;
     border-radius: 3px;
     color: var(--card-text);
     opacity: .55;
-    line-height: 1.4;
+    display: flex;
+    align-items: center;
     transition: opacity .1s, background .1s;
   }
   .card-fmt-btn:hover { opacity: 1; background: rgba(128,128,128,.12); }
@@ -1391,12 +1409,12 @@ export class SidebarView implements vscode.WebviewViewProvider {
     background: none;
     border: none;
     cursor: pointer;
-    font-size: 11px;
-    font-weight: 600;
-    padding: 2px 7px;
+    padding: 2px 6px;
     border-radius: 3px;
     color: var(--card-text);
     opacity: .5;
+    display: flex;
+    align-items: center;
     transition: opacity .1s, background .1s;
   }
   .card-fmt-done:hover { opacity: 1; background: rgba(128,128,128,.12); }
@@ -1405,8 +1423,18 @@ export class SidebarView implements vscode.WebviewViewProvider {
   .task-list { list-style: none; padding-left: 4px; margin: 2px 0; }
   .task-item { display: flex; align-items: center; gap: 5px; }
   .task-item input[type="checkbox"] {
+    appearance: none; -webkit-appearance: none;
     cursor: pointer; width: 13px; height: 13px; flex-shrink: 0;
-    accent-color: var(--vscode-button-background);
+    background: transparent;
+    border: 1.5px solid var(--card-text); border-radius: 2px;
+    transition: background .1s, border-color .1s;
+  }
+  .task-item input[type="checkbox"]:checked {
+    background: var(--vscode-button-background);
+    border-color: var(--vscode-button-background);
+    background-image: url('${checkmarkUri}');
+    background-repeat: no-repeat;
+    background-position: center;
   }
   .task-item.done > span { opacity: .5; text-decoration: line-through; }
 
@@ -3314,29 +3342,39 @@ export class SidebarView implements vscode.WebviewViewProvider {
     const addSepBar = () => fmtBar.appendChild(mkEl('span', 'card-fmt-sep-bar'));
 
     // Inline formatting
-    addFmt('<b>B</b>',  'Bold',          'bold');
-    addFmt('<i>I</i>',  'Italic',        'italic');
-    addFmt('<u>U</u>',  'Underline',     'underline');
-    addFmt('<s>S</s>',  'Strikethrough', 'strikeThrough');
+    addFmt(${jsSvg.fmtBold},      'Bold',          'bold');
+    addFmt(${jsSvg.fmtItalic},    'Italic',        'italic');
+    addFmt(${jsSvg.fmtUnderline}, 'Underline',     'underline');
+    addFmt(${jsSvg.fmtStrike},    'Strikethrough', 'strikeThrough');
     addSepBar();
     // Block formatting
-    addCustom('H',   'Heading (toggle H2)',  () => {
-      const cur = document.queryCommandValue('formatBlock');
-      document.execCommand('formatBlock', false, cur === 'h2' ? 'p' : 'h2');
-    });
-    addFmt('≡',   'Bullet list',    'insertUnorderedList');
-    addFmt('1.',  'Numbered list',  'insertOrderedList');
-    addCustom('☑', 'Checklist item', () =>
+    addFmt(${jsSvg.fmtList},      'Bullet list',    'insertUnorderedList');
+    addFmt(${jsSvg.fmtListNum},   'Numbered list',  'insertOrderedList');
+    addCustom(${jsSvg.fmtChecklist}, 'Checklist item', () =>
       document.execCommand('insertHTML', false,
         '<ul class="task-list"><li class="task-item"><input type="checkbox" class="task-check"> <span>​</span></li></ul>'));
-    addFmt('&lt;/&gt;', 'Code block', 'formatBlock', 'pre');
+    addFmt(${jsSvg.fmtCode}, 'Code block', 'formatBlock', 'pre');
     addSepBar();
     // Indent / outdent / clear
-    addFmt('→',  'Indent',  'indent');
-    addFmt('←',  'Outdent', 'outdent');
-    addCustom('✕', 'Clear formatting', () => document.execCommand('removeFormat', false, null));
+    addFmt(${jsSvg.fmtIndent},  'Indent',  'indent');
+    addFmt(${jsSvg.fmtOutdent}, 'Outdent', 'outdent');
+    addCustom(${jsSvg.fmtClear}, 'Clear formatting', () => {
+      document.execCommand('removeFormat', false, null);
+      document.execCommand('formatBlock', false, 'p');
+      const sel = window.getSelection();
+      if (sel && sel.rangeCount) {
+        const range = sel.getRangeAt(0);
+        let node = range.commonAncestorContainer;
+        if (node.nodeType === 3) node = node.parentElement;
+        const list = node.closest('ul, ol');
+        if (list) {
+          document.execCommand(list.tagName === 'UL' ? 'insertUnorderedList' : 'insertOrderedList', false, null);
+        }
+      }
+    });
 
-    const fmtDone = mkEl('button', 'card-fmt-done', '✓');
+    const fmtDone = mkEl('button', 'card-fmt-done');
+    fmtDone.innerHTML = ${jsSvg.fmtDone};
     fmtDone.title = 'Done editing';
     fmtDone.addEventListener('mousedown', e => { e.preventDefault(); preview.blur(); });
     fmtBar.append(mkEl('span', 'card-fmt-sep'), fmtDone);
