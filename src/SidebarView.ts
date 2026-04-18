@@ -15,7 +15,8 @@ import {
   Link, FileSymlink, TriangleAlert,
   GitPullRequest, GitPullRequestClosed, GitMerge, CircleDot, CircleCheck,
   Bold, Italic, Underline, Strikethrough,
-  List, ListOrdered, ListChecks, Code, Indent, Outdent, RemoveFormatting, Check,
+  List, ListOrdered, ListChecks, Code, Code2, Indent, Outdent, RemoveFormatting, Check,
+  ChevronDown, ChevronUp,
 } from 'lucide';
 import type { IconNode as LucideNode } from 'lucide';
 
@@ -693,10 +694,13 @@ export class SidebarView implements vscode.WebviewViewProvider {
       fmtListNum:    JSON.stringify(svgIcon(ListOrdered,      13)),
       fmtChecklist:  JSON.stringify(svgIcon(ListChecks,       13)),
       fmtCode:       JSON.stringify(svgIcon(Code,             13)),
+      fmtCodeInline: JSON.stringify(svgIcon(Code2,            13)),
       fmtIndent:     JSON.stringify(svgIcon(Indent,           13)),
       fmtOutdent:    JSON.stringify(svgIcon(Outdent,          13)),
       fmtClear:      JSON.stringify(svgIcon(RemoveFormatting, 13)),
       fmtDone:       JSON.stringify(svgIcon(Check,            13)),
+      chevronDown:   JSON.stringify(svgIcon(ChevronDown,     12)),
+      chevronUp:     JSON.stringify(svgIcon(ChevronUp,       12)),
     };
 
     const checkmarkUri = 'data:image/svg+xml,' + encodeURIComponent(
@@ -1351,6 +1355,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
   /* Rendered markdown preview */
   .card-preview { user-select: none; cursor: text; }
   .card-preview p { margin: 0 0 4px; }
+  .card-preview blockquote { margin: 0 0 4px 1.2em; padding: 0; border: none; background: none; }
   .card-preview ul, .card-preview ol { padding-left: 1.2em; margin: 0 0 4px; }
   .card-preview li { margin: 1px 0; }
   .card-preview code {
@@ -1379,12 +1384,11 @@ export class SidebarView implements vscode.WebviewViewProvider {
   }
 
   .show-more {
-    font-size: 11px;
     cursor: pointer;
     opacity: .5;
-    text-align: right;
     color: var(--card-text);
     display: none;
+    justify-content: flex-end;
     user-select: none;
   }
   .show-more:hover { opacity: 1; }
@@ -1450,6 +1454,9 @@ export class SidebarView implements vscode.WebviewViewProvider {
     border-top: 1px solid rgba(128,128,128,.08);
     padding-top: 5px;
     margin-top: 1px;
+    position: relative;
+    overflow: visible;
+    flex-wrap: nowrap;
   }
   .card-fmt-btn {
     background: none;
@@ -1464,7 +1471,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
     transition: opacity .1s, background .1s;
   }
   .card-fmt-btn:hover { opacity: 1; background: rgba(128,128,128,.12); }
-  .card-fmt-sep { flex: 1; }
+  .card-fmt-sep { flex: 1; min-width: 4px; }
   .card-fmt-done {
     background: none;
     border: none;
@@ -1475,9 +1482,29 @@ export class SidebarView implements vscode.WebviewViewProvider {
     opacity: .5;
     display: flex;
     align-items: center;
+    flex-shrink: 0;
     transition: opacity .1s, background .1s;
   }
   .card-fmt-done:hover { opacity: 1; background: rgba(128,128,128,.12); }
+
+  /* Collapsible groups */
+  .fmt-grp { display: flex; align-items: center; gap: 2px; }
+  .fmt-toggle-wrap { position: relative; display: flex; align-items: center; }
+  .fmt-grp-toggle { display: none; gap: 1px; }
+  .fmt-dropdown {
+    display: none; position: absolute; bottom: calc(100% + 6px); left: 0;
+    flex-wrap: wrap; gap: 2px; padding: 4px; z-index: 50; min-width: 80px;
+    background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
+    border: 1px solid var(--vscode-panel-border);
+    border-radius: 5px; box-shadow: 0 2px 8px rgba(0,0,0,.2);
+  }
+  .fmt-dropdown.open { display: flex; }
+  .card-fmtbar.compact-text .fmt-grp-text,
+  .card-fmtbar.compact-text .fmt-sep-text { display: none; }
+  .card-fmtbar.compact-text .fmt-toggle-text-wrap .fmt-grp-toggle { display: flex; }
+  .card-fmtbar.compact-lists .fmt-grp-lists,
+  .card-fmtbar.compact-lists .fmt-sep-lists { display: none; }
+  .card-fmtbar.compact-lists .fmt-toggle-lists-wrap .fmt-grp-toggle { display: flex; }
 
   /* Task / checklist items */
   .task-list { list-style: none; padding-left: 4px; margin: 2px 0; }
@@ -3232,15 +3259,16 @@ export class SidebarView implements vscode.WebviewViewProvider {
     const preview  = mkEl('div', 'card-preview clamped');
     preview.innerHTML = searchQuery ? matchSnippet(note.content, searchQuery) : simpleMarkdown(note.content);
 
-    const showMore = mkEl('div', 'show-more', '▾ more');
+    const showMore = mkEl('div', 'show-more');
+    showMore.innerHTML = ${jsSvg.chevronDown};
     const isLong   = note.content.split('\\n').length > 3 || note.content.length > 180;
-    if (isLong) showMore.style.display = 'block';
+    if (isLong) showMore.style.display = 'flex';
 
     let expanded = false;
     showMore.addEventListener('click', () => {
       expanded = !expanded;
       preview.classList.toggle('clamped', !expanded);
-      showMore.textContent = expanded ? '▴ less' : '▾ more';
+      showMore.innerHTML = expanded ? ${jsSvg.chevronUp} : ${jsSvg.chevronDown};
     });
 
     // Intercept checkbox mousedown to prevent focus-steal (which triggers blur = "done" effect)
@@ -3294,11 +3322,15 @@ export class SidebarView implements vscode.WebviewViewProvider {
       preview.innerHTML = simpleMarkdown(note.content);
       if (!expanded) preview.classList.add('clamped');
       const stillLong = note.content.split('\\n').length > 3 || note.content.length > 180;
-      showMore.style.display = (stillLong && !expanded) ? 'block' : 'none';
+      showMore.style.display = (stillLong && !expanded) ? 'flex' : 'none';
     });
 
     preview.addEventListener('keydown', e => {
-      if (e.key === 'Escape') preview.blur();
+      if (e.key === 'Escape') { preview.blur(); return; }
+      if (e.key === 'Tab') {
+        e.preventDefault();
+        document.execCommand(e.shiftKey ? 'outdent' : 'indent');
+      }
     });
 
     preview.addEventListener('paste', e => {
@@ -3411,40 +3443,14 @@ export class SidebarView implements vscode.WebviewViewProvider {
     // ── Format bar (swaps with footer while editing) ──
     const fmtBar = mkEl('div', 'card-fmtbar');
 
-    const addFmt = (label, title, cmd, arg) => {
+    const mkFmtBtn = (label, title, fn) => {
       const btn = mkEl('button', 'card-fmt-btn');
-      btn.innerHTML = label;
-      btn.title = title;
-      btn.addEventListener('mousedown', e => { e.preventDefault(); document.execCommand(cmd, false, arg || null); });
-      fmtBar.appendChild(btn);
-    };
-    const addCustom = (label, title, fn) => {
-      const btn = mkEl('button', 'card-fmt-btn');
-      btn.innerHTML = label;
-      btn.title = title;
+      btn.innerHTML = label; btn.title = title;
       btn.addEventListener('mousedown', e => { e.preventDefault(); fn(); });
-      fmtBar.appendChild(btn);
+      return btn;
     };
-    const addSepBar = () => fmtBar.appendChild(mkEl('span', 'card-fmt-sep-bar'));
 
-    // Inline formatting
-    addFmt(${jsSvg.fmtBold},      'Bold',          'bold');
-    addFmt(${jsSvg.fmtItalic},    'Italic',        'italic');
-    addFmt(${jsSvg.fmtUnderline}, 'Underline',     'underline');
-    addFmt(${jsSvg.fmtStrike},    'Strikethrough', 'strikeThrough');
-    addSepBar();
-    // Block formatting
-    addFmt(${jsSvg.fmtList},      'Bullet list',    'insertUnorderedList');
-    addFmt(${jsSvg.fmtListNum},   'Numbered list',  'insertOrderedList');
-    addCustom(${jsSvg.fmtChecklist}, 'Checklist item', () =>
-      document.execCommand('insertHTML', false,
-        '<ul class="task-list"><li class="task-item"><input type="checkbox" class="task-check"> <span>​</span></li></ul>'));
-    addFmt(${jsSvg.fmtCode}, 'Code block', 'formatBlock', 'pre');
-    addSepBar();
-    // Indent / outdent / clear
-    addFmt(${jsSvg.fmtIndent},  'Indent',  'indent');
-    addFmt(${jsSvg.fmtOutdent}, 'Outdent', 'outdent');
-    addCustom(${jsSvg.fmtClear}, 'Clear formatting', () => {
+    const clearFn = () => {
       document.execCommand('removeFormat', false, null);
       document.execCommand('formatBlock', false, 'p');
       const sel = window.getSelection();
@@ -3453,18 +3459,98 @@ export class SidebarView implements vscode.WebviewViewProvider {
         let node = range.commonAncestorContainer;
         if (node.nodeType === 3) node = node.parentElement;
         const list = node.closest('ul, ol');
-        if (list) {
-          document.execCommand(list.tagName === 'UL' ? 'insertUnorderedList' : 'insertOrderedList', false, null);
-        }
+        if (list) document.execCommand(list.tagName === 'UL' ? 'insertUnorderedList' : 'insertOrderedList', false, null);
+      }
+    };
+
+    const buildTextBtns = (c) => {
+      c.appendChild(mkFmtBtn(${jsSvg.fmtBold},       'Bold',          () => document.execCommand('bold')));
+      c.appendChild(mkFmtBtn(${jsSvg.fmtItalic},     'Italic',        () => document.execCommand('italic')));
+      c.appendChild(mkFmtBtn(${jsSvg.fmtUnderline},  'Underline',     () => document.execCommand('underline')));
+      c.appendChild(mkFmtBtn(${jsSvg.fmtStrike},     'Strikethrough', () => document.execCommand('strikeThrough')));
+      c.appendChild(mkFmtBtn(${jsSvg.fmtCodeInline}, 'Inline code',   () => {
+        const sel = window.getSelection();
+        if (!sel || !sel.rangeCount) return;
+        const text = sel.toString();
+        document.execCommand('insertHTML', false, text
+          ? \`<code>\${text}</code>\`
+          : '<code>​</code>');
+      }));
+    };
+
+    const buildListsBtns = (c) => {
+      c.appendChild(mkFmtBtn(${jsSvg.fmtList},      'Bullet list',    () => document.execCommand('insertUnorderedList')));
+      c.appendChild(mkFmtBtn(${jsSvg.fmtListNum},   'Numbered list',  () => document.execCommand('insertOrderedList')));
+      c.appendChild(mkFmtBtn(${jsSvg.fmtChecklist}, 'Checklist item', () => document.execCommand('insertHTML', false, '<ul class="task-list"><li class="task-item"><input type="checkbox" class="task-check"> <span>​</span></li></ul>')));
+    };
+
+    const mkToggleWrap = (wrapCls, icon, title, buildFn) => {
+      const wrap   = mkEl('div', 'fmt-toggle-wrap ' + wrapCls);
+      const toggle = mkEl('button', 'card-fmt-btn fmt-grp-toggle');
+      toggle.innerHTML = icon + '<span style="font-size:8px;opacity:.6;margin-left:1px">▾</span>';
+      toggle.title = title;
+      const drop = mkEl('div', 'fmt-dropdown');
+      buildFn(drop);
+      toggle.addEventListener('mousedown', e => {
+        e.preventDefault();
+        const isOpen = drop.classList.contains('open');
+        fmtBar.querySelectorAll('.fmt-dropdown.open').forEach(d => d.classList.remove('open'));
+        if (!isOpen) drop.classList.add('open');
+      });
+      drop.addEventListener('mousedown', () => setTimeout(() => drop.classList.remove('open'), 50));
+      wrap.append(toggle, drop);
+      return wrap;
+    };
+
+    // Text group
+    const textGrp = mkEl('div', 'fmt-grp fmt-grp-text');
+    buildTextBtns(textGrp);
+    fmtBar.append(mkToggleWrap('fmt-toggle-text-wrap', ${jsSvg.fmtBold}, 'Text formatting', buildTextBtns), textGrp);
+    fmtBar.appendChild(mkEl('span', 'card-fmt-sep-bar fmt-sep-text'));
+
+    // Lists group
+    const listsGrp = mkEl('div', 'fmt-grp fmt-grp-lists');
+    buildListsBtns(listsGrp);
+    fmtBar.append(mkToggleWrap('fmt-toggle-lists-wrap', ${jsSvg.fmtList}, 'Lists & blocks', buildListsBtns), listsGrp);
+    fmtBar.appendChild(mkEl('span', 'card-fmt-sep-bar fmt-sep-lists'));
+
+    // Code / indent / outdent / clear — always visible
+    fmtBar.appendChild(mkFmtBtn(${jsSvg.fmtCode},  'Code block',       () => document.execCommand('formatBlock', false, 'pre')));
+    fmtBar.appendChild(mkEl('span', 'card-fmt-sep-bar'));
+    fmtBar.appendChild(mkFmtBtn(${jsSvg.fmtClear}, 'Clear formatting', clearFn));
+
+    // Close dropdowns when clicking outside
+    document.addEventListener('mousedown', e => {
+      if (!e.target.closest('.fmt-toggle-wrap')) {
+        fmtBar.querySelectorAll('.fmt-dropdown.open').forEach(d => d.classList.remove('open'));
       }
     });
 
+    // Done (always right-aligned, always visible)
     const fmtDone = mkEl('button', 'card-fmt-done');
     fmtDone.innerHTML = ${jsSvg.fmtDone};
     fmtDone.title = 'Done editing';
     fmtDone.addEventListener('mousedown', e => { e.preventDefault(); preview.blur(); });
     fmtBar.append(mkEl('span', 'card-fmt-sep'), fmtDone);
     card.appendChild(fmtBar);
+
+    // Responsive collapse: measure actual overflow instead of fixed thresholds
+    const fmtRo = new ResizeObserver(() => {
+      // Close any open dropdowns before measuring
+      fmtBar.querySelectorAll('.fmt-dropdown.open').forEach(d => d.classList.remove('open'));
+      // Reset to fully expanded so we measure from a clean state
+      fmtBar.classList.remove('compact-lists', 'compact-text');
+      // Temporarily clip so scrollWidth reflects real content width
+      fmtBar.style.overflow = 'hidden';
+      if (fmtBar.scrollWidth > fmtBar.clientWidth) {
+        fmtBar.classList.add('compact-lists');
+        if (fmtBar.scrollWidth > fmtBar.clientWidth) {
+          fmtBar.classList.add('compact-text');
+        }
+      }
+      fmtBar.style.overflow = '';
+    });
+    fmtRo.observe(fmtBar);
 
     preview.addEventListener('focus', () => {
       footer.style.display = 'none';
