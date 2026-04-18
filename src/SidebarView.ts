@@ -109,9 +109,13 @@ export class SidebarView implements vscode.WebviewViewProvider {
   resolveWebviewView(webviewView: vscode.WebviewView): void {
     this.view = webviewView;
 
+    const wsRoot = vscode.workspace.workspaceFolders?.[0]?.uri;
     webviewView.webview.options = {
       enableScripts: true,
-      localResourceRoots: [vscode.Uri.joinPath(this.context.extensionUri, 'media')],
+      localResourceRoots: [
+        vscode.Uri.joinPath(this.context.extensionUri, 'media'),
+        ...(wsRoot ? [vscode.Uri.joinPath(wsRoot, '.devnotes', 'assets')] : []),
+      ],
     };
 
     webviewView.webview.html = this.buildHtml(webviewView.webview);
@@ -139,9 +143,28 @@ export class SidebarView implements vscode.WebviewViewProvider {
       const absPath = path.join(wsRoot.fsPath, n.codeLink.file);
       return { ...n, codeLinkStale: !fs.existsSync(absPath) };
     });
+
+    const imageUriMap: Record<string, string> = {};
+    if (wsRoot) {
+      const imgRegex = /!\[[^\]]*\]\(\.devnotes\/assets\/([^)]+)\)/g;
+      for (const note of notes) {
+        imgRegex.lastIndex = 0;
+        let match: RegExpExecArray | null;
+        while ((match = imgRegex.exec(note.content)) !== null) {
+          const filename = match[1];
+          const storagePath = `.devnotes/assets/${filename}`;
+          if (!imageUriMap[storagePath]) {
+            const assetUri = vscode.Uri.joinPath(wsRoot, '.devnotes', 'assets', filename);
+            imageUriMap[storagePath] = this.view!.webview.asWebviewUri(assetUri).toString();
+          }
+        }
+      }
+    }
+
     this.view.webview.postMessage({
       type              : 'init',
       notes,
+      imageUriMap,
       tags              : this.storage.getTags().map(t => ({
         ...t,
         iconSvg: t.icon && TAG_ICON_MAP[t.icon] ? svgIcon(TAG_ICON_MAP[t.icon], 11) : undefined,
@@ -2243,6 +2266,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
 
   let notes             = [];
   let tags              = [];
+  let imageUriMap       = {};
   let templates         = [];
   let defaultTagIds     = [];
   let activeTagIds      = [];
@@ -2474,6 +2498,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
       tags          = msg.tags          ?? [];
       templates     = msg.templates     ?? [];
       defaultTagIds = msg.defaultTagIds ?? [];
+      imageUriMap   = msg.imageUriMap   ?? {};
       currentBranch     = msg.currentBranch     ?? null;
       currentUser       = msg.currentUser       ?? null;
       availableBranches = msg.availableBranches ?? [];
@@ -3649,6 +3674,11 @@ export class SidebarView implements vscode.WebviewViewProvider {
     if (!md) return '';
     const esc = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
     const inline = raw => {
+      const imgMatch = raw.match(/^!\\[([^\\]]*)\\]\\(([^)]+)\\)/);
+      if (imgMatch) {
+        const src = imageUriMap[imgMatch[2]] || imgMatch[2];
+        return '<img src="' + src + '" alt="' + esc(imgMatch[1]) + '" style="max-width:100%;border-radius:4px;margin:4px 0;display:block;">';
+      }
       let l = esc(raw)
         .replace(/\\*\\*(.+?)\\*\\*/g, '<strong>$1</strong>')
         .replace(/\\*(.+?)\\*/g,        '<em>$1</em>')
