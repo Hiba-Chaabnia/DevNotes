@@ -38,7 +38,8 @@ const TAG_ICON_MAP: Record<string, LucideNode> = {
 
 type ToExt =
   | { type: 'ready' }
-  | { type: 'createNote'; title: string; color: string; tags: string[]; templateId?: string; branch?: string; body?: string }
+  | { type: 'createNote'; title: string; color: string; tags: string[]; templateId?: string; branch?: string; body?: string; codeLink?: { file: string; line: number } }
+  | { type: 'requestCodeLink' }
   | { type: 'setBranchScope'; noteId: string; branch: string | null }
   | { type: 'branchFilterChanged'; active: boolean }
   | { type: 'setReminder'; noteId: string }
@@ -205,12 +206,13 @@ export class SidebarView implements vscode.WebviewViewProvider {
           ? this.storage.getTemplates().find(t => t.id === msg.templateId)
           : undefined;
         await this.storage.createNote({
-          title  : msg.title,
-          color  : msg.color,
-          tags   : msg.tags,
-          content: msg.body || tpl?.content,
-          branch : msg.branch,
-          owner  : this.currentUser,
+          title   : msg.title,
+          color   : msg.color,
+          tags    : msg.tags,
+          content : msg.body || tpl?.content,
+          branch  : msg.branch,
+          codeLink: msg.codeLink,
+          owner   : this.currentUser,
         });
         this.push();
         break;
@@ -390,6 +392,16 @@ export class SidebarView implements vscode.WebviewViewProvider {
         this.push();
         this.onNoteLinkChanged();
         break;
+
+      case 'requestCodeLink': {
+        const editor = vscode.window.activeTextEditor;
+        if (!editor) { this.view?.webview.postMessage({ type: 'setCodeLink', file: null }); break; }
+        const filePath = vscode.workspace.asRelativePath(editor.document.uri, false);
+        if (filePath === editor.document.uri.fsPath) { this.view?.webview.postMessage({ type: 'setCodeLink', file: null }); break; }
+        const line = editor.selection.active.line + 1;
+        this.view?.webview.postMessage({ type: 'setCodeLink', file: filePath, line });
+        break;
+      }
 
       case 'archiveNote': {
         await this.storage.updateNote(msg.id, { archived: true, starred: false });
@@ -1221,6 +1233,38 @@ export class SidebarView implements vscode.WebviewViewProvider {
   .card:focus { outline: 2px solid var(--vscode-focusBorder); outline-offset: 1px; }
   .card.hidden { display: none; }
 
+  /* ── Draft (inline new) card ─────────────────────────── */
+  .draft-card { cursor: default; }
+  .draft-card .card-title { width: 100%; }
+  .draft-card .card-row-2 { position: relative; }
+  .draft-card .tag-ghost.active { opacity: 1; border-style: solid; }
+  .draft-footer-done {
+    background: var(--vscode-button-background);
+    color: var(--vscode-button-foreground);
+    border: none; border-radius: 4px; cursor: pointer;
+    font-size: 11px; font-weight: 600; padding: 3px 8px;
+    font-family: var(--vscode-font-family); flex-shrink: 0;
+    transition: background .12s;
+  }
+  .draft-footer-done:hover { background: var(--vscode-button-hoverBackground); }
+  .draft-create-btn {
+    width: 100%; padding: 7px 0;
+    background: var(--vscode-button-background);
+    color: var(--vscode-button-foreground);
+    border: 1px solid var(--vscode-panel-border); border-top: none;
+    border-radius: 0 0 var(--radius) var(--radius);
+    cursor: pointer; font-size: 12px; font-weight: 600;
+    font-family: var(--vscode-font-family); transition: background .12s;
+  }
+  .draft-create-btn:hover { background: var(--vscode-button-hoverBackground); }
+  .draft-tag-picker {
+    position: absolute; left: 0; top: calc(100% + 4px); z-index: 100;
+    background: var(--vscode-menu-background, var(--vscode-editor-background));
+    border: 1px solid var(--vscode-panel-border);
+    border-radius: 6px; padding: 4px; display: flex; flex-wrap: wrap; gap: 4px;
+    box-shadow: 0 4px 12px rgba(0,0,0,.2); min-width: 120px;
+  }
+
   /* ── Card rows ───────────────────────────────────────── */
   .card-row-1 {
     display: flex;
@@ -1355,6 +1399,11 @@ export class SidebarView implements vscode.WebviewViewProvider {
 
   /* Rendered markdown preview */
   .card-preview { user-select: none; cursor: text; }
+  .card-preview[data-empty]::before {
+    content: attr(data-placeholder);
+    color: var(--vscode-input-placeholderForeground, rgba(128,128,128,.45));
+    pointer-events: none;
+  }
   .card-preview p { margin: 0 0 4px; }
   .card-preview blockquote { margin: 0 0 4px 1.2em; padding: 0; border: none; background: none; }
   .card-preview ul, .card-preview ol { padding-left: 1.2em; margin: 0 0 4px; }
@@ -2354,6 +2403,8 @@ export class SidebarView implements vscode.WebviewViewProvider {
   let knownNoteIds       = null; // null on first load — skip highlight; Set afterwards
   let openColorPop    = null;
   let openTagPop      = null;
+  let pendingCodeLinkCallback = null;
+  let draftOutsideListener   = null;
   let isManagingTags  = false;
   let openMgrColorPop = null;
 
@@ -2553,6 +2604,13 @@ export class SidebarView implements vscode.WebviewViewProvider {
   vscode.postMessage({ type: 'ready' });
 
   window.addEventListener('message', ({ data: msg }) => {
+    if (msg.type === 'setCodeLink') {
+      if (pendingCodeLinkCallback) {
+        pendingCodeLinkCallback(msg.file ?? null, msg.line ?? null);
+        pendingCodeLinkCallback = null;
+      }
+      return;
+    }
     if (msg.type === 'init') {
       const incomingIds = new Set((msg.notes ?? []).map(n => n.id));
       const addedId     = knownNoteIds !== null
@@ -2634,16 +2692,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
   });
 
   // ── New note ────────────────────────────────────────────────────────────
-  document.getElementById('btn-new').addEventListener('click', () => {
-    newTags = [];
-    renderNewNoteTags();
-    // If the branch filter is active, pre-check the scope toggle so the new
-    // note defaults to the current branch — consistent with the user's focus mode.
-    const scopeCheckbox = document.getElementById('new-branch-scope');
-    if (scopeCheckbox) scopeCheckbox.checked = branchFilterActive && !!currentBranch;
-    noteCardOverlay.classList.add('open');
-    newTitleEl.focus();
-  });
+  document.getElementById('btn-new').addEventListener('click', openDraftCard);
   noteCardOverlay.addEventListener('click', e => {
     if (e.target === noteCardOverlay) closeNewForm();
   });
@@ -2674,6 +2723,281 @@ export class SidebarView implements vscode.WebviewViewProvider {
     document.querySelectorAll('.fmt-btn[data-cmd]').forEach(btn => {
       btn.classList.toggle('active', window.SidebarEditor?.isActive(btn.dataset.cmd) ?? false);
     });
+  }
+
+  // ── Inline draft card ────────────────────────────────────────────────────
+  function openDraftCard() {
+    closeDraftCard();
+    const card = mkEl('div', 'card draft-card');
+    card.setAttribute('role', 'listitem');
+
+    // ── Row 1: Title ──
+    const row1 = mkEl('div', 'card-row-1');
+    const titleInput = mkEl('input', 'card-title');
+    titleInput.type         = 'text';
+    titleInput.placeholder  = 'Note title…';
+    titleInput.maxLength    = 120;
+    titleInput.autocomplete = 'off';
+    titleInput.setAttribute('aria-label', 'New note title');
+    row1.appendChild(titleInput);
+    card.appendChild(row1);
+
+    // ── Row 2: Tags + Template ──
+    let draftTags = [];
+    let draftTemplateId = null;
+    let tplPickerEl = null;
+    let tplChipBtn = null;
+    const row2 = mkEl('div', 'card-row-2');
+
+    const pillsArea = mkEl('div', 'draft-pills');
+    row2.appendChild(pillsArea);
+
+    const ghostBtn = mkEl('button', 'tag-ghost');
+    ghostBtn.title = 'Add tag';
+    row2.appendChild(ghostBtn);
+
+    const tagPickerEl = mkEl('div', 'draft-tag-picker');
+    tagPickerEl.style.display = 'none';
+    row2.appendChild(tagPickerEl);
+
+    function syncChipStates() {
+      tagPickerEl.querySelectorAll('.tag-chip[data-tid]').forEach(chip => {
+        chip.classList.toggle('active', draftTags.includes(chip.dataset.tid));
+      });
+    }
+
+    function updateTagPills() {
+      pillsArea.innerHTML = '';
+      draftTags.forEach(tid => {
+        const tag = tags.find(t => t.id === tid);
+        if (!tag) return;
+        const pill = mkEl('span', 'tag-pill');
+        pill.style.background = tag.color;
+        if (tag.iconSvg) { const ico = mkEl('span', 'tag-icon'); ico.innerHTML = tag.iconSvg; pill.appendChild(ico); }
+        pill.appendChild(mkEl('span', '', tag.label));
+        pillsArea.appendChild(pill);
+      });
+      ghostBtn.textContent = draftTags.length === 0 ? '+ tag' : '+';
+    }
+
+    if (tags.length > 0) {
+      tags.forEach(tag => {
+        const chip = mkEl('button', 'tag-chip');
+        chip.type = 'button';
+        chip.dataset.tid = tag.id;
+        chip.style.background = tag.color;
+        if (tag.iconSvg) { const ico = mkEl('span', 'tag-icon'); ico.innerHTML = tag.iconSvg; chip.appendChild(ico); }
+        chip.appendChild(mkEl('span', '', tag.label));
+        chip.addEventListener('mousedown', e => {
+          e.preventDefault();
+          draftTags = draftTags.includes(tag.id)
+            ? draftTags.filter(id => id !== tag.id)
+            : [...draftTags, tag.id];
+          syncChipStates();
+          updateTagPills();
+        });
+        tagPickerEl.appendChild(chip);
+      });
+
+      ghostBtn.addEventListener('mousedown', e => {
+        e.preventDefault();
+        if (tplPickerEl) tplPickerEl.style.display = 'none';
+        const isOpen = tagPickerEl.style.display !== 'none';
+        tagPickerEl.style.display = isOpen ? 'none' : '';
+      });
+    } else {
+      ghostBtn.disabled = true;
+    }
+
+    if (templates.length > 0) {
+      tplChipBtn = mkEl('button', 'tag-ghost');
+      tplChipBtn.textContent = 'template';
+      tplChipBtn.title = 'Apply a template';
+      row2.appendChild(tplChipBtn);
+
+      tplPickerEl = mkEl('div', 'draft-tag-picker');
+      tplPickerEl.style.display = 'none';
+      row2.appendChild(tplPickerEl);
+
+      function applyTemplate(tpl) {
+        draftTemplateId = tpl ? tpl.id : null;
+        tplChipBtn.textContent = tpl ? tpl.name : 'template';
+        tplChipBtn.classList.toggle('active', !!tpl);
+        if (tpl) {
+          if (tpl.content) { preview.innerHTML = simpleMarkdown(tpl.content); }
+          preview.toggleAttribute('data-empty', !tpl.content?.trim());
+          if (tpl.tags?.length) { draftTags = [...tpl.tags]; syncChipStates(); updateTagPills(); }
+        } else {
+          preview.innerHTML = '';
+          preview.toggleAttribute('data-empty', true);
+          draftTags = []; syncChipStates(); updateTagPills();
+        }
+        tplPickerEl.style.display = 'none';
+      }
+
+      const blankItem = mkEl('button', 'tag-chip');
+      blankItem.textContent = 'Blank';
+      blankItem.style.background = 'var(--vscode-badge-background)';
+      blankItem.addEventListener('mousedown', e => { e.preventDefault(); applyTemplate(null); });
+      tplPickerEl.appendChild(blankItem);
+
+      templates.forEach(tpl => {
+        const item = mkEl('button', 'tag-chip');
+        item.textContent = tpl.name;
+        item.style.background = 'var(--vscode-badge-background)';
+        item.addEventListener('mousedown', e => { e.preventDefault(); applyTemplate(tpl); });
+        tplPickerEl.appendChild(item);
+      });
+
+      tplChipBtn.addEventListener('mousedown', e => {
+        e.preventDefault();
+        tagPickerEl.style.display = 'none';
+        const isOpen = tplPickerEl.style.display !== 'none';
+        tplPickerEl.style.display = isOpen ? 'none' : '';
+      });
+    }
+
+    // Branch scope chip
+    let draftBranchScope = branchFilterActive && !!currentBranch;
+    if (currentBranch) {
+      const branchChip = mkEl('button', 'tag-ghost');
+      branchChip.classList.toggle('active', draftBranchScope);
+      branchChip.textContent = '⎇ ' + currentBranch;
+      branchChip.title = draftBranchScope ? 'Remove branch scope' : 'Pin to ' + currentBranch;
+      branchChip.addEventListener('mousedown', e => {
+        e.preventDefault();
+        draftBranchScope = !draftBranchScope;
+        branchChip.classList.toggle('active', draftBranchScope);
+        branchChip.title = draftBranchScope ? 'Remove branch scope' : 'Pin to ' + currentBranch;
+      });
+      row2.appendChild(branchChip);
+    }
+
+    // Link to current file chip
+    let draftCodeLink = null;
+    const fileLinkChip = mkEl('button', 'tag-ghost');
+    fileLinkChip.title = 'Link to current editor file and line';
+
+    function renderFileLinkChip() {
+      if (draftCodeLink) {
+        const shortName = draftCodeLink.file.split('/').pop() || draftCodeLink.file;
+        fileLinkChip.className = 'tag-ghost active';
+        fileLinkChip.innerHTML = esc(shortName + ':' + draftCodeLink.line)
+          + '<span class="draft-link-remove"> ×</span>';
+      } else {
+        fileLinkChip.className = 'tag-ghost';
+        fileLinkChip.textContent = 'link file';
+      }
+    }
+    renderFileLinkChip();
+
+    fileLinkChip.addEventListener('mousedown', e => {
+      e.preventDefault();
+      if (e.target.closest('.draft-link-remove')) {
+        draftCodeLink = null; renderFileLinkChip(); return;
+      }
+      if (draftCodeLink) return;
+      vscode.postMessage({ type: 'requestCodeLink' });
+      pendingCodeLinkCallback = (file, line) => {
+        if (file) draftCodeLink = { file, line };
+        renderFileLinkChip();
+      };
+    });
+    row2.appendChild(fileLinkChip);
+
+    updateTagPills();
+    card.appendChild(row2);
+
+    // ── Row 3: Content ──
+    const row3 = mkEl('div', 'card-row-3');
+    const contentWrap = mkEl('div', 'card-content');
+    const preview = mkEl('div', 'card-preview');
+    preview.contentEditable = 'true';
+    preview.setAttribute('data-placeholder', 'Start writing…');
+    preview.setAttribute('aria-label', 'Note content');
+    preview.toggleAttribute('data-empty', true);
+    preview.addEventListener('input', () => preview.toggleAttribute('data-empty', preview.textContent.trim() === ''));
+    contentWrap.appendChild(preview);
+    row3.appendChild(contentWrap);
+    card.appendChild(row3);
+
+    // ── Row 4: Footer ──
+    const footer = mkEl('div', 'card-row-4');
+    const leftSlot  = mkEl('span', 'card-foot-slot card-foot-slot-left');
+    const rightSlot = mkEl('span', 'card-foot-slot card-foot-slot-right');
+    if (currentUser) {
+      const circle  = mkEl('span', 'owner-initials', initials(currentUser));
+      const nameEl  = mkEl('span', 'owner-name', currentUser.split(/\s+/)[0] || currentUser);
+      const badge   = mkEl('span', 'owner-badge');
+      badge.title   = currentUser;
+      badge.append(circle, nameEl);
+      leftSlot.appendChild(badge);
+    }
+    const nowEl = mkEl('span', 'card-date', 'just now');
+    rightSlot.appendChild(nowEl);
+    footer.append(leftSlot, rightSlot);
+    card.appendChild(footer);
+
+    // ── Format bar (swaps with footer while editing preview) ──
+    const fmtBar = buildFormatBar(preview, footer);
+    card.appendChild(fmtBar);
+    preview.addEventListener('blur', () => { fmtBar.style.display = 'none'; footer.style.display = ''; });
+
+    // ── Commit / discard ──
+    function commit() {
+      const title = titleInput.value.trim();
+      const body  = htmlToMarkdown(preview.innerHTML).trim() || undefined;
+      pendingCodeLinkCallback = null;
+      closeDraftCard();
+      if (title) {
+        const branch   = draftBranchScope && currentBranch ? currentBranch : undefined;
+        const codeLink = draftCodeLink || undefined;
+        vscode.postMessage({ type: 'createNote', title, color: 'yellow', tags: [...draftTags], templateId: draftTemplateId || undefined, branch, codeLink, body });
+      }
+    }
+
+    titleInput.addEventListener('keydown', e => {
+      if (e.key === 'Enter' && !e.ctrlKey && !e.metaKey) { e.preventDefault(); preview.focus(); }
+      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); commit(); }
+      if (e.key === 'Escape') closeDraftCard();
+    });
+    preview.addEventListener('keydown', e => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); commit(); }
+      if (e.key === 'Escape') closeDraftCard();
+    });
+
+    // Close pickers when clicking elsewhere inside the card
+    card.addEventListener('mousedown', e => {
+      if (!tagPickerEl.contains(e.target) && e.target !== ghostBtn)
+        tagPickerEl.style.display = 'none';
+      if (tplPickerEl && !tplPickerEl.contains(e.target) && e.target !== tplChipBtn)
+        tplPickerEl.style.display = 'none';
+    });
+
+    const wrapper = document.createElement('div');
+    wrapper.id = 'draft-card';
+    wrapper.appendChild(card);
+    cardList.prepend(wrapper);
+
+    // Click outside the draft card → commit (if title filled) or discard
+    draftOutsideListener = e => {
+      if (!wrapper.contains(e.target)) {
+        document.removeEventListener('mousedown', draftOutsideListener);
+        draftOutsideListener = null;
+        commit();
+      }
+    };
+    // Defer so this mousedown (opening the card) doesn't immediately trigger it
+    setTimeout(() => document.addEventListener('mousedown', draftOutsideListener), 0);
+    titleInput.focus();
+  }
+
+  function closeDraftCard() {
+    if (draftOutsideListener) {
+      document.removeEventListener('mousedown', draftOutsideListener);
+      draftOutsideListener = null;
+    }
+    document.getElementById('draft-card')?.remove();
   }
 
   function closeNewForm() {
@@ -3049,6 +3373,123 @@ export class SidebarView implements vscode.WebviewViewProvider {
       .forEach(note => cardList.appendChild(buildCard(note)));
   }
 
+  // ── Shared format-bar builder (used by buildCard and openDraftCard) ────────
+  function buildFormatBar(preview, footer) {
+    const fmtBar = mkEl('div', 'card-fmtbar');
+
+    const mkFmtBtn = (label, title, fn) => {
+      const btn = mkEl('button', 'card-fmt-btn');
+      btn.innerHTML = label; btn.title = title;
+      btn.addEventListener('mousedown', e => { e.preventDefault(); fn(); });
+      return btn;
+    };
+
+    const clearFn = () => {
+      document.execCommand('removeFormat', false, null);
+      document.execCommand('formatBlock', false, 'p');
+      const sel = window.getSelection();
+      if (sel && sel.rangeCount) {
+        const range = sel.getRangeAt(0);
+        let node = range.commonAncestorContainer;
+        if (node.nodeType === 3) node = node.parentElement;
+        const list = node.closest('ul, ol');
+        if (list) document.execCommand(list.tagName === 'UL' ? 'insertUnorderedList' : 'insertOrderedList', false, null);
+      }
+    };
+
+    const buildTextBtns = (c) => {
+      c.appendChild(mkFmtBtn(${jsSvg.fmtBold},       'Bold',          () => document.execCommand('bold')));
+      c.appendChild(mkFmtBtn(${jsSvg.fmtItalic},     'Italic',        () => document.execCommand('italic')));
+      c.appendChild(mkFmtBtn(${jsSvg.fmtUnderline},  'Underline',     () => document.execCommand('underline')));
+      c.appendChild(mkFmtBtn(${jsSvg.fmtStrike},     'Strikethrough', () => document.execCommand('strikeThrough')));
+      c.appendChild(mkFmtBtn(${jsSvg.fmtCodeInline}, 'Inline code',   () => {
+        const sel = window.getSelection();
+        if (!sel || !sel.rangeCount) return;
+        const text = sel.toString();
+        document.execCommand('insertHTML', false, text
+          ? \`<code>\${text}</code>\`
+          : '<code>​</code>');
+      }));
+    };
+
+    const buildListsBtns = (c) => {
+      c.appendChild(mkFmtBtn(${jsSvg.fmtList},      'Bullet list',    () => document.execCommand('insertUnorderedList')));
+      c.appendChild(mkFmtBtn(${jsSvg.fmtListNum},   'Numbered list',  () => document.execCommand('insertOrderedList')));
+      c.appendChild(mkFmtBtn(${jsSvg.fmtChecklist}, 'Checklist item', () => document.execCommand('insertHTML', false, '<ul class="task-list"><li class="task-item"><input type="checkbox" class="task-check"> <span>​</span></li></ul>')));
+    };
+
+    const mkToggleWrap = (wrapCls, icon, title, buildFn) => {
+      const wrap   = mkEl('div', 'fmt-toggle-wrap ' + wrapCls);
+      const toggle = mkEl('button', 'card-fmt-btn fmt-grp-toggle');
+      toggle.innerHTML = icon + '<span style="font-size:8px;opacity:.6;margin-left:1px">▾</span>';
+      toggle.title = title;
+      const drop = mkEl('div', 'fmt-dropdown');
+      buildFn(drop);
+      toggle.addEventListener('mousedown', e => {
+        e.preventDefault();
+        const isOpen = drop.classList.contains('open');
+        fmtBar.querySelectorAll('.fmt-dropdown.open').forEach(d => d.classList.remove('open'));
+        if (!isOpen) drop.classList.add('open');
+      });
+      drop.addEventListener('mousedown', () => setTimeout(() => drop.classList.remove('open'), 50));
+      wrap.append(toggle, drop);
+      return wrap;
+    };
+
+    // Text group
+    const textGrp = mkEl('div', 'fmt-grp fmt-grp-text');
+    buildTextBtns(textGrp);
+    fmtBar.append(mkToggleWrap('fmt-toggle-text-wrap', ${jsSvg.fmtBold}, 'Text formatting', buildTextBtns), textGrp);
+    fmtBar.appendChild(mkEl('span', 'card-fmt-sep-bar fmt-sep-text'));
+
+    // Lists group
+    const listsGrp = mkEl('div', 'fmt-grp fmt-grp-lists');
+    buildListsBtns(listsGrp);
+    fmtBar.append(mkToggleWrap('fmt-toggle-lists-wrap', ${jsSvg.fmtList}, 'Lists & blocks', buildListsBtns), listsGrp);
+    fmtBar.appendChild(mkEl('span', 'card-fmt-sep-bar fmt-sep-lists'));
+
+    // Code / clear — always visible
+    fmtBar.appendChild(mkFmtBtn(${jsSvg.fmtCode},  'Code block',       () => document.execCommand('formatBlock', false, 'pre')));
+    fmtBar.appendChild(mkEl('span', 'card-fmt-sep-bar'));
+    fmtBar.appendChild(mkFmtBtn(${jsSvg.fmtClear}, 'Clear formatting', clearFn));
+
+    // Close dropdowns when clicking outside
+    document.addEventListener('mousedown', e => {
+      if (!e.target.closest('.fmt-toggle-wrap')) {
+        fmtBar.querySelectorAll('.fmt-dropdown.open').forEach(d => d.classList.remove('open'));
+      }
+    });
+
+    // Done (always right-aligned, always visible)
+    const fmtDone = mkEl('button', 'card-fmt-done');
+    fmtDone.innerHTML = ${jsSvg.fmtDone};
+    fmtDone.title = 'Done editing';
+    fmtDone.addEventListener('mousedown', e => { e.preventDefault(); preview.blur(); });
+    fmtBar.append(mkEl('span', 'card-fmt-sep'), fmtDone);
+
+    // Responsive collapse
+    const fmtRo = new ResizeObserver(() => {
+      fmtBar.querySelectorAll('.fmt-dropdown.open').forEach(d => d.classList.remove('open'));
+      fmtBar.classList.remove('compact-lists', 'compact-text');
+      fmtBar.style.overflow = 'hidden';
+      if (fmtBar.scrollWidth > fmtBar.clientWidth) {
+        fmtBar.classList.add('compact-lists');
+        if (fmtBar.scrollWidth > fmtBar.clientWidth) {
+          fmtBar.classList.add('compact-text');
+        }
+      }
+      fmtBar.style.overflow = '';
+    });
+    fmtRo.observe(fmtBar);
+
+    preview.addEventListener('focus', () => {
+      if (footer) footer.style.display = 'none';
+      fmtBar.style.display = 'flex';
+    });
+
+    return fmtBar;
+  }
+
   function buildCard(note) {
     const isOffBranch = currentBranch && note.branch && note.branch !== currentBranch;
     const card = mkEl('div', 'card'
@@ -3262,7 +3703,11 @@ export class SidebarView implements vscode.WebviewViewProvider {
     const contentWrap = mkEl('div', 'card-content');
 
     const preview  = mkEl('div', 'card-preview clamped');
+    preview.dataset.placeholder = 'Start writing…';
     preview.innerHTML = searchQuery ? matchSnippet(note.content, searchQuery) : simpleMarkdown(note.content);
+    const syncPlaceholder = () => preview.toggleAttribute('data-empty', preview.textContent.trim() === '');
+    syncPlaceholder();
+    preview.addEventListener('input', syncPlaceholder);
 
     const showMore = mkEl('div', 'show-more');
     showMore.innerHTML = ${jsSvg.chevronDown};
@@ -3325,6 +3770,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
         vscode.postMessage({ type: 'updateNote', id: note.id, changes: { content: newContent } });
       }
       preview.innerHTML = simpleMarkdown(note.content);
+      syncPlaceholder();
       if (!expanded) preview.classList.add('clamped');
       const stillLong = note.content.split('\\n').length > 3 || note.content.length > 180;
       showMore.style.display = (stillLong && !expanded) ? 'flex' : 'none';
@@ -3446,121 +3892,8 @@ export class SidebarView implements vscode.WebviewViewProvider {
     card.appendChild(footer);
 
     // ── Format bar (swaps with footer while editing) ──
-    const fmtBar = mkEl('div', 'card-fmtbar');
-
-    const mkFmtBtn = (label, title, fn) => {
-      const btn = mkEl('button', 'card-fmt-btn');
-      btn.innerHTML = label; btn.title = title;
-      btn.addEventListener('mousedown', e => { e.preventDefault(); fn(); });
-      return btn;
-    };
-
-    const clearFn = () => {
-      document.execCommand('removeFormat', false, null);
-      document.execCommand('formatBlock', false, 'p');
-      const sel = window.getSelection();
-      if (sel && sel.rangeCount) {
-        const range = sel.getRangeAt(0);
-        let node = range.commonAncestorContainer;
-        if (node.nodeType === 3) node = node.parentElement;
-        const list = node.closest('ul, ol');
-        if (list) document.execCommand(list.tagName === 'UL' ? 'insertUnorderedList' : 'insertOrderedList', false, null);
-      }
-    };
-
-    const buildTextBtns = (c) => {
-      c.appendChild(mkFmtBtn(${jsSvg.fmtBold},       'Bold',          () => document.execCommand('bold')));
-      c.appendChild(mkFmtBtn(${jsSvg.fmtItalic},     'Italic',        () => document.execCommand('italic')));
-      c.appendChild(mkFmtBtn(${jsSvg.fmtUnderline},  'Underline',     () => document.execCommand('underline')));
-      c.appendChild(mkFmtBtn(${jsSvg.fmtStrike},     'Strikethrough', () => document.execCommand('strikeThrough')));
-      c.appendChild(mkFmtBtn(${jsSvg.fmtCodeInline}, 'Inline code',   () => {
-        const sel = window.getSelection();
-        if (!sel || !sel.rangeCount) return;
-        const text = sel.toString();
-        document.execCommand('insertHTML', false, text
-          ? \`<code>\${text}</code>\`
-          : '<code>​</code>');
-      }));
-    };
-
-    const buildListsBtns = (c) => {
-      c.appendChild(mkFmtBtn(${jsSvg.fmtList},      'Bullet list',    () => document.execCommand('insertUnorderedList')));
-      c.appendChild(mkFmtBtn(${jsSvg.fmtListNum},   'Numbered list',  () => document.execCommand('insertOrderedList')));
-      c.appendChild(mkFmtBtn(${jsSvg.fmtChecklist}, 'Checklist item', () => document.execCommand('insertHTML', false, '<ul class="task-list"><li class="task-item"><input type="checkbox" class="task-check"> <span>​</span></li></ul>')));
-    };
-
-    const mkToggleWrap = (wrapCls, icon, title, buildFn) => {
-      const wrap   = mkEl('div', 'fmt-toggle-wrap ' + wrapCls);
-      const toggle = mkEl('button', 'card-fmt-btn fmt-grp-toggle');
-      toggle.innerHTML = icon + '<span style="font-size:8px;opacity:.6;margin-left:1px">▾</span>';
-      toggle.title = title;
-      const drop = mkEl('div', 'fmt-dropdown');
-      buildFn(drop);
-      toggle.addEventListener('mousedown', e => {
-        e.preventDefault();
-        const isOpen = drop.classList.contains('open');
-        fmtBar.querySelectorAll('.fmt-dropdown.open').forEach(d => d.classList.remove('open'));
-        if (!isOpen) drop.classList.add('open');
-      });
-      drop.addEventListener('mousedown', () => setTimeout(() => drop.classList.remove('open'), 50));
-      wrap.append(toggle, drop);
-      return wrap;
-    };
-
-    // Text group
-    const textGrp = mkEl('div', 'fmt-grp fmt-grp-text');
-    buildTextBtns(textGrp);
-    fmtBar.append(mkToggleWrap('fmt-toggle-text-wrap', ${jsSvg.fmtBold}, 'Text formatting', buildTextBtns), textGrp);
-    fmtBar.appendChild(mkEl('span', 'card-fmt-sep-bar fmt-sep-text'));
-
-    // Lists group
-    const listsGrp = mkEl('div', 'fmt-grp fmt-grp-lists');
-    buildListsBtns(listsGrp);
-    fmtBar.append(mkToggleWrap('fmt-toggle-lists-wrap', ${jsSvg.fmtList}, 'Lists & blocks', buildListsBtns), listsGrp);
-    fmtBar.appendChild(mkEl('span', 'card-fmt-sep-bar fmt-sep-lists'));
-
-    // Code / indent / outdent / clear — always visible
-    fmtBar.appendChild(mkFmtBtn(${jsSvg.fmtCode},  'Code block',       () => document.execCommand('formatBlock', false, 'pre')));
-    fmtBar.appendChild(mkEl('span', 'card-fmt-sep-bar'));
-    fmtBar.appendChild(mkFmtBtn(${jsSvg.fmtClear}, 'Clear formatting', clearFn));
-
-    // Close dropdowns when clicking outside
-    document.addEventListener('mousedown', e => {
-      if (!e.target.closest('.fmt-toggle-wrap')) {
-        fmtBar.querySelectorAll('.fmt-dropdown.open').forEach(d => d.classList.remove('open'));
-      }
-    });
-
-    // Done (always right-aligned, always visible)
-    const fmtDone = mkEl('button', 'card-fmt-done');
-    fmtDone.innerHTML = ${jsSvg.fmtDone};
-    fmtDone.title = 'Done editing';
-    fmtDone.addEventListener('mousedown', e => { e.preventDefault(); preview.blur(); });
-    fmtBar.append(mkEl('span', 'card-fmt-sep'), fmtDone);
+    const fmtBar = buildFormatBar(preview, footer);
     card.appendChild(fmtBar);
-
-    // Responsive collapse: measure actual overflow instead of fixed thresholds
-    const fmtRo = new ResizeObserver(() => {
-      // Close any open dropdowns before measuring
-      fmtBar.querySelectorAll('.fmt-dropdown.open').forEach(d => d.classList.remove('open'));
-      // Reset to fully expanded so we measure from a clean state
-      fmtBar.classList.remove('compact-lists', 'compact-text');
-      // Temporarily clip so scrollWidth reflects real content width
-      fmtBar.style.overflow = 'hidden';
-      if (fmtBar.scrollWidth > fmtBar.clientWidth) {
-        fmtBar.classList.add('compact-lists');
-        if (fmtBar.scrollWidth > fmtBar.clientWidth) {
-          fmtBar.classList.add('compact-text');
-        }
-      }
-      fmtBar.style.overflow = '';
-    });
-    fmtRo.observe(fmtBar);
-
-    preview.addEventListener('focus', () => {
-      footer.style.display = 'none';
-      fmtBar.style.display = 'flex';
-    });
 
     // ── Keyboard shortcuts ──
     card.tabIndex = 0;
