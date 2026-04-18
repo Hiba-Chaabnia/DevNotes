@@ -3154,8 +3154,10 @@ export class SidebarView implements vscode.WebviewViewProvider {
             colorPop.classList.remove('open');
             vscode.postMessage({ type: 'deleteTag', id: tag.id });
           } else {
+            const count = notes.filter(n => n.tags && n.tags.includes(tag.id)).length;
+            const label = count === 0 ? 'Remove? (unused)' : 'Remove from ' + count + ' note' + (count === 1 ? '' : 's') + '?';
             delBtn.classList.add('confirming');
-            delBtn.textContent = 'Sure? Click to confirm';
+            delBtn.textContent = label;
             delTimer = setTimeout(() => {
               delBtn.classList.remove('confirming');
               delBtn.textContent = 'Delete tag';
@@ -3177,6 +3179,13 @@ export class SidebarView implements vscode.WebviewViewProvider {
           colorPop.style.top  = (rect.bottom + 4) + 'px';
           colorPop.style.left = rect.left + 'px';
           colorPop.classList.add('open');
+          const pop = colorPop.getBoundingClientRect();
+          if (pop.right > window.innerWidth) {
+            colorPop.style.left = Math.max(0, rect.right - pop.width) + 'px';
+          }
+          if (pop.bottom > window.innerHeight) {
+            colorPop.style.top = Math.max(0, rect.top - pop.height - 4) + 'px';
+          }
         }
       });
 
