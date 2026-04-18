@@ -675,6 +675,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
       branch:      JSON.stringify(svgIcon(GitBranch,     11, 'flex-shrink:0')),
       branchSwitch: JSON.stringify(svgIcon(ArrowLeftRight, 11, 'flex-shrink:0')),
       sortUpdated:   JSON.stringify(svgIcon(ClockArrowDown,        13)),
+      sortStarred:   JSON.stringify(svgIcon(Star,                  13, '', 'currentColor')),
       sortAlpha:     JSON.stringify(svgIcon(ArrowDownAZ,           13)),
       noteLinkIcon:  JSON.stringify(svgIcon(Link,                  11)),
       codeLinkIcon:  JSON.stringify(svgIcon(FileSymlink,           11)),
@@ -2345,7 +2346,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
   let mineFilterActive    = false;
   let githubConnected     = false;
   let showArchived           = false;
-  let sortMode               = 'updated'; // 'updated' | 'created' | 'alpha'
+  let sortMode               = 'updated'; // 'updated' | 'starred' | 'alpha'
   let githubStatusFilter     = null; // null | 'open' | 'closed' | 'merged'
   let staleFilterActive      = false;
   let selectMode         = false;
@@ -2427,6 +2428,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
   // ── Sort mode cycle ──────────────────────────────────────────────────────
   const SORT_MODES = [
     { key: 'updated', icon: ${jsSvg.sortUpdated}, title: 'Sort: last updated' },
+    { key: 'starred', icon: ${jsSvg.sortStarred}, title: 'Sort: starred first' },
     { key: 'alpha',   icon: ${jsSvg.sortAlpha},   title: 'Sort: alphabetical' },
   ];
   btnSort.addEventListener('click', () => {
@@ -3036,8 +3038,11 @@ export class SidebarView implements vscode.WebviewViewProvider {
     }
     [...visible]
       .sort((a, b) => {
-        const starDiff = (b.starred ? 1 : 0) - (a.starred ? 1 : 0);
-        if (starDiff !== 0) return starDiff;
+        if (sortMode === 'starred') {
+          const starDiff = (b.starred ? 1 : 0) - (a.starred ? 1 : 0);
+          if (starDiff !== 0) return starDiff;
+          return b.updatedAt - a.updatedAt;
+        }
         if (sortMode === 'alpha') return a.title.localeCompare(b.title);
         return b.updatedAt - a.updatedAt;
       })
