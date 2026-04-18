@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import * as https from 'https';
 import * as path from 'path';
 import { NoteStorage, Note, Tag, Template, GitHubLink, NOTE_COLORS, DEFAULT_TAGS } from './NoteStorage';
+import { EditorPanel } from './EditorPanel';
 import { UI_COLORS as C, GH_COLORS as GH, NOTE_COLORS as NC, RGB, PLATFORM_COLORS as PLATFORM } from './colors';
 import { detectProjectIdentity } from './GitDetector';
 import {
@@ -66,6 +67,7 @@ type ToExt =
   | { type: 'openLinkedNote'; noteId: string }
   | { type: 'switchBranch' }
   | { type: 'openFolder' }
+  | { type: 'pasteImage'; noteId: string; base64: string; ext: string }
 
 // ─── Provider ────────────────────────────────────────────────────────────────
 
@@ -614,6 +616,31 @@ export class SidebarView implements vscode.WebviewViewProvider {
       case 'registerMcp':
         vscode.commands.executeCommand('devnotes.registerMcp');
         break;
+
+      case 'pasteImage': {
+        const wsRoot = vscode.workspace.workspaceFolders?.[0]?.uri;
+        if (!wsRoot) break;
+        const note = this.storage.getNote(msg.noteId);
+        if (!note) break;
+        const ext      = msg.ext.replace(/[^a-z0-9]/gi, '').slice(0, 8) || 'png';
+        const filename = `${msg.noteId}-${Date.now()}.${ext}`;
+        const assetUri = vscode.Uri.joinPath(wsRoot, '.devnotes', 'assets', filename);
+        try {
+          await vscode.workspace.fs.createDirectory(
+            vscode.Uri.joinPath(wsRoot, '.devnotes', 'assets')
+          );
+        } catch { /* already exists */ }
+        await vscode.workspace.fs.writeFile(assetUri, Buffer.from(msg.base64, 'base64'));
+        const newContent = note.content
+          ? `${note.content}\n![image](.devnotes/assets/${filename})`
+          : `![image](.devnotes/assets/${filename})`;
+        await this.storage.updateNote(msg.noteId, { content: newContent });
+        this.push();
+        if (EditorPanel.current?.noteId === msg.noteId) {
+          EditorPanel.current.push();
+        }
+        break;
+      }
 
     }
   }
@@ -3274,6 +3301,30 @@ export class SidebarView implements vscode.WebviewViewProvider {
       if (e.key === 'Escape') preview.blur();
     });
 
+    preview.addEventListener('paste', e => {
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      let imageItem = null;
+      for (let i = 0; i < items.length; i++) {
+        if (items[i].type.startsWith('image/')) { imageItem = items[i]; break; }
+      }
+      if (!imageItem) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const file = imageItem.getAsFile();
+      if (!file) return;
+      // Blur first so the text content is saved to storage before we append the image
+      preview.blur();
+      const ext = imageItem.type.split('/')[1]?.split('+')[0] ?? 'png';
+      const reader = new FileReader();
+      reader.onload = () => {
+        const dataUrl = reader.result;
+        const base64  = dataUrl.split(',')[1] ?? '';
+        vscode.postMessage({ type: 'pasteImage', noteId: note.id, base64, ext });
+      };
+      reader.readAsDataURL(file);
+    });
+
     contentWrap.append(preview, showMore);
     row3.appendChild(contentWrap);
     card.appendChild(row3);
@@ -3674,6 +3725,11 @@ export class SidebarView implements vscode.WebviewViewProvider {
         }
         case 'ul':     case 'ol':              return inner;
         case 'p':      case 'div':             return inner ? inner + '\\n' : '\\n';
+        case 'img': {
+          const sp  = node.getAttribute('data-storage-path') || node.getAttribute('src') || '';
+          const alt = node.getAttribute('alt') || 'image';
+          return \`![\${alt}](\${sp})\\n\`;
+        }
         default:                               return inner;
       }
     }
@@ -3686,8 +3742,9 @@ export class SidebarView implements vscode.WebviewViewProvider {
     const inline = raw => {
       const imgMatch = raw.match(/^!\\[([^\\]]*)\\]\\(([^)]+)\\)/);
       if (imgMatch) {
-        const src = imageUriMap[imgMatch[2]] || imgMatch[2];
-        return '<img src="' + src + '" alt="' + esc(imgMatch[1]) + '" style="max-width:100%;border-radius:4px;margin:4px 0;display:block;">';
+        const storagePath = imgMatch[2];
+        const src = imageUriMap[storagePath] || storagePath;
+        return '<img src="' + src + '" alt="' + esc(imgMatch[1]) + '" data-storage-path="' + esc(storagePath) + '" style="max-width:100%;border-radius:4px;margin:4px 0;display:block;">';
       }
       let l = esc(raw)
         .replace(/\\*\\*(.+?)\\*\\*/g, '<strong>$1</strong>')
