@@ -88,6 +88,7 @@ type ToExt =
   | { type: 'deleteNote'; id: string }
   | { type: 'openEditor'; noteId: string }
   | { type: 'addTag'; label: string; color: string; icon?: string }
+  | { type: 'reorderTags'; ids: string[] }
   | { type: 'deleteTag'; id: string }
   | { type: 'updateTag'; id: string; changes: Partial<Pick<Tag, 'label' | 'color'>> & { icon?: string | null } }
   | { type: 'jumpToLink'; file: string; line: number }
@@ -388,6 +389,12 @@ export class SidebarView implements vscode.WebviewViewProvider {
 
       case 'addTag': {
         await this.storage.addTag(msg.label, msg.color, msg.icon);
+        this.push();
+        break;
+      }
+
+      case 'reorderTags': {
+        await this.storage.reorderTags(msg.ids);
         this.push();
         break;
       }
@@ -1044,6 +1051,8 @@ export class SidebarView implements vscode.WebviewViewProvider {
   .tag-chip.active { border-color: ${C.text}; }
   .tag-chip.all { background: var(--vscode-button-secondaryBackground); color: var(--vscode-button-secondaryForeground); }
   .tag-chip.all.active { background: var(--vscode-button-background); color: var(--vscode-button-foreground); border-color: transparent; }
+  .tag-chip.dragging  { opacity: .35; }
+  .tag-chip.drag-over { outline: 2px solid currentColor; outline-offset: 2px; }
 
   .tag-chip-color-pop {
     display: none;
@@ -3019,6 +3028,8 @@ export class SidebarView implements vscode.WebviewViewProvider {
   });
 
   // ── Tag bar ─────────────────────────────────────────────────────────────
+  let draggedTagId = null;
+
   function renderTagBar() {
     document.querySelectorAll('.tag-chip-color-pop').forEach(p => p.remove());
     tagBar.innerHTML = '';
@@ -3169,7 +3180,45 @@ export class SidebarView implements vscode.WebviewViewProvider {
         }
       });
 
+      let dragMoved = false;
+      chip.draggable = true;
+      chip.addEventListener('dragstart', e => {
+        dragMoved = false;
+        draggedTagId = tag.id;
+        chip.classList.add('dragging');
+        e.dataTransfer.effectAllowed = 'move';
+      });
+      chip.addEventListener('drag', () => { dragMoved = true; });
+      chip.addEventListener('dragend', () => {
+        chip.classList.remove('dragging');
+        tagBar.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over'));
+        draggedTagId = null;
+      });
+      chip.addEventListener('dragover', e => {
+        if (!draggedTagId || draggedTagId === tag.id) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        tagBar.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over'));
+        chip.classList.add('drag-over');
+      });
+      chip.addEventListener('dragleave', () => chip.classList.remove('drag-over'));
+      chip.addEventListener('drop', e => {
+        e.preventDefault();
+        chip.classList.remove('drag-over');
+        if (!draggedTagId || draggedTagId === tag.id) return;
+        const fromIdx = tags.findIndex(t => t.id === draggedTagId);
+        const toIdx   = tags.findIndex(t => t.id === tag.id);
+        if (fromIdx === -1 || toIdx === -1) return;
+        const reordered = [...tags];
+        const [moved] = reordered.splice(fromIdx, 1);
+        reordered.splice(toIdx, 0, moved);
+        tags = reordered;
+        renderTagBar();
+        vscode.postMessage({ type: 'reorderTags', ids: reordered.map(t => t.id) });
+      });
+
       chip.addEventListener('click', () => {
+        if (dragMoved) { dragMoved = false; return; }
         activeTagIds = activeTagIds.includes(tag.id)
           ? activeTagIds.filter(id => id !== tag.id)
           : [...activeTagIds, tag.id];

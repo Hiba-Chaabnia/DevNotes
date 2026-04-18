@@ -293,6 +293,12 @@ export class NoteStorage {
     await this.writeTags();
   }
 
+  async reorderTags(ids: string[]): Promise<void> {
+    const rank = new Map(ids.map((id, i) => [id, i]));
+    this.tags.sort((a, b) => (rank.get(a.id) ?? Infinity) - (rank.get(b.id) ?? Infinity));
+    await this.writeTags();
+  }
+
   async deleteTag(id: string): Promise<void> {
     const isDefault = DEFAULT_TAGS.some(t => t.id === id);
 
@@ -611,11 +617,17 @@ export class NoteStorage {
       );
       const parsed = JSON.parse(dec.decode(raw));
       const custom: Tag[] = Array.isArray(parsed) ? parsed : (parsed.tags ?? []);
+      const order:  string[] | undefined = Array.isArray(parsed) ? undefined : parsed.order;
       const customIds = new Set(custom.map(t => t.id));
-      return [
+      const merged = [
         ...DEFAULT_TAGS.filter(t => !customIds.has(t.id)),
         ...custom,
       ];
+      if (order?.length) {
+        const rank = new Map(order.map((id, i) => [id, i]));
+        merged.sort((a, b) => (rank.get(a.id) ?? Infinity) - (rank.get(b.id) ?? Infinity));
+      }
+      return merged;
     } catch {
       return [...DEFAULT_TAGS];
     }
@@ -633,7 +645,7 @@ export class NoteStorage {
       });
       await vscode.workspace.fs.writeFile(
         vscode.Uri.joinPath(this.folder, 'tags.json'),
-        enc.encode(JSON.stringify(custom, null, 2))
+        enc.encode(JSON.stringify({ tags: custom, order: this.tags.map(t => t.id) }, null, 2))
       );
     } finally {
       setTimeout(() => this.tagsWriteInflight--, 500);
