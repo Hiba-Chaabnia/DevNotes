@@ -51,7 +51,7 @@ export interface Tag {
   id: string;
   label: string;
   color: string;         // hex color for the tag pill
-  icon?: string;         // lucide icon name for built-in tags
+  icon?: string | null;  // lucide icon name; null = explicitly cleared
 }
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -278,17 +278,18 @@ export class NoteStorage {
 
   // ── Tags ──────────────────────────────────────────────────────────────────
 
-  async addTag(label: string, color: string): Promise<Tag> {
-    const tag: Tag = { id: generateId(), label, color };
+  async addTag(label: string, color: string, icon?: string): Promise<Tag> {
+    const tag: Tag = { id: generateId(), label, color, ...(icon ? { icon } : {}) };
     this.tags = [...this.tags, tag];
     await this.writeTags();
     return tag;
   }
 
-  async updateTag(id: string, changes: Partial<Pick<Tag, 'label' | 'color'>>): Promise<void> {
+  async updateTag(id: string, changes: Partial<Pick<Tag, 'label' | 'color' | 'icon'>>): Promise<void> {
     const idx = this.tags.findIndex(t => t.id === id);
     if (idx === -1) return;
     this.tags[idx] = { ...this.tags[idx], ...changes };
+    if (this.tags[idx].icon == null) { delete this.tags[idx].icon; }
     await this.writeTags();
   }
 
@@ -628,7 +629,7 @@ export class NoteStorage {
       const custom = this.tags.filter(t => {
         if (!defaultIds.has(t.id)) return true;
         const def = defaultMap.get(t.id)!;
-        return t.color !== def.color || t.label !== def.label;
+        return t.color !== def.color || t.label !== def.label || t.icon !== def.icon;
       });
       await vscode.workspace.fs.writeFile(
         vscode.Uri.joinPath(this.folder, 'tags.json'),

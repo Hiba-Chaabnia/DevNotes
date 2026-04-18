@@ -17,6 +17,14 @@ import {
   Bold, Italic, Underline, Strikethrough,
   List, ListOrdered, ListChecks, Code, Code2, Indent, Outdent, RemoveFormatting, Check,
   ChevronDown, ChevronUp,
+  Braces, Hash, Variable, Binary, Regex, SearchCode,
+  FileCode, FileJson, FileText,
+  GitCommit, GitFork,
+  Server, Database, Cloud, Cpu, HardDrive, Network, Globe, Wifi, Container,
+  Terminal, Package, Layers, Workflow, Settings, Settings2, Wrench, Hammer,
+  Webhook, Cable, Blocks, Component,
+  Lock, Unlock, Shield, ShieldCheck, Key,
+  Zap, Box, BookOpen,
 } from 'lucide';
 import type { IconNode as LucideNode } from 'lucide';
 
@@ -30,8 +38,39 @@ function svgIcon(nodes: LucideNode, size = 14, style = '', fill = 'none'): strin
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24" fill="${fill}" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"${style ? ` style="${style}"` : ''}>${inner}</svg>`;
 }
 
+// Ordered palette shown in the icon picker (coding-related icons only)
+const CODING_ICONS: [string, LucideNode][] = [
+  // Code / Syntax
+  ['Code',       Code],       ['Code2',      Code2],      ['Braces',     Braces],
+  ['Hash',       Hash],       ['Variable',   Variable],   ['Binary',     Binary],
+  ['Regex',      Regex],      ['SearchCode', SearchCode],
+  // Files
+  ['FileCode',   FileCode],   ['FileJson',   FileJson],   ['FileText',   FileText],
+  // Git
+  ['GitBranch',  GitBranch],  ['GitCommit',  GitCommit],  ['GitFork',    GitFork],
+  ['GitMerge',   GitMerge],   ['GitPullRequest', GitPullRequest],
+  // Infrastructure
+  ['Terminal',   Terminal],   ['Server',     Server],     ['Database',   Database],
+  ['Cloud',      Cloud],      ['Network',    Network],    ['Globe',      Globe],
+  ['Cpu',        Cpu],        ['HardDrive',  HardDrive],  ['Wifi',       Wifi],
+  ['Container',  Container],
+  // Dev Tools
+  ['Bug',        Bug],        ['Package',    Package],    ['Layers',     Layers],
+  ['Workflow',   Workflow],   ['Wrench',     Wrench],     ['Hammer',     Hammer],
+  ['Settings',   Settings],   ['Settings2',  Settings2],  ['Webhook',    Webhook],
+  ['Cable',      Cable],      ['Blocks',     Blocks],     ['Component',  Component],
+  // Security
+  ['Lock',       Lock],       ['Unlock',     Unlock],     ['Shield',     Shield],
+  ['ShieldCheck', ShieldCheck], ['Key',      Key],
+  // Other
+  ['Zap',        Zap],        ['Box',        Box],        ['Link',       Link],
+  ['Lightbulb',  Lightbulb],  ['BookOpen',   BookOpen],   ['BookMarked', BookMarked],
+];
+
+// Full map used server-side to resolve icon names → SVG (includes built-in defaults)
 const TAG_ICON_MAP: Record<string, LucideNode> = {
-  Lightbulb, ListTodo, Bug, Presentation, BookMarked,
+  ...Object.fromEntries(CODING_ICONS),
+  ListTodo, Presentation, // built-in tag defaults not in the coding picker
 };
 
 // ─── Message types ────────────────────────────────────────────────────────────
@@ -48,9 +87,9 @@ type ToExt =
   | { type: 'updateNote'; id: string; changes: Partial<Note> }
   | { type: 'deleteNote'; id: string }
   | { type: 'openEditor'; noteId: string }
-  | { type: 'addTag'; label: string; color: string }
+  | { type: 'addTag'; label: string; color: string; icon?: string }
   | { type: 'deleteTag'; id: string }
-  | { type: 'updateTag'; id: string; changes: Partial<Pick<Tag, 'label' | 'color'>> }
+  | { type: 'updateTag'; id: string; changes: Partial<Pick<Tag, 'label' | 'color'>> & { icon?: string | null } }
   | { type: 'jumpToLink'; file: string; line: number }
   | { type: 'linkToEditor'; noteId: string }
   | { type: 'removeCodeLink'; noteId: string }
@@ -348,7 +387,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
         break;
 
       case 'addTag': {
-        await this.storage.addTag(msg.label, msg.color);
+        await this.storage.addTag(msg.label, msg.color, msg.icon);
         this.push();
         break;
       }
@@ -663,6 +702,9 @@ export class SidebarView implements vscode.WebviewViewProvider {
   private buildHtml(webview: vscode.Webview): string {
     const nonce             = getNonce();
     const colorsJson        = JSON.stringify(NOTE_COLORS);
+    const tagIconPaletteJson = JSON.stringify(
+      CODING_ICONS.map(([name, node]) => ({ name, svg: svgIcon(node, 15) }))
+    );
     const sidebarEditorUri  = webview.asWebviewUri(
       vscode.Uri.joinPath(this.context.extensionUri, 'media', 'sidebar-editor.js')
     );
@@ -1012,12 +1054,27 @@ export class SidebarView implements vscode.WebviewViewProvider {
     padding: 8px;
     flex-direction: column;
     gap: 6px;
-    width: 152px;
+    width: 172px;
     z-index: 200;
     box-shadow: 0 4px 16px rgba(0,0,0,.2);
   }
   .tag-chip-color-pop.open { display: flex; }
   .tag-chip-swatches { display: flex; flex-wrap: wrap; gap: 5px; }
+  .tag-icon-picker { display: flex; flex-wrap: wrap; gap: 3px; }
+  .tag-icon-swatch {
+    width: 22px; height: 22px;
+    display: inline-flex; align-items: center; justify-content: center;
+    border-radius: 4px; cursor: pointer; border: 1px solid transparent;
+    background: transparent; color: var(--vscode-foreground); opacity: .65;
+  }
+  .tag-icon-swatch:hover { opacity: 1; background: var(--vscode-toolbar-hoverBackground); }
+  .tag-icon-swatch.selected { opacity: 1; border-color: var(--vscode-focusBorder); background: var(--vscode-toolbar-activeBackground); }
+  .tag-icon-swatch.none-swatch { font-size: 10px; opacity: .5; }
+  .tag-form-icon-picker {
+    display: flex; flex-wrap: wrap; gap: 3px;
+    max-height: 72px; overflow-y: auto;
+    padding: 2px 0;
+  }
   .tag-chip-pop-input {
     width: 100%;
     box-sizing: border-box;
@@ -2208,6 +2265,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
 <div class="add-tag-form" id="add-tag-form">
   <input id="tag-label" type="text" placeholder="Tag name…" maxlength="24">
   <div class="color-strip" id="tag-colors"></div>
+  <div class="tag-form-icon-picker" id="tag-icon-picker"></div>
   <div class="form-actions">
     <button class="btn btn-ghost" id="btn-cancel-tag">Cancel</button>
     <button class="btn btn-primary" id="btn-confirm-tag">Add Tag</button>
@@ -2231,8 +2289,9 @@ export class SidebarView implements vscode.WebviewViewProvider {
 <script nonce="${nonce}">
 (() => {
   const vscode = acquireVsCodeApi();
-  const COLORS     = ${colorsJson};
-  const COLOR_KEYS = Object.keys(COLORS);
+  const COLORS          = ${colorsJson};
+  const COLOR_KEYS      = Object.keys(COLORS);
+  const TAG_ICON_PALETTE = ${tagIconPaletteJson};
 
   let notes             = [];
   let tags              = [];
@@ -2244,6 +2303,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
   let newTags           = [];
   let newTemplateId     = null;
   let tagColor          = '${NC.blue}';
+  let tagIcon           = null;
   let currentBranch      = null;
   let currentUser        = null;
   let availableBranches  = [];
@@ -2514,6 +2574,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
       renderCardTemplatePicker();
       buildColorStrip(tagColorsEl, c => { tagColor = c; highlightSwatch(tagColorsEl, c); });
       highlightSwatch(tagColorsEl, tagColor);
+      buildFormIconPicker();
     }
 
   });
@@ -3019,6 +3080,34 @@ export class SidebarView implements vscode.WebviewViewProvider {
       });
       colorPop.appendChild(hexInput);
 
+      // ── Icon picker (all tags) ─────────────────────────────────────
+      colorPop.appendChild(mkEl('div', 'tag-chip-pop-sep'));
+      colorPop.appendChild(mkEl('div', 'tag-chip-pop-label', 'Icon'));
+      const iconGrid = mkEl('div', 'tag-icon-picker');
+      const noneSw = mkEl('button', 'tag-icon-swatch none-swatch' + (!tag.icon ? ' selected' : ''));
+      noneSw.type = 'button';
+      noneSw.title = 'No icon';
+      noneSw.textContent = '×';
+      noneSw.addEventListener('click', e => {
+        e.stopPropagation();
+        colorPop.classList.remove('open');
+        if (tag.icon) vscode.postMessage({ type: 'updateTag', id: tag.id, changes: { icon: null } });
+      });
+      iconGrid.appendChild(noneSw);
+      TAG_ICON_PALETTE.forEach(entry => {
+        const sw = mkEl('button', 'tag-icon-swatch' + (tag.icon === entry.name ? ' selected' : ''));
+        sw.type = 'button';
+        sw.title = entry.name;
+        sw.innerHTML = entry.svg;
+        sw.addEventListener('click', e => {
+          e.stopPropagation();
+          colorPop.classList.remove('open');
+          if (tag.icon !== entry.name) vscode.postMessage({ type: 'updateTag', id: tag.id, changes: { icon: entry.name } });
+        });
+        iconGrid.appendChild(sw);
+      });
+      colorPop.appendChild(iconGrid);
+
       if (!isDefault) {
         colorPop.appendChild(mkEl('div', 'tag-chip-pop-sep'));
         colorPop.appendChild(mkEl('div', 'tag-chip-pop-label', 'Rename'));
@@ -3113,12 +3202,36 @@ export class SidebarView implements vscode.WebviewViewProvider {
     if (e.key === 'Escape') closeTagForm();
   });
 
-  function closeTagForm() { addTagForm.classList.remove('open'); tagLabelEl.value = ''; }
+  function closeTagForm() {
+    addTagForm.classList.remove('open');
+    tagLabelEl.value = '';
+    tagIcon = null;
+    buildFormIconPicker();
+  }
   function confirmTag() {
     const label = tagLabelEl.value.trim();
     if (!label) { tagLabelEl.focus(); return; }
-    vscode.postMessage({ type: 'addTag', label, color: tagColor });
+    vscode.postMessage({ type: 'addTag', label, color: tagColor, ...(tagIcon ? { icon: tagIcon } : {}) });
     closeTagForm();
+  }
+
+  const tagIconPickerEl = document.getElementById('tag-icon-picker');
+  function buildFormIconPicker() {
+    tagIconPickerEl.innerHTML = '';
+    const noneSw = mkEl('button', 'tag-icon-swatch none-swatch' + (!tagIcon ? ' selected' : ''));
+    noneSw.type = 'button';
+    noneSw.title = 'No icon';
+    noneSw.textContent = '×';
+    noneSw.addEventListener('click', () => { tagIcon = null; buildFormIconPicker(); });
+    tagIconPickerEl.appendChild(noneSw);
+    TAG_ICON_PALETTE.forEach(entry => {
+      const sw = mkEl('button', 'tag-icon-swatch' + (tagIcon === entry.name ? ' selected' : ''));
+      sw.type = 'button';
+      sw.title = entry.name;
+      sw.innerHTML = entry.svg;
+      sw.addEventListener('click', () => { tagIcon = entry.name; buildFormIconPicker(); });
+      tagIconPickerEl.appendChild(sw);
+    });
   }
 
   // ── Cards ────────────────────────────────────────────────────────────────
