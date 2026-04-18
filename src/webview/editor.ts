@@ -9,17 +9,52 @@
  *   Webview → Extension : { type: 'save',       content: string }   (markdown)
  */
 
-import { Editor } from '@tiptap/core';
+import { Editor, Extension } from '@tiptap/core';
 import StarterKit from '@tiptap/starter-kit';
 import TaskList from '@tiptap/extension-task-list';
 import TaskItem from '@tiptap/extension-task-item';
 import Image from '@tiptap/extension-image';
+import Underline from '@tiptap/extension-underline';
+import Link from '@tiptap/extension-link';
 import { Markdown } from 'tiptap-markdown';
 
 // ── Globals injected by EditorPanel.ts before this script loads ──────────────
 declare function acquireVsCodeApi(): { postMessage(msg: unknown): void };
 declare const __INITIAL_CONTENT__: string;
 declare const __INITIAL_TITLE__: string;
+
+// ── Indent depth limit ───────────────────────────────────────────────────────
+
+const MAX_LIST_DEPTH = 4;
+
+function listDepth(editor: Editor): number {
+  const { $from } = editor.state.selection;
+  let depth = 0;
+  for (let d = $from.depth; d >= 0; d--) {
+    const name = $from.node(d).type.name;
+    if (name === 'listItem' || name === 'taskItem') depth++;
+  }
+  return depth;
+}
+
+// Runs before StarterKit's Tab handler (priority 1000 > default 100).
+// Returns true (event consumed) when already at max depth so StarterKit
+// cannot sink further.
+const IndentLimiter = Extension.create({
+  name: 'indentLimiter',
+  priority: 1000,
+  addKeyboardShortcuts() {
+    return {
+      Tab: () => {
+        if (listDepth(this.editor) >= MAX_LIST_DEPTH) return true;
+        return (
+          this.editor.commands.sinkListItem('listItem') ||
+          this.editor.commands.sinkListItem('taskItem')
+        );
+      },
+    };
+  },
+});
 
 // ── Bootstrap ────────────────────────────────────────────────────────────────
 (function main() {
@@ -54,6 +89,9 @@ declare const __INITIAL_TITLE__: string;
       TaskList,
       TaskItem.configure({ nested: true }),
       Image.configure({ inline: false, allowBase64: true }),
+      Underline,
+      Link.configure({ openOnClick: false, autolink: true }),
+      IndentLimiter,
       Markdown.configure({
         html: false,
         linkify: true,
@@ -116,7 +154,12 @@ declare const __INITIAL_TITLE__: string;
     taskList:    () => editor.isActive('taskList'),
     blockquote:  () => editor.isActive('blockquote'),
     codeBlock:   () => editor.isActive('codeBlock'),
+    underline:   () => editor.isActive('underline'),
+    link:        () => editor.isActive('link'),
   };
+
+  const canIndent  = () => listDepth(editor) < MAX_LIST_DEPTH && (editor.can().sinkListItem('listItem') || editor.can().sinkListItem('taskItem'));
+  const canOutdent = () => editor.can().liftListItem('listItem') || editor.can().liftListItem('taskItem');
 
   function syncToolbar() {
     toolbarEl.querySelectorAll('[data-action]').forEach(el => {
@@ -125,8 +168,10 @@ declare const __INITIAL_TITLE__: string;
       if (action in ACTIVE_CHECKS) {
         btn.classList.toggle('is-active', ACTIVE_CHECKS[action]());
       }
-      if (action === 'undo') btn.disabled = !editor.can().undo();
-      if (action === 'redo') btn.disabled = !editor.can().redo();
+      if (action === 'undo')    btn.disabled = !editor.can().undo();
+      if (action === 'redo')    btn.disabled = !editor.can().redo();
+      if (action === 'indent')  btn.disabled = !canIndent();
+      if (action === 'outdent') btn.disabled = !canOutdent();
     });
   }
 
@@ -152,8 +197,27 @@ declare const __INITIAL_TITLE__: string;
       case 'bulletList':  ch.toggleBulletList().run();          break;
       case 'orderedList': ch.toggleOrderedList().run();         break;
       case 'taskList':    ch.toggleTaskList().run();            break;
+      case 'indent':
+        if (!editor.chain().focus().sinkListItem('listItem').run())
+             editor.chain().focus().sinkListItem('taskItem').run();
+        break;
+      case 'outdent':
+        if (!editor.chain().focus().liftListItem('listItem').run())
+             editor.chain().focus().liftListItem('taskItem').run();
+        break;
       case 'blockquote':  ch.toggleBlockquote().run();          break;
       case 'codeBlock':   ch.toggleCodeBlock().run();           break;
+      case 'hr':          ch.setHorizontalRule().run();         break;
+      case 'underline':   ch.toggleUnderline().run();            break;
+      case 'link': {
+        if (editor.isActive('link')) {
+          ch.unsetLink().run();
+        } else {
+          const url = window.prompt('URL:');
+          if (url?.trim()) ch.setLink({ href: url.trim() }).run();
+        }
+        break;
+      }
       case 'undo':        ch.undo().run();                      break;
       case 'redo':        ch.redo().run();                      break;
       case 'exportCurrentNote':
@@ -187,6 +251,14 @@ declare const __INITIAL_TITLE__: string;
     if (data?.type === 'insertImage') {
       editor.chain().focus().setImage({ src: data.src as string, alt: 'image' }).run();
     }
+  });
+
+  // ── Tab / Shift+Tab — stop Tab from reaching VS Code after ProseMirror runs ─
+  // ProseMirror (StarterKit) handles Tab → sinkListItem and Shift-Tab →
+  // liftListItem via its own keymap. We just stop propagation afterward so
+  // VS Code's preload (which listens at document level) never sees the event.
+  editor.view.dom.addEventListener('keydown', (e: KeyboardEvent) => {
+    if (e.key === 'Tab') e.stopPropagation();
   });
 
   // ── Flush pending save when the panel is closed ──────────────────────────

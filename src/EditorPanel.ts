@@ -1,6 +1,14 @@
 import * as vscode from 'vscode';
 import { NoteStorage, BUILTIN_TEMPLATES } from './NoteStorage';
 import { PLATFORM_COLORS } from './colors';
+import type { IconNode as LucideNode } from 'lucide';
+import {
+  Bold, Italic, Underline, Strikethrough, Code, Code2, Link,
+  Heading1, Heading2, Heading3,
+  List, ListOrdered, ListChecks, Indent, Outdent,
+  Quote, Minus, Undo2, Redo2,
+  FileDown, FilePlus, SquareArrowOutUpRight,
+} from 'lucide';
 
 // ─── Panel ───────────────────────────────────────────────────────────────────
 
@@ -207,6 +215,30 @@ export class EditorPanel {
     const nonce   = getNonce();
     const content = JSON.stringify(initialContent);
     const title   = JSON.stringify(initialTitle);
+    const ico = {
+      bold:        svgIcon(Bold),
+      italic:      svgIcon(Italic),
+      underline:   svgIcon(Underline),
+      strike:      svgIcon(Strikethrough),
+      code:        svgIcon(Code),
+      code2:       svgIcon(Code2),
+      link:        svgIcon(Link),
+      h1:          svgIcon(Heading1),
+      h2:          svgIcon(Heading2),
+      h3:          svgIcon(Heading3),
+      list:        svgIcon(List),
+      listOrdered: svgIcon(ListOrdered),
+      listChecks:  svgIcon(ListChecks),
+      indent:      svgIcon(Indent),
+      outdent:     svgIcon(Outdent),
+      quote:       svgIcon(Quote),
+      minus:       svgIcon(Minus),
+      undo:        svgIcon(Undo2),
+      redo:        svgIcon(Redo2),
+      tplDown:     svgIcon(FileDown),
+      tplUp:       svgIcon(FilePlus),
+      export:      svgIcon(SquareArrowOutUpRight),
+    };
 
     return `<!DOCTYPE html>
 <html lang="en">
@@ -319,6 +351,16 @@ export class EditorPanel {
     padding-left: 1em;
     opacity: .8;
   }
+  .ProseMirror hr {
+    border: none;
+    border-top: 1px solid var(--vscode-panel-border);
+    margin: 1.2em 0;
+  }
+  .ProseMirror a {
+    color: var(--vscode-textLink-foreground);
+    text-decoration: underline;
+    cursor: pointer;
+  }
   .ProseMirror code {
     font-family: var(--vscode-editor-font-family, monospace);
     font-size: .875em;
@@ -369,41 +411,34 @@ export class EditorPanel {
 <input id="title-input" type="text" placeholder="Untitled" spellcheck="false" autocomplete="off">
 
 <div id="toolbar">
-  <button data-action="bold"        title="Bold (Ctrl+B)"><b>B</b></button>
-  <button data-action="italic"      title="Italic (Ctrl+I)"><i>I</i></button>
-  <button data-action="strike"      title="Strikethrough"><s>S</s></button>
-  <button data-action="code"        title="Inline code" style="font-family:monospace;letter-spacing:-.5px">\`\`</button>
+  <button data-action="bold"        title="Bold (Ctrl+B)">${ico.bold}</button>
+  <button data-action="italic"      title="Italic (Ctrl+I)">${ico.italic}</button>
+  <button data-action="underline"   title="Underline (Ctrl+U)">${ico.underline}</button>
+  <button data-action="strike"      title="Strikethrough">${ico.strike}</button>
+  <button data-action="code"        title="Inline code">${ico.code}</button>
+  <button data-action="link"        title="Insert / remove link">${ico.link}</button>
   <div class="tb-sep"></div>
-  <button data-action="h1"          title="Heading 1">H1</button>
-  <button data-action="h2"          title="Heading 2">H2</button>
-  <button data-action="h3"          title="Heading 3">H3</button>
+  <button data-action="h1"          title="Heading 1">${ico.h1}</button>
+  <button data-action="h2"          title="Heading 2">${ico.h2}</button>
+  <button data-action="h3"          title="Heading 3">${ico.h3}</button>
   <div class="tb-sep"></div>
-  <button data-action="bulletList"  title="Bullet list">
-    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
-      <circle cx="4" cy="7"  r="1.5" fill="currentColor" stroke="none"/>
-      <circle cx="4" cy="12" r="1.5" fill="currentColor" stroke="none"/>
-      <circle cx="4" cy="17" r="1.5" fill="currentColor" stroke="none"/>
-      <line x1="9" y1="7"  x2="20" y2="7"/><line x1="9" y1="12" x2="20" y2="12"/><line x1="9" y1="17" x2="20" y2="17"/>
-    </svg>
-  </button>
-  <button data-action="orderedList" title="Ordered list">1.</button>
-  <button data-action="taskList"    title="Task list">
-    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
-      <rect x="3" y="5" width="5" height="5" rx="1"/><rect x="3" y="14" width="5" height="5" rx="1"/>
-      <line x1="11" y1="7.5" x2="21" y2="7.5"/><line x1="11" y1="16.5" x2="21" y2="16.5"/>
-    </svg>
-  </button>
+  <button data-action="bulletList"  title="Bullet list">${ico.list}</button>
+  <button data-action="orderedList" title="Ordered list">${ico.listOrdered}</button>
+  <button data-action="taskList"    title="Task list">${ico.listChecks}</button>
+  <button data-action="indent"      title="Indent (Tab)">${ico.indent}</button>
+  <button data-action="outdent"     title="Outdent (Shift+Tab)">${ico.outdent}</button>
   <div class="tb-sep"></div>
-  <button data-action="blockquote"  title="Blockquote">❝</button>
-  <button data-action="codeBlock"   title="Code block" style="font-family:monospace">{}</button>
+  <button data-action="blockquote"  title="Blockquote">${ico.quote}</button>
+  <button data-action="codeBlock"   title="Code block">${ico.code2}</button>
+  <button data-action="hr"          title="Horizontal rule">${ico.minus}</button>
   <div class="tb-sep"></div>
-  <button data-action="undo"        title="Undo (Ctrl+Z)">↩</button>
-  <button data-action="redo"        title="Redo">↪</button>
+  <button data-action="undo"        title="Undo (Ctrl+Z)">${ico.undo}</button>
+  <button data-action="redo"        title="Redo">${ico.redo}</button>
   <div class="tb-sep"></div>
-  <button data-action="applyTemplate"      title="Apply a template to this note" style="font-size:11px;padding:2px 6px">Tpl↓</button>
-  <button data-action="saveAsTemplate"     title="Save this note as a custom template" style="font-size:11px;padding:2px 6px">Tpl↑</button>
+  <button data-action="applyTemplate"      title="Apply a template to this note">${ico.tplDown}</button>
+  <button data-action="saveAsTemplate"     title="Save this note as a custom template">${ico.tplUp}</button>
   <div class="tb-sep"></div>
-  <button data-action="exportCurrentNote"  title="Export this note" style="font-size:11px;padding:2px 6px">Export</button>
+  <button data-action="exportCurrentNote"  title="Export this note">${ico.export}</button>
 </div>
 
 <div id="editor-mount"></div>
@@ -417,6 +452,14 @@ export class EditorPanel {
 }
 
 // ─── Utilities ───────────────────────────────────────────────────────────────
+
+function svgIcon(nodes: LucideNode, size = 14): string {
+  const inner = nodes.map(([tag, attrs]) => {
+    const a = Object.entries(attrs).map(([k, v]) => `${k}="${v}"`).join(' ');
+    return `<${tag} ${a}/>`;
+  }).join('');
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${inner}</svg>`;
+}
 
 function getNonce(): string {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
