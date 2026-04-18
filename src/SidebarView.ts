@@ -144,6 +144,16 @@ export class SidebarView implements vscode.WebviewViewProvider {
       return { ...n, codeLinkStale: !fs.existsSync(absPath) };
     });
 
+    if (wsRoot && this.view) {
+      this.view.webview.options = {
+        enableScripts: true,
+        localResourceRoots: [
+          vscode.Uri.joinPath(this.context.extensionUri, 'media'),
+          vscode.Uri.joinPath(wsRoot, '.devnotes', 'assets'),
+        ],
+      };
+    }
+
     const imageUriMap: Record<string, string> = {};
     if (wsRoot) {
       const imgRegex = /!\[[^\]]*\]\(\.devnotes\/assets\/([^)]+)\)/g;
@@ -671,7 +681,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
 <head>
 <meta charset="UTF-8">
 <meta http-equiv="Content-Security-Policy"
-  content="default-src 'none'; style-src 'unsafe-inline'; img-src data:; script-src 'nonce-${nonce}';">
+  content="default-src 'none'; style-src 'unsafe-inline'; img-src ${webview.cspSource} data:; script-src 'nonce-${nonce}';">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
