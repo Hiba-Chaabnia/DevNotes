@@ -1003,22 +1003,51 @@ export class SidebarView implements vscode.WebviewViewProvider {
   .tag-chip.all { background: var(--vscode-button-secondaryBackground); color: var(--vscode-button-secondaryForeground); }
   .tag-chip.all.active { background: var(--vscode-button-background); color: var(--vscode-button-foreground); border-color: transparent; }
 
-  .tag-chip-delete {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 9px;
-    opacity: 0;
-    transition: opacity .12s;
-    cursor: pointer;
-    padding: 0 1px;
-    line-height: 1;
-    border-radius: 50%;
+  .tag-chip-color-pop {
+    display: none;
+    position: fixed;
+    background: var(--vscode-editorWidget-background, #fff);
+    border: 1px solid var(--vscode-panel-border);
+    border-radius: 6px;
+    padding: 8px;
+    flex-direction: column;
+    gap: 6px;
+    width: 152px;
+    z-index: 200;
+    box-shadow: 0 4px 16px rgba(0,0,0,.2);
   }
-  .tag-chip:hover .tag-chip-delete { opacity: .65; }
-  .tag-chip-delete:hover { opacity: 1 !important; background: rgba(0,0,0,.15); border-radius: 50%; }
-  .tag-chip.confirming { outline: 2px solid ${NC.orange}; outline-offset: 1px; }
-  .tag-chip.confirming .tag-chip-delete { opacity: 1; color: ${NC.orange}; font-weight: 700; }
+  .tag-chip-color-pop.open { display: flex; }
+  .tag-chip-swatches { display: flex; flex-wrap: wrap; gap: 5px; }
+  .tag-chip-pop-input {
+    width: 100%;
+    box-sizing: border-box;
+    background: var(--vscode-input-background);
+    border: 1px solid var(--vscode-panel-border);
+    border-radius: 3px;
+    color: var(--vscode-input-foreground);
+    font-size: 11px;
+    padding: 3px 6px;
+    outline: none;
+    font-family: monospace;
+  }
+  .tag-chip-pop-input:focus { border-color: var(--vscode-focusBorder); }
+  .tag-chip-pop-sep { height: 1px; background: var(--vscode-panel-border); margin: 1px -2px; }
+  .tag-chip-pop-label { font-size: 10px; color: var(--vscode-descriptionForeground); opacity: .7; }
+
+  .tag-chip-pop-del {
+    width: 100%;
+    margin-top: 2px;
+    padding: 3px 6px;
+    font-size: 11px;
+    text-align: left;
+    cursor: pointer;
+    border: none;
+    border-radius: 3px;
+    background: transparent;
+    color: ${C.danger};
+  }
+  .tag-chip-pop-del:hover { background: rgba(${RGB.danger},.12); }
+  .tag-chip-pop-del.confirming { background: rgba(${RGB.danger},.18); font-weight: 600; }
 
   .add-tag-btn {
     font-size: 11px;
@@ -1031,177 +1060,6 @@ export class SidebarView implements vscode.WebviewViewProvider {
   }
   .add-tag-btn:hover { border-color: var(--vscode-foreground); color: var(--vscode-foreground); }
 
-  .manage-tags-btn {
-    font-size: 12px;
-    padding: 2px 7px;
-    border-radius: 20px;
-    background: none;
-    border: 1.5px solid transparent;
-    color: var(--vscode-descriptionForeground);
-    cursor: pointer;
-    margin-left: auto;
-  }
-  .manage-tags-btn:hover { color: var(--vscode-foreground); border-color: var(--vscode-panel-border); }
-  .manage-tags-btn.active {
-    background: var(--vscode-button-secondaryBackground);
-    color: var(--vscode-button-secondaryForeground);
-    border-color: transparent;
-  }
-
-  /* ── Tag manager panel ───────────────────────────────── */
-  .tag-manager {
-    padding: 8px 10px;
-    border-bottom: 1px solid var(--vscode-panel-border);
-    flex-shrink: 0;
-    background: var(--vscode-input-background);
-    max-height: 240px;
-    overflow-y: auto;
-  }
-
-  .tag-mgr-section {
-    font-size: 10px;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: .05em;
-    color: var(--vscode-descriptionForeground);
-    padding: 6px 0 3px;
-    margin-top: 2px;
-  }
-  .tag-mgr-section:first-child { padding-top: 0; }
-
-  .tag-mgr-row {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 3px 0;
-    position: relative;
-  }
-
-  .tag-mgr-swatch {
-    width: 14px;
-    height: 14px;
-    border-radius: 50%;
-    border: 1.5px solid rgba(0,0,0,.2);
-    cursor: pointer;
-    flex-shrink: 0;
-    transition: transform .1s;
-  }
-  .tag-mgr-swatch:hover { transform: scale(1.2); }
-  .tag-mgr-swatch-ro { cursor: default; }
-  .tag-mgr-swatch-ro:hover { transform: none; }
-
-  .tag-mgr-input {
-    flex: 1;
-    background: transparent;
-    border: 1px solid transparent;
-    border-radius: 4px;
-    padding: 2px 6px;
-    font-size: 12px;
-    font-weight: 600;
-    color: var(--vscode-input-foreground);
-    font-family: var(--vscode-font-family);
-    outline: none;
-    min-width: 0;
-  }
-  .tag-mgr-input:hover { border-color: var(--vscode-panel-border); }
-  .tag-mgr-input:focus {
-    border-color: var(--vscode-focusBorder, var(--vscode-panel-border));
-    background: var(--vscode-input-background);
-  }
-
-  .tag-mgr-del {
-    background: none;
-    border: none;
-    color: var(--vscode-descriptionForeground);
-    cursor: pointer;
-    font-size: 11px;
-    padding: 2px 5px;
-    border-radius: 3px;
-    opacity: .45;
-    flex-shrink: 0;
-  }
-  .tag-mgr-del:hover { opacity: 1; background: var(--vscode-toolbar-hoverBackground); }
-
-  .tag-mgr-count {
-    font-size: 10px;
-    color: var(--vscode-descriptionForeground);
-    opacity: .55;
-    flex-shrink: 0;
-    min-width: 20px;
-    text-align: right;
-  }
-  .tag-mgr-confirm {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    padding: 2px 0;
-    font-size: 11px;
-    color: var(--vscode-foreground);
-    flex: 1;
-  }
-  .tag-mgr-confirm-msg { flex: 1; opacity: .8; }
-  .tag-mgr-confirm-yes {
-    background: ${NC.orange};
-    color: ${C.white};
-    border: none;
-    border-radius: 3px;
-    padding: 2px 8px;
-    font-size: 11px;
-    cursor: pointer;
-    flex-shrink: 0;
-  }
-  .tag-mgr-confirm-yes:hover { opacity: .85; }
-  .tag-mgr-confirm-no {
-    background: none;
-    border: 1px solid var(--vscode-panel-border);
-    border-radius: 3px;
-    padding: 2px 8px;
-    font-size: 11px;
-    cursor: pointer;
-    flex-shrink: 0;
-    color: var(--vscode-foreground);
-  }
-  .tag-mgr-confirm-no:hover { background: var(--vscode-toolbar-hoverBackground); }
-
-  .tag-mgr-ro-label {
-    flex: 1;
-    font-size: 12px;
-    font-weight: 600;
-    color: var(--vscode-foreground);
-    opacity: .6;
-  }
-
-  .tag-mgr-ro-hint {
-    font-size: 10px;
-    color: var(--vscode-descriptionForeground);
-    opacity: .5;
-    font-style: italic;
-  }
-
-  .tag-mgr-empty {
-    font-size: 11px;
-    color: var(--vscode-descriptionForeground);
-    padding: 4px 0;
-    opacity: .7;
-  }
-
-  /* Color picker popover inside the manager */
-  .tag-mgr-color-pop {
-    position: absolute;
-    left: 22px;
-    top: 22px;
-    background: var(--vscode-editorWidget-background, ${C.white});
-    border: 1px solid var(--vscode-panel-border);
-    border-radius: 8px;
-    padding: 8px;
-    display: none;
-    gap: 6px;
-    flex-wrap: wrap;
-    width: 128px;
-    z-index: 100;
-    box-shadow: 0 4px 16px rgba(0,0,0,.18);
-  }
-  .tag-mgr-color-pop.open { display: flex; }
 
   /* ── Card list ───────────────────────────────────────── */
   .card-list {
@@ -1612,6 +1470,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
     font-size: 10px;
     padding: 1px 6px;
     border-radius: 10px;
+    border: 1px solid transparent;
     font-weight: 600;
     color: ${C.text};
     cursor: pointer;
@@ -2294,9 +2153,6 @@ export class SidebarView implements vscode.WebviewViewProvider {
 <!-- ── GitHub status filter bar ── -->
 <div class="github-filter-bar" id="github-filter-bar" style="display:none"></div>
 
-<!-- ── Tag manager panel ── -->
-<div class="tag-manager" id="tag-manager" style="display:none"></div>
-
 <!-- ── Card list ── -->
 <div class="card-list" id="card-list" role="list" aria-label="Notes"></div>
 
@@ -2405,8 +2261,6 @@ export class SidebarView implements vscode.WebviewViewProvider {
   let openTagPop      = null;
   let pendingCodeLinkCallback = null;
   let draftOutsideListener   = null;
-  let isManagingTags  = false;
-  let openMgrColorPop = null;
 
   // ── DOM refs ────────────────────────────────────────────────────────────
   const projectName    = document.getElementById('project-name');
@@ -2645,7 +2499,6 @@ export class SidebarView implements vscode.WebviewViewProvider {
       activeTagIds = activeTagIds.filter(id => tags.some(t => t.id === id));
       renderBranchIndicator();
       renderTagBar();
-      if (isManagingTags) renderTagManager();
       renderCards();
       if (addedId) {
         requestAnimationFrame(() => {
@@ -2762,7 +2615,14 @@ export class SidebarView implements vscode.WebviewViewProvider {
 
     function syncChipStates() {
       tagPickerEl.querySelectorAll('.tag-chip[data-tid]').forEach(chip => {
-        chip.classList.toggle('active', draftTags.includes(chip.dataset.tid));
+        const isActive = draftTags.includes(chip.dataset.tid);
+        chip.classList.toggle('active', isActive);
+        const tag = tags.find(t => t.id === chip.dataset.tid);
+        if (tag) {
+          chip.style.background = isActive ? tag.color : hexToRgba(tag.color, 0.18);
+          chip.style.borderColor = isActive ? 'rgba(0,0,0,0.25)' : tag.color;
+          chip.style.color = isActive ? '${C.text}' : tag.color;
+        }
       });
     }
 
@@ -2772,7 +2632,9 @@ export class SidebarView implements vscode.WebviewViewProvider {
         const tag = tags.find(t => t.id === tid);
         if (!tag) return;
         const pill = mkEl('span', 'tag-pill');
-        pill.style.background = tag.color;
+        pill.style.background = hexToRgba(tag.color, 0.18);
+        pill.style.borderColor = tag.color;
+        pill.style.color = tag.color;
         if (tag.iconSvg) { const ico = mkEl('span', 'tag-icon'); ico.innerHTML = tag.iconSvg; pill.appendChild(ico); }
         pill.appendChild(mkEl('span', '', tag.label));
         pillsArea.appendChild(pill);
@@ -2785,7 +2647,9 @@ export class SidebarView implements vscode.WebviewViewProvider {
         const chip = mkEl('button', 'tag-chip');
         chip.type = 'button';
         chip.dataset.tid = tag.id;
-        chip.style.background = tag.color;
+        chip.style.background = hexToRgba(tag.color, 0.18);
+        chip.style.borderColor = tag.color;
+        chip.style.color = tag.color;
         if (tag.iconSvg) { const ico = mkEl('span', 'tag-icon'); ico.innerHTML = tag.iconSvg; chip.appendChild(ico); }
         chip.appendChild(mkEl('span', '', tag.label));
         chip.addEventListener('mousedown', e => {
@@ -3053,11 +2917,14 @@ export class SidebarView implements vscode.WebviewViewProvider {
     newTagsEl.innerHTML = '';
     if (tags.length === 0) return;
     tags.forEach(tag => {
-      const chip = mkEl('button', 'tag-chip' + (newTags.includes(tag.id) ? ' active' : ''));
+      const isActiveNew = newTags.includes(tag.id);
+      const chip = mkEl('button', 'tag-chip' + (isActiveNew ? ' active' : ''));
       chip.type = 'button';
       if (tag.iconSvg) { const ico = mkEl('span', 'tag-icon'); ico.innerHTML = tag.iconSvg; chip.appendChild(ico); }
       chip.appendChild(mkEl('span', '', tag.label));
-      chip.style.background = tag.color;
+      chip.style.background = isActiveNew ? tag.color : hexToRgba(tag.color, 0.18);
+      chip.style.borderColor = isActiveNew ? 'rgba(0,0,0,0.25)' : tag.color;
+      chip.style.color = isActiveNew ? '${C.text}' : tag.color;
       chip.addEventListener('click', () => {
         newTags = newTags.includes(tag.id)
           ? newTags.filter(id => id !== tag.id)
@@ -3092,6 +2959,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
 
   // ── Tag bar ─────────────────────────────────────────────────────────────
   function renderTagBar() {
+    document.querySelectorAll('.tag-chip-color-pop').forEach(p => p.remove());
     tagBar.innerHTML = '';
 
     const all = mkEl('button', 'tag-chip all' + (activeTagIds.length === 0 ? ' active' : ''), 'All');
@@ -3101,33 +2969,116 @@ export class SidebarView implements vscode.WebviewViewProvider {
     tags.forEach(tag => {
       const isDefault = defaultTagIds.includes(tag.id);
 
-      const chip = mkEl('button', 'tag-chip' + (activeTagIds.includes(tag.id) ? ' active' : ''));
-      chip.style.background = tag.color;
+      const isActiveFilter = activeTagIds.includes(tag.id);
+      const chip = mkEl('button', 'tag-chip' + (isActiveFilter ? ' active' : ''));
+      chip.style.background = isActiveFilter ? tag.color : hexToRgba(tag.color, 0.18);
+      chip.style.borderColor = isActiveFilter ? 'rgba(0,0,0,0.25)' : tag.color;
+      chip.style.color = isActiveFilter ? '${C.text}' : tag.color;
       if (tag.iconSvg) { const ico = mkEl('span', 'tag-icon'); ico.innerHTML = tag.iconSvg; chip.appendChild(ico); }
-      chip.appendChild(mkEl('span', '', tag.label));
+      const labelSpan = mkEl('span', 'tag-chip-label', tag.label);
+      chip.appendChild(labelSpan);
+
+      // ── Right-click context popup (all tags) ─────────────────────────
+      const colorPop = mkEl('div', 'tag-chip-color-pop');
+
+      const swatchGrid = mkEl('div', 'tag-chip-swatches');
+      COLOR_KEYS.forEach(key => {
+        const sw = mkEl('div', 'color-swatch' + (COLORS[key] === tag.color ? ' selected' : ''));
+        sw.style.background = COLORS[key];
+        sw.dataset.colorHex = COLORS[key];
+        sw.title = key;
+        sw.addEventListener('click', e => {
+          e.stopPropagation();
+          colorPop.classList.remove('open');
+          vscode.postMessage({ type: 'updateTag', id: tag.id, changes: { color: COLORS[key] } });
+        });
+        swatchGrid.appendChild(sw);
+      });
+      colorPop.appendChild(swatchGrid);
+
+      const hexInput = document.createElement('input');
+      hexInput.type = 'text';
+      hexInput.className = 'tag-chip-pop-input';
+      hexInput.placeholder = '#rrggbb';
+      hexInput.maxLength = 7;
+      hexInput.value = tag.color && tag.color[0] === '#' ? tag.color : '';
+      hexInput.addEventListener('click', e => e.stopPropagation());
+      hexInput.addEventListener('keydown', e => {
+        e.stopPropagation();
+        if (e.key === 'Enter') {
+          const val = hexInput.value.trim();
+          if (/^#[0-9a-fA-F]{6}$/.test(val)) {
+            colorPop.classList.remove('open');
+            vscode.postMessage({ type: 'updateTag', id: tag.id, changes: { color: val } });
+          } else {
+            hexInput.style.outline = '1px solid red';
+            setTimeout(() => { hexInput.style.outline = ''; }, 1000);
+          }
+        }
+        if (e.key === 'Escape') colorPop.classList.remove('open');
+      });
+      colorPop.appendChild(hexInput);
 
       if (!isDefault) {
-        const delBtn = mkEl('span', 'tag-chip-delete', '✕');
-        delBtn.title = 'Delete tag';
-        let confirmTimer = null;
+        colorPop.appendChild(mkEl('div', 'tag-chip-pop-sep'));
+        colorPop.appendChild(mkEl('div', 'tag-chip-pop-label', 'Rename'));
+        const renameInput = document.createElement('input');
+        renameInput.type = 'text';
+        renameInput.className = 'tag-chip-pop-input';
+        renameInput.value = tag.label;
+        renameInput.maxLength = 24;
+        renameInput.addEventListener('click', e => e.stopPropagation());
+        renameInput.addEventListener('keydown', e => {
+          e.stopPropagation();
+          if (e.key === 'Enter') {
+            const newLabel = renameInput.value.trim();
+            colorPop.classList.remove('open');
+            if (newLabel && newLabel !== tag.label) {
+              vscode.postMessage({ type: 'updateTag', id: tag.id, changes: { label: newLabel } });
+            }
+          }
+          if (e.key === 'Escape') colorPop.classList.remove('open');
+        });
+        colorPop.appendChild(renameInput);
+
+        // ── Delete ────────────────────────────────────────────────────
+        colorPop.appendChild(mkEl('div', 'tag-chip-pop-sep'));
+        const delBtn = document.createElement('button');
+        delBtn.className = 'tag-chip-pop-del';
+        delBtn.textContent = 'Delete tag';
+        let delTimer = null;
         delBtn.addEventListener('click', e => {
           e.stopPropagation();
-          if (chip.classList.contains('confirming')) {
-            clearTimeout(confirmTimer);
+          if (delBtn.classList.contains('confirming')) {
+            clearTimeout(delTimer);
+            colorPop.classList.remove('open');
             vscode.postMessage({ type: 'deleteTag', id: tag.id });
           } else {
-            chip.classList.add('confirming');
-            delBtn.textContent = '✓';
-            delBtn.title = 'Click to confirm deletion';
-            confirmTimer = setTimeout(() => {
-              chip.classList.remove('confirming');
-              delBtn.textContent = '✕';
-              delBtn.title = 'Delete tag';
+            delBtn.classList.add('confirming');
+            delBtn.textContent = 'Sure? Click to confirm';
+            delTimer = setTimeout(() => {
+              delBtn.classList.remove('confirming');
+              delBtn.textContent = 'Delete tag';
             }, 3000);
           }
         });
-        chip.appendChild(delBtn);
+        colorPop.appendChild(delBtn);
       }
+
+      document.body.appendChild(colorPop);
+
+      chip.addEventListener('contextmenu', e => {
+        e.preventDefault();
+        e.stopPropagation();
+        const wasOpen = colorPop.classList.contains('open');
+        document.querySelectorAll('.tag-chip-color-pop.open').forEach(p => p.classList.remove('open'));
+        if (!wasOpen) {
+          const rect = chip.getBoundingClientRect();
+          colorPop.style.top  = (rect.bottom + 4) + 'px';
+          colorPop.style.left = rect.left + 'px';
+          colorPop.classList.add('open');
+        }
+      });
 
       chip.addEventListener('click', () => {
         activeTagIds = activeTagIds.includes(tag.id)
@@ -3141,126 +3092,17 @@ export class SidebarView implements vscode.WebviewViewProvider {
 
     const addBtn = mkEl('button', 'add-tag-btn', '+ tag');
     addBtn.addEventListener('click', () => {
+      const usedCounts = {};
+      COLOR_KEYS.forEach(k => { usedCounts[k] = 0; });
+      tags.forEach(t => { const k = COLOR_KEYS.find(k => COLORS[k] === t.color); if (k) usedCounts[k]++; });
+      const autoKey = COLOR_KEYS.reduce((best, k) => usedCounts[k] < usedCounts[best] ? k : best, COLOR_KEYS[0]);
+      tagColor = COLORS[autoKey];
+      highlightSwatch(tagColorsEl, tagColor);
       addTagForm.classList.add('open');
       tagLabelEl.focus();
     });
     tagBar.appendChild(addBtn);
 
-    const mgrBtn = mkEl('button', 'manage-tags-btn' + (isManagingTags ? ' active' : ''), '⚙');
-    mgrBtn.title = isManagingTags ? 'Close tag manager' : 'Manage tags (rename, recolor)';
-    mgrBtn.addEventListener('click', () => {
-      isManagingTags = !isManagingTags;
-      const mgr = document.getElementById('tag-manager');
-      mgr.style.display = isManagingTags ? '' : 'none';
-      if (isManagingTags) renderTagManager();
-      renderTagBar();
-    });
-    tagBar.appendChild(mgrBtn);
-  }
-
-  // ── Tag manager ─────────────────────────────────────────────────────────
-  function renderTagManager() {
-    const mgr = document.getElementById('tag-manager');
-    mgr.innerHTML = '';
-
-    const customTags  = tags.filter(t => !defaultTagIds.includes(t.id));
-    const builtinTags = tags.filter(t =>  defaultTagIds.includes(t.id));
-
-    if (customTags.length > 0) {
-      mgr.appendChild(mkEl('div', 'tag-mgr-section', 'Custom tags'));
-      customTags.forEach(tag => {
-        const row = mkEl('div', 'tag-mgr-row');
-        const noteCount = notes.filter(n => n.tags.includes(tag.id)).length;
-
-        const swatch = mkEl('div', 'tag-mgr-swatch');
-        swatch.style.background = tag.color;
-        swatch.title = 'Change color';
-
-        const colorPop = mkEl('div', 'tag-mgr-color-pop');
-        COLOR_KEYS.forEach(key => {
-          const sw = mkEl('div', 'color-swatch' + (COLORS[key] === tag.color ? ' selected' : ''));
-          sw.style.background = COLORS[key];
-          sw.title = key;
-          sw.addEventListener('click', e => {
-            e.stopPropagation();
-            colorPop.classList.remove('open');
-            openMgrColorPop = null;
-            vscode.postMessage({ type: 'updateTag', id: tag.id, changes: { color: COLORS[key] } });
-          });
-          colorPop.appendChild(sw);
-        });
-
-        swatch.addEventListener('click', e => {
-          e.stopPropagation();
-          const wasOpen = colorPop.classList.contains('open');
-          document.querySelectorAll('.tag-mgr-color-pop.open').forEach(p => p.classList.remove('open'));
-          openMgrColorPop = null;
-          if (!wasOpen) { colorPop.classList.add('open'); openMgrColorPop = tag.id; }
-        });
-
-        const input = mkEl('input', 'tag-mgr-input');
-        input.type = 'text';
-        input.value = tag.label;
-        input.maxLength = 24;
-        input.title = 'Rename tag — press Enter to save';
-        let pendingLabel = tag.label;
-        input.addEventListener('input', e => { pendingLabel = e.target.value; });
-        input.addEventListener('blur', () => {
-          const newLabel = pendingLabel.trim();
-          if (newLabel && newLabel !== tag.label) {
-            vscode.postMessage({ type: 'updateTag', id: tag.id, changes: { label: newLabel } });
-          }
-        });
-        input.addEventListener('keydown', e => {
-          if (e.key === 'Enter')  { e.preventDefault(); input.blur(); }
-          if (e.key === 'Escape') { input.value = tag.label; pendingLabel = tag.label; input.blur(); }
-        });
-
-        const countEl = mkEl('span', 'tag-mgr-count', noteCount > 0 ? String(noteCount) : '');
-        countEl.title = noteCount === 1 ? '1 note' : (noteCount + ' notes');
-
-        const delBtn = mkEl('button', 'tag-mgr-del', '✕');
-        delBtn.title = 'Delete tag';
-        delBtn.addEventListener('click', () => {
-          row.innerHTML = '';
-          const confirmRow = mkEl('div', 'tag-mgr-confirm');
-          const suffix = noteCount !== 1 ? 's' : '';
-          const msgText = noteCount > 0
-            ? 'Delete "' + tag.label + '"? Removes it from ' + noteCount + ' note' + suffix + '.'
-            : 'Delete "' + tag.label + '"?';
-          const msg = mkEl('span', 'tag-mgr-confirm-msg', msgText);
-          const yes = mkEl('button', 'tag-mgr-confirm-yes', 'Delete');
-          const no  = mkEl('button', 'tag-mgr-confirm-no', 'Cancel');
-          yes.addEventListener('click', () => vscode.postMessage({ type: 'deleteTag', id: tag.id }));
-          no.addEventListener('click', () => renderTagManager());
-          confirmRow.append(msg, yes, no);
-          row.appendChild(confirmRow);
-        });
-
-        row.append(swatch, colorPop, input, countEl, delBtn);
-        mgr.appendChild(row);
-      });
-    }
-
-    if (builtinTags.length > 0) {
-      mgr.appendChild(mkEl('div', 'tag-mgr-section', 'Built-in tags'));
-      builtinTags.forEach(tag => {
-        const noteCount = notes.filter(n => n.tags.includes(tag.id)).length;
-        const row  = mkEl('div', 'tag-mgr-row');
-        const dot  = mkEl('div', 'tag-mgr-swatch tag-mgr-swatch-ro');
-        dot.style.background = tag.color;
-        const lbl  = mkEl('span', 'tag-mgr-ro-label', tag.label);
-        const countEl = mkEl('span', 'tag-mgr-count', noteCount > 0 ? String(noteCount) : '');
-        countEl.title = noteCount === 1 ? '1 note' : (noteCount + ' notes');
-        const hint = mkEl('span', 'tag-mgr-ro-hint', 'built-in');
-        row.append(dot, lbl, countEl, hint);
-        mgr.appendChild(row);
-      });
-    }
-
-    if (customTags.length === 0 && builtinTags.length === 0) {
-      mgr.appendChild(mkEl('div', 'tag-mgr-empty', 'No tags yet — click "+ tag" to create one.'));
-    }
   }
 
   // ── Add tag ─────────────────────────────────────────────────────────────
@@ -3562,7 +3404,9 @@ export class SidebarView implements vscode.WebviewViewProvider {
       const tag = tags.find(t => t.id === tid);
       if (!tag) return;
       const pill = mkEl('span', 'tag-pill');
-      pill.style.background = tag.color;
+      pill.style.background = hexToRgba(tag.color, 0.18);
+      pill.style.borderColor = tag.color;
+      pill.style.color = tag.color;
       if (tag.iconSvg) { const ico = mkEl('span', 'tag-icon'); ico.innerHTML = tag.iconSvg; pill.appendChild(ico); }
       pill.appendChild(mkEl('span', '', tag.label));
       pill.title = 'Filter by ' + tag.label;
@@ -4038,10 +3882,9 @@ export class SidebarView implements vscode.WebviewViewProvider {
   });
 
   function closeAllPops() {
-    document.querySelectorAll('.tag-pop.open, .tag-mgr-color-pop.open').forEach(el => el.classList.remove('open'));
+    document.querySelectorAll('.tag-pop.open, .tag-chip-color-pop.open').forEach(el => el.classList.remove('open'));
     openColorPop    = null;
     openTagPop      = null;
-    openMgrColorPop = null;
     overflowMenu.classList.remove('open');
     btnOverflow.classList.remove('active');
     document.querySelectorAll('[aria-expanded="true"]').forEach(el => el.setAttribute('aria-expanded', 'false'));
@@ -4078,15 +3921,24 @@ export class SidebarView implements vscode.WebviewViewProvider {
       sw.style.background = COLORS[key];
       sw.title = key;
       sw.dataset.colorKey = key;
-      sw.addEventListener('click', () => onSelect(key));
+      sw.dataset.colorHex = COLORS[key];
+      sw.addEventListener('click', () => onSelect(COLORS[key]));
       container.appendChild(sw);
     });
   }
 
-  function highlightSwatch(container, key) {
+  function highlightSwatch(container, hex) {
     container.querySelectorAll('.color-swatch').forEach(sw => {
-      sw.classList.toggle('selected', sw.dataset.colorKey === key);
+      sw.classList.toggle('selected', sw.dataset.colorHex === hex);
     });
+  }
+
+  function hexToRgba(hex, alpha) {
+    if (!hex || hex[0] !== '#') return hex || 'transparent';
+    const r = parseInt(hex.slice(1, 3), 16);
+    const g = parseInt(hex.slice(3, 5), 16);
+    const b = parseInt(hex.slice(5, 7), 16);
+    return 'rgba(' + r + ',' + g + ',' + b + ',' + alpha + ')';
   }
 
   function initials(name) {

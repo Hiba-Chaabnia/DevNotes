@@ -608,7 +608,8 @@ export class NoteStorage {
       const raw    = await vscode.workspace.fs.readFile(
         vscode.Uri.joinPath(this.folder, 'tags.json')
       );
-      const custom = JSON.parse(dec.decode(raw)) as Tag[];
+      const parsed = JSON.parse(dec.decode(raw));
+      const custom: Tag[] = Array.isArray(parsed) ? parsed : (parsed.tags ?? []);
       const customIds = new Set(custom.map(t => t.id));
       return [
         ...DEFAULT_TAGS.filter(t => !customIds.has(t.id)),
@@ -623,7 +624,12 @@ export class NoteStorage {
     this.tagsWriteInflight++;
     try {
       const defaultIds = new Set(DEFAULT_TAGS.map(t => t.id));
-      const custom = this.tags.filter(t => !defaultIds.has(t.id));
+      const defaultMap = new Map(DEFAULT_TAGS.map(t => [t.id, t]));
+      const custom = this.tags.filter(t => {
+        if (!defaultIds.has(t.id)) return true;
+        const def = defaultMap.get(t.id)!;
+        return t.color !== def.color || t.label !== def.label;
+      });
       await vscode.workspace.fs.writeFile(
         vscode.Uri.joinPath(this.folder, 'tags.json'),
         enc.encode(JSON.stringify(custom, null, 2))
