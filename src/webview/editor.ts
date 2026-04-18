@@ -173,6 +173,11 @@ const IndentLimiter = Extension.create({
       if (action === 'indent')  btn.disabled = !canIndent();
       if (action === 'outdent') btn.disabled = !canOutdent();
     });
+    // Reflect active state on each group's toggle button
+    toolbarEl.querySelectorAll<HTMLElement>('.tb-grp').forEach(grp => {
+      const toggle = grp.querySelector<HTMLButtonElement>('.tb-grp-toggle');
+      if (toggle) toggle.classList.toggle('is-active', !!grp.querySelector('[data-action].is-active'));
+    });
   }
 
   editor.on('selectionUpdate', syncToolbar);
@@ -184,6 +189,8 @@ const IndentLimiter = Extension.create({
     const btn = (e.target as Element).closest('[data-action]') as HTMLButtonElement | null;
     if (!btn || btn.disabled) return;
     e.preventDefault();
+    // Close any open group popup after an action
+    toolbarEl.querySelectorAll('.tb-grp-content.open').forEach(el => el.classList.remove('open'));
 
     const ch = editor.chain().focus();
     switch (btn.dataset.action) {
@@ -252,6 +259,48 @@ const IndentLimiter = Extension.create({
       editor.chain().focus().setImage({ src: data.src as string, alt: 'image' }).run();
     }
   });
+
+  // ── Responsive toolbar ───────────────────────────────────────────────────────
+  (function setupResponsiveToolbar() {
+    const groups = Array.from(toolbarEl.querySelectorAll<HTMLElement>('.tb-grp'));
+
+    function closeAll() {
+      toolbarEl.querySelectorAll('.tb-grp-content.open').forEach(el => el.classList.remove('open'));
+    }
+
+    // Group toggle click → open/close popup
+    groups.forEach(grp => {
+      const toggle  = grp.querySelector<HTMLButtonElement>('.tb-grp-toggle')!;
+      const content = grp.querySelector<HTMLElement>('.tb-grp-content')!;
+      toggle.addEventListener('mousedown', e => {
+        e.preventDefault();
+        e.stopPropagation();
+        const wasOpen = content.classList.contains('open');
+        closeAll();
+        if (!wasOpen) content.classList.add('open');
+      });
+    });
+
+    // Click outside → close all popups
+    document.addEventListener('mousedown', e => {
+      if (!(e.target as Element).closest('.tb-grp')) closeAll();
+    });
+
+    // Collapse groups right-to-left until the toolbar fits
+    function updateLayout() {
+      groups.forEach(g => g.classList.remove('collapsed'));
+      closeAll();
+      toolbarEl.style.overflow = 'hidden';
+      for (let i = groups.length - 1; i >= 0; i--) {
+        if (toolbarEl.scrollWidth <= toolbarEl.clientWidth) break;
+        groups[i].classList.add('collapsed');
+      }
+      toolbarEl.style.overflow = '';
+    }
+
+    new ResizeObserver(updateLayout).observe(toolbarEl);
+    updateLayout();
+  })();
 
   // ── Tab / Shift+Tab — stop Tab from reaching VS Code after ProseMirror runs ─
   // ProseMirror (StarterKit) handles Tab → sinkListItem and Shift-Tab →

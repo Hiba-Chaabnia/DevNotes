@@ -8,6 +8,7 @@ import {
   List, ListOrdered, ListChecks, Indent, Outdent,
   Quote, Minus, Undo2, Redo2,
   FileDown, FilePlus, SquareArrowOutUpRight,
+  Type, Heading, AlignJustify, Layers, LayoutTemplate,
 } from 'lucide';
 
 // ─── Panel ───────────────────────────────────────────────────────────────────
@@ -235,9 +236,14 @@ export class EditorPanel {
       minus:       svgIcon(Minus),
       undo:        svgIcon(Undo2),
       redo:        svgIcon(Redo2),
-      tplDown:     svgIcon(FileDown),
-      tplUp:       svgIcon(FilePlus),
-      export:      svgIcon(SquareArrowOutUpRight),
+      tplDown:      svgIcon(FileDown),
+      tplUp:        svgIcon(FilePlus),
+      export:       svgIcon(SquareArrowOutUpRight),
+      grpText:      svgIcon(Type),
+      grpHeadings:  svgIcon(Heading),
+      grpLists:     svgIcon(AlignJustify),
+      grpBlocks:    svgIcon(Layers),
+      grpTemplates: svgIcon(LayoutTemplate),
     };
 
     return `<!DOCTYPE html>
@@ -290,10 +296,12 @@ export class EditorPanel {
     display: flex;
     align-items: center;
     gap: 2px;
-    padding: 5px 10px;
+    padding: 5px min(10%, 80px);
     border-bottom: 1px solid var(--vscode-panel-border);
     flex-shrink: 0;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
+    overflow: visible;
+    position: relative;
     background: var(--vscode-sideBar-background);
   }
   #toolbar button {
@@ -312,6 +320,7 @@ export class EditorPanel {
     justify-content: center;
     opacity: .72;
     transition: background .1s, opacity .1s;
+    flex-shrink: 0;
   }
   #toolbar button:hover:not(:disabled) {
     background: var(--vscode-toolbar-hoverBackground);
@@ -324,6 +333,30 @@ export class EditorPanel {
   }
   #toolbar button:disabled { opacity: .28; cursor: default; }
   .tb-sep { width: 1px; height: 16px; background: var(--vscode-panel-border); margin: 0 3px; flex-shrink: 0; }
+
+  /* ── Toolbar groups ── */
+  .tb-grp { position: relative; display: flex; align-items: center; gap: 2px; flex-shrink: 0; }
+  .tb-grp-toggle { display: none !important; padding: 3px 5px; }
+  .tb-grp-content { display: flex; align-items: center; gap: 2px; }
+
+  /* Collapsed: show toggle, move content into a popup */
+  .tb-grp.collapsed > .tb-grp-toggle  { display: flex !important; }
+  .tb-grp.collapsed > .tb-grp-content { display: none; }
+  .tb-grp.collapsed > .tb-grp-content.open {
+    display: flex;
+    flex-wrap: wrap;
+    position: absolute;
+    top: calc(100% + 3px);
+    left: 0;
+    z-index: 200;
+    background: var(--vscode-menu-background, var(--vscode-editor-background));
+    border: 1px solid var(--vscode-panel-border);
+    border-radius: 6px;
+    padding: 4px;
+    gap: 2px;
+    box-shadow: 0 4px 12px rgba(0,0,0,.25);
+    min-width: 80px;
+  }
 
   /* ── Editor area ── */
   #editor-mount {
@@ -411,34 +444,60 @@ export class EditorPanel {
 <input id="title-input" type="text" placeholder="Untitled" spellcheck="false" autocomplete="off">
 
 <div id="toolbar">
-  <button data-action="bold"        title="Bold (Ctrl+B)">${ico.bold}</button>
-  <button data-action="italic"      title="Italic (Ctrl+I)">${ico.italic}</button>
-  <button data-action="underline"   title="Underline (Ctrl+U)">${ico.underline}</button>
-  <button data-action="strike"      title="Strikethrough">${ico.strike}</button>
-  <button data-action="code"        title="Inline code">${ico.code}</button>
-  <button data-action="link"        title="Insert / remove link">${ico.link}</button>
+  <button data-action="bold"       title="Bold (Ctrl+B)">${ico.bold}</button>
+  <button data-action="italic"     title="Italic (Ctrl+I)">${ico.italic}</button>
+  <button data-action="underline"  title="Underline (Ctrl+U)">${ico.underline}</button>
   <div class="tb-sep"></div>
-  <button data-action="h1"          title="Heading 1">${ico.h1}</button>
-  <button data-action="h2"          title="Heading 2">${ico.h2}</button>
-  <button data-action="h3"          title="Heading 3">${ico.h3}</button>
+  <div class="tb-grp" id="grp-text">
+    <button class="tb-grp-toggle" title="More formatting">${ico.grpText}</button>
+    <div class="tb-grp-content">
+      <button data-action="strike" title="Strikethrough">${ico.strike}</button>
+      <button data-action="code"   title="Inline code">${ico.code}</button>
+      <button data-action="link"   title="Insert / remove link">${ico.link}</button>
+    </div>
+  </div>
   <div class="tb-sep"></div>
-  <button data-action="bulletList"  title="Bullet list">${ico.list}</button>
-  <button data-action="orderedList" title="Ordered list">${ico.listOrdered}</button>
-  <button data-action="taskList"    title="Task list">${ico.listChecks}</button>
-  <button data-action="indent"      title="Indent (Tab)">${ico.indent}</button>
-  <button data-action="outdent"     title="Outdent (Shift+Tab)">${ico.outdent}</button>
+  <div class="tb-grp" id="grp-headings">
+    <button class="tb-grp-toggle" title="Headings">${ico.grpHeadings}</button>
+    <div class="tb-grp-content">
+      <button data-action="h1" title="Heading 1">${ico.h1}</button>
+      <button data-action="h2" title="Heading 2">${ico.h2}</button>
+      <button data-action="h3" title="Heading 3">${ico.h3}</button>
+    </div>
+  </div>
   <div class="tb-sep"></div>
-  <button data-action="blockquote"  title="Blockquote">${ico.quote}</button>
-  <button data-action="codeBlock"   title="Code block">${ico.code2}</button>
-  <button data-action="hr"          title="Horizontal rule">${ico.minus}</button>
+  <div class="tb-grp" id="grp-lists">
+    <button class="tb-grp-toggle" title="Lists &amp; indent">${ico.grpLists}</button>
+    <div class="tb-grp-content">
+      <button data-action="bulletList"  title="Bullet list">${ico.list}</button>
+      <button data-action="orderedList" title="Ordered list">${ico.listOrdered}</button>
+      <button data-action="taskList"    title="Task list">${ico.listChecks}</button>
+      <button data-action="indent"      title="Indent (Tab)">${ico.indent}</button>
+      <button data-action="outdent"     title="Outdent (Shift+Tab)">${ico.outdent}</button>
+    </div>
+  </div>
   <div class="tb-sep"></div>
-  <button data-action="undo"        title="Undo (Ctrl+Z)">${ico.undo}</button>
-  <button data-action="redo"        title="Redo">${ico.redo}</button>
+  <div class="tb-grp" id="grp-blocks">
+    <button class="tb-grp-toggle" title="Blocks">${ico.grpBlocks}</button>
+    <div class="tb-grp-content">
+      <button data-action="blockquote" title="Blockquote">${ico.quote}</button>
+      <button data-action="codeBlock"  title="Code block">${ico.code2}</button>
+      <button data-action="hr"         title="Horizontal rule">${ico.minus}</button>
+    </div>
+  </div>
   <div class="tb-sep"></div>
-  <button data-action="applyTemplate"      title="Apply a template to this note">${ico.tplDown}</button>
-  <button data-action="saveAsTemplate"     title="Save this note as a custom template">${ico.tplUp}</button>
+  <button data-action="undo" title="Undo (Ctrl+Z)">${ico.undo}</button>
+  <button data-action="redo" title="Redo">${ico.redo}</button>
   <div class="tb-sep"></div>
-  <button data-action="exportCurrentNote"  title="Export this note">${ico.export}</button>
+  <div class="tb-grp" id="grp-templates">
+    <button class="tb-grp-toggle" title="Templates">${ico.grpTemplates}</button>
+    <div class="tb-grp-content">
+      <button data-action="applyTemplate"  title="Apply a template to this note">${ico.tplDown}</button>
+      <button data-action="saveAsTemplate" title="Save this note as a custom template">${ico.tplUp}</button>
+    </div>
+  </div>
+  <div class="tb-sep"></div>
+  <button data-action="exportCurrentNote" title="Export this note">${ico.export}</button>
 </div>
 
 <div id="editor-mount"></div>
