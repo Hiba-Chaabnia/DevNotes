@@ -58,11 +58,11 @@ export interface Tag {
 
 
 export const DEFAULT_TAGS: Tag[] = [
-  { id: 'idea',      label: 'Idea',      color: NOTE_COLORS.yellow, icon: 'Lightbulb'    },
-  { id: 'todo',      label: 'Todo',      color: NOTE_COLORS.cyan,   icon: 'ListTodo'     },
-  { id: 'bug',       label: 'Bug',       color: NOTE_COLORS.orange, icon: 'Bug'          },
-  { id: 'meeting',   label: 'Meeting',   color: NOTE_COLORS.purple, icon: 'Presentation' },
-  { id: 'reference', label: 'Reference', color: NOTE_COLORS.blue,   icon: 'BookMarked'   },
+  { id: 'idea',      label: 'Idea',      color: NOTE_COLORS.yellow,   icon: 'Lightbulb'    },
+  { id: 'todo',      label: 'Todo',      color: NOTE_COLORS.blue,     icon: 'ListTodo'     },
+  { id: 'bug',       label: 'Bug',       color: NOTE_COLORS.red,      icon: 'Bug'          },
+  { id: 'meeting',   label: 'Meeting',   color: NOTE_COLORS.lavender, icon: 'Presentation' },
+  { id: 'reference', label: 'Reference', color: NOTE_COLORS.green,    icon: 'BookMarked'   },
 ];
 
 export const BUILTIN_TEMPLATES: Template[] = [
@@ -177,9 +177,10 @@ const dec = new TextDecoder();
  *   (e.g. after a git pull that brings in a teammate's shared notes).
  */
 export class NoteStorage {
-  private notes:     Note[]     = [];
-  private tags:      Tag[]      = [];
-  private templates: Template[] = []; // custom templates only; BUILTIN_TEMPLATES always prepended
+  private notes:        Note[]     = [];
+  private tags:         Tag[]      = [];
+  private templates:    Template[] = []; // custom templates only; BUILTIN_TEMPLATES always prepended
+  private customColors: string[]   = [];
 
   /** Called when the cache is updated due to external file changes (e.g. git pull). */
   onExternalChange?: () => void;
@@ -233,6 +234,18 @@ export class NoteStorage {
   }
 
   getTags(): Tag[] { return this.tags; }
+  getCustomColors(): string[] { return this.customColors; }
+
+  private saveCustomColor(hex: string): void {
+    const palette = Object.values(NOTE_COLORS);
+    if (palette.includes(hex)) return;
+    this.customColors = [hex, ...this.customColors.filter(c => c !== hex)].slice(0, 6);
+  }
+
+  async removeCustomColor(hex: string): Promise<void> {
+    this.customColors = this.customColors.filter(c => c !== hex);
+    await this.writeTags();
+  }
 
   /** Returns built-in templates followed by any custom ones. */
   getTemplates(): Template[] { return [...BUILTIN_TEMPLATES, ...this.templates]; }
@@ -281,6 +294,7 @@ export class NoteStorage {
   async addTag(label: string, color: string, icon?: string): Promise<Tag> {
     const tag: Tag = { id: generateId(), label, color, ...(icon ? { icon } : {}) };
     this.tags = [...this.tags, tag];
+    this.saveCustomColor(color);
     await this.writeTags();
     return tag;
   }
@@ -290,6 +304,7 @@ export class NoteStorage {
     if (idx === -1) return;
     this.tags[idx] = { ...this.tags[idx], ...changes };
     if (this.tags[idx].icon == null) { delete this.tags[idx].icon; }
+    if (changes.color) this.saveCustomColor(changes.color);
     await this.writeTags();
   }
 
@@ -618,6 +633,7 @@ export class NoteStorage {
       const parsed = JSON.parse(dec.decode(raw));
       const custom: Tag[] = Array.isArray(parsed) ? parsed : (parsed.tags ?? []);
       const order:  string[] | undefined = Array.isArray(parsed) ? undefined : parsed.order;
+      this.customColors = Array.isArray(parsed) ? [] : (parsed.customColors ?? []);
       const customIds = new Set(custom.map(t => t.id));
       const merged = [
         ...DEFAULT_TAGS.filter(t => !customIds.has(t.id)),
@@ -645,7 +661,7 @@ export class NoteStorage {
       });
       await vscode.workspace.fs.writeFile(
         vscode.Uri.joinPath(this.folder, 'tags.json'),
-        enc.encode(JSON.stringify({ tags: custom, order: this.tags.map(t => t.id) }, null, 2))
+        enc.encode(JSON.stringify({ tags: custom, order: this.tags.map(t => t.id), customColors: this.customColors }, null, 2))
       );
     } finally {
       setTimeout(() => this.tagsWriteInflight--, 500);

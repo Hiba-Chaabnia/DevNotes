@@ -117,7 +117,7 @@ export class ConflictPanel {
     padding: 16px 24px;
     border-bottom: 1px solid var(--vscode-panel-border);
     flex-shrink: 0;
-    background: rgba(${RGB.orange},.08);
+    background: rgba(${RGB.red},.08);
   }
   .conflict-icon { font-size: 1.5em; flex-shrink: 0; }
   .conflict-title { font-size: 1.05em; font-weight: 700; margin-bottom: 3px; }
@@ -149,8 +149,8 @@ export class ConflictPanel {
     padding: 2px 7px;
     border-radius: 3px;
   }
-  .label-ours   { background: rgba(${RGB.cyan},.2);   color: var(--vscode-foreground); }
-  .label-theirs { background: rgba(${RGB.orange},.2);  color: var(--vscode-foreground); }
+  .label-ours   { background: rgba(${RGB.blue},.2);  color: var(--vscode-foreground); }
+  .label-theirs { background: rgba(${RGB.red},.2);   color: var(--vscode-foreground); }
   .col-ref {
     font-size: 11px;
     font-family: var(--vscode-editor-font-family, monospace);

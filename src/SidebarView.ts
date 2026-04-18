@@ -25,6 +25,7 @@ import {
   Webhook, Cable, Blocks, Component,
   Lock, Unlock, Shield, ShieldCheck, Key,
   Zap, Box, BookOpen,
+  PenLine, Shapes, Palette, Ban,
 } from 'lucide';
 import type { IconNode as LucideNode } from 'lucide';
 
@@ -91,6 +92,7 @@ type ToExt =
   | { type: 'reorderTags'; ids: string[] }
   | { type: 'deleteTag'; id: string }
   | { type: 'updateTag'; id: string; changes: Partial<Pick<Tag, 'label' | 'color'>> & { icon?: string | null } }
+  | { type: 'removeCustomColor'; color: string }
   | { type: 'jumpToLink'; file: string; line: number }
   | { type: 'linkToEditor'; noteId: string }
   | { type: 'removeCodeLink'; noteId: string }
@@ -225,6 +227,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
       })),
       templates         : this.storage.getTemplates(),
       defaultTagIds     : DEFAULT_TAGS.map(t => t.id),
+      customColors      : this.storage.getCustomColors(),
       projectName       : this.projectName,
       currentBranch     : this.currentBranch     ?? null,
       currentUser       : this.currentUser       ?? null,
@@ -407,6 +410,12 @@ export class SidebarView implements vscode.WebviewViewProvider {
 
       case 'updateTag': {
         await this.storage.updateTag(msg.id, msg.changes);
+        this.push();
+        break;
+      }
+
+      case 'removeCustomColor': {
+        await this.storage.removeCustomColor(msg.color);
         this.push();
         break;
       }
@@ -763,6 +772,11 @@ export class SidebarView implements vscode.WebviewViewProvider {
       fmtDone:       JSON.stringify(svgIcon(Check,            13)),
       chevronDown:   JSON.stringify(svgIcon(ChevronDown,     12)),
       chevronUp:     JSON.stringify(svgIcon(ChevronUp,       12)),
+      popRename:     JSON.stringify(svgIcon(PenLine,         10)),
+      popIcon:       JSON.stringify(svgIcon(Shapes,          10)),
+      popColor:      JSON.stringify(svgIcon(Palette,         10)),
+      popDelete:     JSON.stringify(svgIcon(Trash2,          10)),
+      popNone:       JSON.stringify(svgIcon(Ban,             13)),
     };
 
     const checkmarkUri = 'data:image/svg+xml,' + encodeURIComponent(
@@ -1063,22 +1077,67 @@ export class SidebarView implements vscode.WebviewViewProvider {
     padding: 8px;
     flex-direction: column;
     gap: 6px;
-    width: 172px;
+    width: 188px;
     z-index: 200;
     box-shadow: 0 4px 16px rgba(0,0,0,.2);
   }
   .tag-chip-color-pop.open { display: flex; }
   .tag-chip-swatches { display: flex; flex-wrap: wrap; gap: 5px; }
-  .tag-icon-picker { display: flex; flex-wrap: wrap; gap: 3px; }
+  .tag-chip-color-pop .tag-chip-swatches { gap: 3px; }
+  .tag-chip-color-pop .color-swatch {
+    width: 22px; height: 22px; border-radius: 4px;
+    box-shadow: none; flex-shrink: 0;
+  }
+  .tag-chip-color-pop .color-swatch:hover { transform: none; filter: brightness(1.1); }
+  .tag-chip-color-pop .color-swatch.selected {
+    border-color: rgba(255,255,255,.9);
+    box-shadow: 0 0 0 1.5px var(--vscode-focusBorder);
+  }
+  .tag-chip-color-custom-btn {
+    font-size: 11px; padding: 2px 6px; border-radius: 20px;
+    background: none; border: 1.5px dashed var(--vscode-panel-border);
+    color: var(--vscode-descriptionForeground); cursor: pointer; flex-shrink: 0;
+  }
+  .tag-chip-color-custom-btn:hover { border-color: var(--vscode-foreground); color: var(--vscode-foreground); }
+  .tag-chip-color-custom-btn.active { border-style: solid; border-color: var(--vscode-focusBorder); color: var(--vscode-foreground); }
+  .tag-chip-hex-wrap { display: none; align-items: center; gap: 6px; margin-top: 4px; }
+  .tag-chip-hex-wrap.open { display: flex; }
+  .custom-swatch-wrap { position: relative; display: inline-flex; flex-shrink: 0; }
+  .custom-swatch-del {
+    position: absolute; top: -4px; right: -4px;
+    width: 13px; height: 13px; border-radius: 50%;
+    background: var(--vscode-errorForeground, #e05252); color: #fff;
+    font-size: 9px; line-height: 1; border: none; cursor: pointer;
+    display: none; align-items: center; justify-content: center; padding: 0; z-index: 1;
+  }
+  .custom-swatch-wrap:hover .custom-swatch-del { display: flex; }
+  .tag-chip-pop-sep { height: 1px; background: var(--vscode-panel-border); margin: 6px -8px; }
+  .tag-chip-pop-danger-sep {
+    height: 1px; background: var(--vscode-panel-border); margin: 8px -8px 2px;
+  }
+  .tag-chip-pop-label {
+    display: flex; align-items: center; gap: 4px;
+    font-size: 10px; font-weight: 600; letter-spacing: .04em;
+    color: var(--vscode-descriptionForeground); opacity: .8;
+    margin-bottom: 3px;
+  }
+  .tag-icon-picker {
+    display: flex; flex-wrap: wrap; gap: 3px;
+    max-height: 96px; overflow-y: auto; padding: 1px 0;
+    scrollbar-width: none;
+  }
+  .tag-icon-picker::-webkit-scrollbar { display: none; }
   .tag-icon-swatch {
-    width: 22px; height: 22px;
+    width: 24px; height: 24px;
     display: inline-flex; align-items: center; justify-content: center;
     border-radius: 4px; cursor: pointer; border: 1px solid transparent;
     background: transparent; color: var(--vscode-foreground); opacity: .65;
   }
   .tag-icon-swatch:hover { opacity: 1; background: var(--vscode-toolbar-hoverBackground); }
   .tag-icon-swatch.selected { opacity: 1; border-color: var(--vscode-focusBorder); background: var(--vscode-toolbar-activeBackground); }
-  .tag-icon-swatch.none-swatch { font-size: 10px; opacity: .5; }
+  .tag-icon-swatch.none-swatch { opacity: .45; }
+  .tag-chip-hex-dot { width: 13px; height: 13px; border-radius: 3px; flex-shrink: 0; border: 1px solid rgba(0,0,0,.2); }
+  .tag-chip-hex-wrap .tag-chip-pop-input { flex: 1; }
   .tag-form-icon-picker {
     display: flex; flex-wrap: wrap; gap: 3px;
     max-height: 72px; overflow-y: auto;
@@ -1097,15 +1156,13 @@ export class SidebarView implements vscode.WebviewViewProvider {
     font-family: monospace;
   }
   .tag-chip-pop-input:focus { border-color: var(--vscode-focusBorder); }
-  .tag-chip-pop-sep { height: 1px; background: var(--vscode-panel-border); margin: 1px -2px; }
-  .tag-chip-pop-label { font-size: 10px; color: var(--vscode-descriptionForeground); opacity: .7; }
 
   .tag-chip-pop-del {
     width: 100%;
     margin-top: 2px;
     padding: 3px 6px;
     font-size: 11px;
-    text-align: left;
+    display: flex; align-items: center; gap: 5px;
     cursor: pointer;
     border: none;
     border-radius: 3px;
@@ -1966,7 +2023,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
 
   /* ── Conflict / shared indicators ───────────────────── */
   .conflict-badge { background: ${NC.orange}; }
-  .shared-badge   { background: rgba(${RGB.cyan},.85); }
+  .shared-badge   { background: rgba(${RGB.blue},.85); }
 
   /* ── Reminder badge ─────────────────────────────────── */
   .reminder-badge         { background: ${NC.yellow}; }
@@ -2022,7 +2079,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
 
   .note-links-row { display: contents; } /* flattened into row2 */
   .note-link-chip {
-    background: ${NC.purple};
+    background: ${NC.lavender};
     max-width: 160px;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -2307,6 +2364,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
   let imageUriMap       = {};
   let templates         = [];
   let defaultTagIds     = [];
+  let customColors      = [];
   let activeTagIds      = [];
   let searchQuery       = '';
   let newTags           = [];
@@ -2545,6 +2603,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
       tags          = msg.tags          ?? [];
       templates     = msg.templates     ?? [];
       defaultTagIds = msg.defaultTagIds ?? [];
+      customColors  = msg.customColors  ?? [];
       imageUriMap   = msg.imageUriMap   ?? {};
       currentBranch     = msg.currentBranch     ?? null;
       currentUser       = msg.currentUser       ?? null;
@@ -3053,52 +3112,37 @@ export class SidebarView implements vscode.WebviewViewProvider {
       // ── Right-click context popup (all tags) ─────────────────────────
       const colorPop = mkEl('div', 'tag-chip-color-pop');
 
-      const swatchGrid = mkEl('div', 'tag-chip-swatches');
-      COLOR_KEYS.forEach(key => {
-        const sw = mkEl('div', 'color-swatch' + (COLORS[key] === tag.color ? ' selected' : ''));
-        sw.style.background = COLORS[key];
-        sw.dataset.colorHex = COLORS[key];
-        sw.title = key;
-        sw.addEventListener('click', e => {
+      // ── 1. Rename (custom tags only) ──────────────────────────────
+      if (!isDefault) {
+        colorPop.appendChild(mkPopLabel(${jsSvg.popRename}, 'Rename'));
+        const renameInput = document.createElement('input');
+        renameInput.type = 'text';
+        renameInput.className = 'tag-chip-pop-input';
+        renameInput.value = tag.label;
+        renameInput.maxLength = 24;
+        renameInput.addEventListener('click', e => e.stopPropagation());
+        renameInput.addEventListener('keydown', e => {
           e.stopPropagation();
-          colorPop.classList.remove('open');
-          vscode.postMessage({ type: 'updateTag', id: tag.id, changes: { color: COLORS[key] } });
-        });
-        swatchGrid.appendChild(sw);
-      });
-      colorPop.appendChild(swatchGrid);
-
-      const hexInput = document.createElement('input');
-      hexInput.type = 'text';
-      hexInput.className = 'tag-chip-pop-input';
-      hexInput.placeholder = '#rrggbb';
-      hexInput.maxLength = 7;
-      hexInput.value = tag.color && tag.color[0] === '#' ? tag.color : '';
-      hexInput.addEventListener('click', e => e.stopPropagation());
-      hexInput.addEventListener('keydown', e => {
-        e.stopPropagation();
-        if (e.key === 'Enter') {
-          const val = hexInput.value.trim();
-          if (/^#[0-9a-fA-F]{6}$/.test(val)) {
+          if (e.key === 'Enter') {
+            const newLabel = renameInput.value.trim();
             colorPop.classList.remove('open');
-            vscode.postMessage({ type: 'updateTag', id: tag.id, changes: { color: val } });
-          } else {
-            hexInput.style.outline = '1px solid red';
-            setTimeout(() => { hexInput.style.outline = ''; }, 1000);
+            if (newLabel && newLabel !== tag.label) {
+              vscode.postMessage({ type: 'updateTag', id: tag.id, changes: { label: newLabel } });
+            }
           }
-        }
-        if (e.key === 'Escape') colorPop.classList.remove('open');
-      });
-      colorPop.appendChild(hexInput);
+          if (e.key === 'Escape') colorPop.classList.remove('open');
+        });
+        colorPop.appendChild(renameInput);
+        colorPop.appendChild(mkEl('div', 'tag-chip-pop-sep'));
+      }
 
-      // ── Icon picker (all tags) ─────────────────────────────────────
-      colorPop.appendChild(mkEl('div', 'tag-chip-pop-sep'));
-      colorPop.appendChild(mkEl('div', 'tag-chip-pop-label', 'Icon'));
+      // ── 2. Icon ───────────────────────────────────────────────────
+      colorPop.appendChild(mkPopLabel(${jsSvg.popIcon}, 'Icon'));
       const iconGrid = mkEl('div', 'tag-icon-picker');
       const noneSw = mkEl('button', 'tag-icon-swatch none-swatch' + (!tag.icon ? ' selected' : ''));
       noneSw.type = 'button';
       noneSw.title = 'No icon';
-      noneSw.textContent = '×';
+      noneSw.innerHTML = ${jsSvg.popNone};
       noneSw.addEventListener('click', e => {
         e.stopPropagation();
         colorPop.classList.remove('open');
@@ -3118,34 +3162,116 @@ export class SidebarView implements vscode.WebviewViewProvider {
         iconGrid.appendChild(sw);
       });
       colorPop.appendChild(iconGrid);
+      colorPop.appendChild(mkEl('div', 'tag-chip-pop-sep'));
 
-      if (!isDefault) {
-        colorPop.appendChild(mkEl('div', 'tag-chip-pop-sep'));
-        colorPop.appendChild(mkEl('div', 'tag-chip-pop-label', 'Rename'));
-        const renameInput = document.createElement('input');
-        renameInput.type = 'text';
-        renameInput.className = 'tag-chip-pop-input';
-        renameInput.value = tag.label;
-        renameInput.maxLength = 24;
-        renameInput.addEventListener('click', e => e.stopPropagation());
-        renameInput.addEventListener('keydown', e => {
-          e.stopPropagation();
-          if (e.key === 'Enter') {
-            const newLabel = renameInput.value.trim();
+      // ── 3. Color ──────────────────────────────────────────────────
+      colorPop.appendChild(mkPopLabel(${jsSvg.popColor}, 'Color'));
+      const isCustomColor = !COLOR_KEYS.some(k => COLORS[k] === tag.color);
+
+      // Hex wrap (built first so swatch handlers can reference it)
+      const hexWrap = mkEl('div', 'tag-chip-hex-wrap' + (isCustomColor ? ' open' : ''));
+      const hexDot  = mkEl('div', 'tag-chip-hex-dot');
+      hexDot.style.background = tag.color || '#888';
+      const hexInput = document.createElement('input');
+      hexInput.type = 'text';
+      hexInput.className = 'tag-chip-pop-input';
+      hexInput.placeholder = '#rrggbb';
+      hexInput.maxLength = 8;
+      hexInput.value = tag.color && tag.color[0] === '#' ? tag.color : '';
+      hexInput.addEventListener('click', e => e.stopPropagation());
+      hexInput.addEventListener('input', () => {
+        let val = hexInput.value;
+        if (val && val[0] !== '#') { val = '#' + val; hexInput.value = val; }
+        if (/^#[0-9a-fA-F]{6}$/.test(val)) hexDot.style.background = val;
+      });
+      hexInput.addEventListener('keydown', e => {
+        e.stopPropagation();
+        if (e.key === 'Enter') {
+          let val = hexInput.value.trim();
+          if (val && val[0] !== '#') val = '#' + val;
+          if (/^#[0-9a-fA-F]{6}$/.test(val)) {
             colorPop.classList.remove('open');
-            if (newLabel && newLabel !== tag.label) {
-              vscode.postMessage({ type: 'updateTag', id: tag.id, changes: { label: newLabel } });
-            }
+            vscode.postMessage({ type: 'updateTag', id: tag.id, changes: { color: val } });
+          } else {
+            hexInput.style.outline = '1px solid red';
+            setTimeout(() => { hexInput.style.outline = ''; }, 1000);
           }
-          if (e.key === 'Escape') colorPop.classList.remove('open');
-        });
-        colorPop.appendChild(renameInput);
+        }
+        if (e.key === 'Escape') colorPop.classList.remove('open');
+      });
+      hexWrap.appendChild(hexDot);
+      hexWrap.appendChild(hexInput);
 
-        // ── Delete ────────────────────────────────────────────────────
-        colorPop.appendChild(mkEl('div', 'tag-chip-pop-sep'));
+      // Palette swatches + custom button
+      const swatchGrid = mkEl('div', 'tag-chip-swatches');
+      COLOR_KEYS.forEach(key => {
+        const sw = mkEl('div', 'color-swatch' + (COLORS[key] === tag.color ? ' selected' : ''));
+        sw.style.background = COLORS[key];
+        sw.dataset.colorHex = COLORS[key];
+        sw.title = key;
+        sw.addEventListener('click', e => {
+          e.stopPropagation();
+          const hex = COLORS[key];
+          hexInput.value = hex;
+          hexDot.style.background = hex;
+          hexWrap.classList.add('open');
+          customBtn.classList.add('active');
+          vscode.postMessage({ type: 'updateTag', id: tag.id, changes: { color: hex } });
+          setTimeout(() => hexInput.focus(), 0);
+        });
+        swatchGrid.appendChild(sw);
+      });
+      customColors.forEach(hex => {
+        const wrap = mkEl('div', 'custom-swatch-wrap');
+        const sw = mkEl('div', 'color-swatch' + (hex === tag.color ? ' selected' : ''));
+        sw.style.background = hex;
+        sw.dataset.colorHex = hex;
+        sw.title = hex;
+        sw.addEventListener('click', e => {
+          e.stopPropagation();
+          hexInput.value = hex;
+          hexDot.style.background = hex;
+          hexWrap.classList.add('open');
+          customBtn.classList.add('active');
+          vscode.postMessage({ type: 'updateTag', id: tag.id, changes: { color: hex } });
+          setTimeout(() => hexInput.focus(), 0);
+        });
+        wrap.appendChild(sw);
+        const swDel = mkEl('button', 'custom-swatch-del');
+        swDel.type = 'button';
+        swDel.title = 'Remove saved color';
+        swDel.textContent = '×';
+        swDel.addEventListener('click', e => {
+          e.stopPropagation();
+          vscode.postMessage({ type: 'removeCustomColor', color: hex });
+        });
+        wrap.appendChild(swDel);
+        swatchGrid.appendChild(wrap);
+      });
+      const customBtn = mkEl('button', 'tag-chip-color-custom-btn' + (isCustomColor ? ' active' : ''));
+      customBtn.type = 'button';
+      customBtn.title = 'Custom color';
+      customBtn.textContent = '+';
+      customBtn.addEventListener('click', e => {
+        e.stopPropagation();
+        const opening = !hexWrap.classList.contains('open');
+        hexWrap.classList.toggle('open', opening);
+        customBtn.classList.toggle('active', opening);
+        if (opening) setTimeout(() => hexInput.focus(), 0);
+      });
+      swatchGrid.appendChild(customBtn);
+      colorPop.appendChild(swatchGrid);
+      colorPop.appendChild(hexWrap);
+
+      // ── 4. Delete (custom tags only) ──────────────────────────────
+      if (!isDefault) {
+        colorPop.appendChild(mkEl('div', 'tag-chip-pop-danger-sep'));
         const delBtn = document.createElement('button');
         delBtn.className = 'tag-chip-pop-del';
-        delBtn.textContent = 'Delete tag';
+        const delIco = mkEl('span'); delIco.innerHTML = ${jsSvg.popDelete};
+        const delLbl = mkEl('span', '', 'Delete tag');
+        delBtn.appendChild(delIco);
+        delBtn.appendChild(delLbl);
         let delTimer = null;
         delBtn.addEventListener('click', e => {
           e.stopPropagation();
@@ -3157,10 +3283,10 @@ export class SidebarView implements vscode.WebviewViewProvider {
             const count = notes.filter(n => n.tags && n.tags.includes(tag.id)).length;
             const label = count === 0 ? 'Remove? (unused)' : 'Remove from ' + count + ' note' + (count === 1 ? '' : 's') + '?';
             delBtn.classList.add('confirming');
-            delBtn.textContent = label;
+            delLbl.textContent = label;
             delTimer = setTimeout(() => {
               delBtn.classList.remove('confirming');
-              delBtn.textContent = 'Delete tag';
+              delLbl.textContent = 'Delete tag';
             }, 3000);
           }
         });
@@ -3279,7 +3405,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
     const noneSw = mkEl('button', 'tag-icon-swatch none-swatch' + (!tagIcon ? ' selected' : ''));
     noneSw.type = 'button';
     noneSw.title = 'No icon';
-    noneSw.textContent = '×';
+    noneSw.innerHTML = ${jsSvg.popNone};
     noneSw.addEventListener('click', () => { tagIcon = null; buildFormIconPicker(); });
     tagIconPickerEl.appendChild(noneSw);
     TAG_ICON_PALETTE.forEach(entry => {
@@ -4082,6 +4208,14 @@ export class SidebarView implements vscode.WebviewViewProvider {
     const el = document.createElement(tag);
     if (cls)  el.className = cls;
     if (text) el.textContent = text;
+    return el;
+  }
+
+  function mkPopLabel(iconSvg, text) {
+    const el = mkEl('div', 'tag-chip-pop-label');
+    const ico = mkEl('span'); ico.innerHTML = iconSvg;
+    el.appendChild(ico);
+    el.appendChild(mkEl('span', '', text));
     return el;
   }
 
