@@ -4358,12 +4358,6 @@ export class SidebarView implements vscode.WebviewViewProvider {
     closeAllPops();
     if (isOpen) return; // toggle off
 
-    // ── Position ──
-    const rect = btn.getBoundingClientRect();
-    cardOvfMenu.style.top   = (rect.bottom + 4) + 'px';
-    cardOvfMenu.style.right = (window.innerWidth - rect.right) + 'px';
-    cardOvfMenu.style.left  = 'auto';
-
     // ── Populate ──
     cardOvfMenu.innerHTML = '';
     cardOvfTarget = note;
@@ -4468,7 +4462,34 @@ export class SidebarView implements vscode.WebviewViewProvider {
       }
     });
 
+    // ── Smart position (measure after populate) ──
     cardOvfMenu.classList.add('open');
+    const rect   = btn.getBoundingClientRect();
+    const menuH  = cardOvfMenu.offsetHeight;
+    const menuW  = cardOvfMenu.offsetWidth;
+    const vh     = window.innerHeight;
+    const vw     = window.innerWidth;
+    const GAP    = 4;
+
+    // Vertical: prefer below, flip above if not enough room
+    if (rect.bottom + GAP + menuH <= vh) {
+      cardOvfMenu.style.top    = (rect.bottom + GAP) + 'px';
+      cardOvfMenu.style.bottom = 'auto';
+    } else {
+      cardOvfMenu.style.top    = 'auto';
+      cardOvfMenu.style.bottom = (vh - rect.top + GAP) + 'px';
+    }
+
+    // Horizontal: right-align to button, clamp so it never clips the left edge
+    const rightEdge = vw - rect.right;
+    if (rect.right - menuW >= GAP) {
+      cardOvfMenu.style.right = rightEdge + 'px';
+      cardOvfMenu.style.left  = 'auto';
+    } else {
+      cardOvfMenu.style.left  = Math.max(GAP, rect.left) + 'px';
+      cardOvfMenu.style.right = 'auto';
+    }
+
     btn.setAttribute('aria-expanded', 'true');
   }
 
