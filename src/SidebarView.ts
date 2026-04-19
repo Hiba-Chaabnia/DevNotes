@@ -1101,7 +1101,8 @@ export class SidebarView implements vscode.WebviewViewProvider {
   .ovf-item.danger:hover { background: rgba(${RGB.danger},.12); }
   .ovf-item.confirm      { color: ${C.danger}; font-weight: 600; }
 
-  .overflow-btn.active { opacity: 1; background: var(--vscode-toolbar-hoverBackground); }
+  .overflow-btn.open   { opacity: 1; background: var(--vscode-toolbar-hoverBackground); }
+  .overflow-btn.active { opacity: 1; color: var(--vscode-button-background); }
 
   /* ── Tag filter bar ──────────────────────────────────── */
   .tag-bar {
@@ -1903,13 +1904,10 @@ export class SidebarView implements vscode.WebviewViewProvider {
 
   .card-check {
     display: none;
-    position: absolute;
-    top: 7px; left: 7px;
-    width: 17px; height: 17px;
+    width: 16px; height: 16px;
     border-radius: 4px;
-    border: 2px solid rgba(${RGB.text},.3);
-    background: rgba(255,255,255,.88);
-    z-index: 5;
+    border: 1.5px solid rgba(${RGB.text},.35);
+    background: rgba(255,255,255,.1);
     align-items: center;
     justify-content: center;
     font-size: 10px;
@@ -1918,6 +1916,8 @@ export class SidebarView implements vscode.WebviewViewProvider {
     flex-shrink: 0;
   }
   .select-mode .card-check { display: flex; }
+  .select-mode .card-overflow-btn,
+  .select-mode .star-btn { display: none; }
   .card.selected .card-check {
     background: var(--vscode-button-background);
     border-color: var(--vscode-button-background);
@@ -1934,23 +1934,39 @@ export class SidebarView implements vscode.WebviewViewProvider {
     background: var(--vscode-sideBar-background);
     display: none;
     align-items: center;
-    gap: 8px;
+    gap: 6px;
   }
   .export-bar.visible { display: flex; }
-  .export-bar .btn { font-size: 11px; padding: 3px 7px; }
+  .export-bar .btn {
+    font-size: 11px;
+    padding: 3px 8px;
+    border: 1px solid currentColor;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    color: var(--vscode-foreground);
+    opacity: .75;
+  }
+  .export-bar .btn:disabled {
+    opacity: .3;
+    cursor: not-allowed;
+    pointer-events: none;
+  }
   .export-count {
     flex: 1;
-    font-size: 12px;
+    font-size: 11px;
     color: var(--vscode-foreground);
-    opacity: .85;
+    opacity: .75;
+    user-select: none;
   }
   .btn-danger {
     color: var(--vscode-errorForeground) !important;
     border-color: var(--vscode-errorForeground) !important;
     opacity: .75;
   }
-  .btn-danger:hover { opacity: 1; }
-  .btn-sel-all { opacity: .7; }
+  .btn-danger:not(:disabled):hover { opacity: 1; }
+  .btn-sel-all { opacity: .85; }
   .btn-sel-all.all-selected { opacity: 1; font-weight: 700; }
 
   /* ── Branch indicator & filter ──────────────────────── */
@@ -1981,7 +1997,8 @@ export class SidebarView implements vscode.WebviewViewProvider {
 
 
   .branch-filter-btn.active { color: var(--vscode-button-background) !important; opacity: 1; }
-.archive-view-btn.active { color: var(--vscode-button-background) !important; opacity: 1; }
+  .archive-view-btn.active  { color: var(--vscode-button-background) !important; opacity: 1; }
+  .select-mode-btn.active   { color: var(--vscode-button-background) !important; opacity: 1; }
   .card.is-archived { opacity: .7; filter: grayscale(.25); }
 
 
@@ -2493,22 +2510,22 @@ export class SidebarView implements vscode.WebviewViewProvider {
   <button class="ovf-item mine-filter-btn" id="btn-mine-filter" style="display:none">
     <span class="ovf-icon">${svgIcon(User, 14)}</span>
     <span class="ovf-label">My notes only</span>
-    <span class="ovf-check">✓</span>
+    <span class="ovf-check">●</span>
   </button>
   <button class="ovf-item" id="btn-archive-view">
     <span class="ovf-icon">${svgIcon(Archive, 14)}</span>
     <span class="ovf-label">Archived notes</span>
-    <span class="ovf-check">✓</span>
+    <span class="ovf-check">●</span>
   </button>
   <button class="ovf-item stale-filter-btn" id="btn-stale-filter">
     <span class="ovf-icon">${svgIcon(Clock, 14)}</span>
     <span class="ovf-label">Stale notes</span>
-    <span class="ovf-check">✓</span>
+    <span class="ovf-check">●</span>
   </button>
   <button class="ovf-item" id="btn-select">
     <span class="ovf-icon">${svgIcon(LayoutList, 14)}</span>
     <span class="ovf-label">Selection mode</span>
-    <span class="ovf-check">✓</span>
+    <span class="ovf-check">●</span>
   </button>
   <hr class="ovf-divider"/>
   <button class="ovf-item" id="btn-integrations">
@@ -2519,12 +2536,11 @@ export class SidebarView implements vscode.WebviewViewProvider {
 
 <!-- ── Export bar (selection mode) ── -->
 <div class="export-bar" id="export-bar">
-  <span class="export-count" id="export-count">0 notes selected</span>
+  <span class="export-count" id="export-count">0 selected</span>
   <button class="btn btn-ghost btn-sel-all" id="btn-sel-all" title="Select all visible notes">All</button>
-  <button class="btn btn-ghost" id="btn-archive-sel" title="Archive selected">${svgIcon(Archive, 13)}</button>
-  <button class="btn btn-ghost" id="btn-tag-sel" title="Assign tag to selected">${svgIcon(TagIcon, 13)}</button>
-  <button class="btn btn-ghost" id="btn-export-sel" title="Export selected">${svgIcon(Download, 13)}</button>
-  <button class="btn btn-ghost btn-danger" id="btn-delete-sel" title="Delete selected">${svgIcon(X, 13)}</button>
+  <button class="btn btn-ghost" id="btn-archive-sel" title="Archive selected" disabled>${svgIcon(Archive, 13)}</button>
+  <button class="btn btn-ghost" id="btn-tag-sel" title="Assign tag to selected" disabled>${svgIcon(TagIcon, 13)}</button>
+  <button class="btn btn-ghost btn-danger" id="btn-delete-sel" title="Delete selected" disabled>${svgIcon(Trash2, 13)}</button>
   <button class="btn btn-ghost" id="btn-cancel-sel">Cancel</button>
 </div>
 
@@ -2607,6 +2623,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
   const btnMineFilter     = document.getElementById('btn-mine-filter');
   const btnStaleFilter    = document.getElementById('btn-stale-filter');
   const btnSelect         = document.getElementById('btn-select');
+  btnSelect.classList.add('select-mode-btn');
   const exportBar         = document.getElementById('export-bar');
   const branchPillEl         = document.getElementById('branch-pill');
   const githubFilterBar      = document.getElementById('github-filter-bar');
@@ -2633,7 +2650,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
       overflowMenu.style.top   = (rect.bottom + 4) + 'px';
       overflowMenu.style.right = (window.innerWidth - rect.right) + 'px';
       overflowMenu.classList.add('open');
-      btnOverflow.classList.add('active');
+      btnOverflow.classList.add('open');
     }
   });
 
@@ -2675,12 +2692,17 @@ export class SidebarView implements vscode.WebviewViewProvider {
 
   // ── Archive view toggle ──────────────────────────────────────────────────
   const btnArchiveView = document.getElementById('btn-archive-view');
+  function syncOverflowActive() {
+    btnOverflow.classList.toggle('active', selectMode || showArchived || staleFilterActive);
+  }
+
   btnArchiveView.classList.add('archive-view-btn');
   btnArchiveView.addEventListener('click', () => {
     showArchived = !showArchived;
     btnArchiveView.classList.toggle('active', showArchived);
     btnArchiveView.title = showArchived ? 'Back to notes' : 'Show archived notes';
     githubStatusFilter = null;
+    syncOverflowActive();
     renderCards();
   });
 
@@ -2694,6 +2716,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
       btnArchiveView.classList.remove('active');
       btnArchiveView.title = 'Show archived notes';
     }
+    syncOverflowActive();
     renderCards();
   });
 
@@ -2786,13 +2809,18 @@ export class SidebarView implements vscode.WebviewViewProvider {
     cardList.classList.remove('select-mode');
     exportBar.classList.remove('visible');
     btnSelAll.classList.remove('all-selected');
+    syncOverflowActive();
     cardList.querySelectorAll('.card.selected').forEach(c => c.classList.remove('selected'));
   }
 
   function updateExportBar() {
     const n = selectedIds.length;
-    exportCountEl.textContent = n + ' note' + (n !== 1 ? 's' : '') + ' selected';
-    exportBar.classList.toggle('visible', n > 0);
+    exportCountEl.textContent = n + ' selected';
+    exportBar.classList.toggle('visible', selectMode);
+    const hasSelection = n > 0;
+    document.getElementById('btn-archive-sel').disabled = !hasSelection;
+    document.getElementById('btn-tag-sel').disabled     = !hasSelection;
+    document.getElementById('btn-delete-sel').disabled  = !hasSelection;
     const visibleCount = cardList.querySelectorAll('.card[tabindex="0"]').length;
     btnSelAll.classList.toggle('all-selected', n > 0 && n === visibleCount);
     btnSelAll.title = (n > 0 && n === visibleCount) ? 'Deselect all' : 'Select all visible notes';
@@ -2804,6 +2832,8 @@ export class SidebarView implements vscode.WebviewViewProvider {
     btnSelect.classList.add('active');
     btnSelect.title = 'Exit selection mode';
     cardList.classList.add('select-mode');
+    syncOverflowActive();
+    updateExportBar();
   });
 
 
@@ -2819,12 +2849,6 @@ export class SidebarView implements vscode.WebviewViewProvider {
       allCards.forEach(c => c.classList.add('selected'));
     }
     updateExportBar();
-  });
-
-  document.getElementById('btn-export-sel').addEventListener('click', () => {
-    if (selectedIds.length === 0) return;
-    vscode.postMessage({ type: 'exportNotes', noteIds: [...selectedIds] });
-    exitSelectMode();
   });
 
   document.getElementById('btn-archive-sel').addEventListener('click', () => {
@@ -2846,6 +2870,10 @@ export class SidebarView implements vscode.WebviewViewProvider {
   });
 
   document.getElementById('btn-cancel-sel').addEventListener('click', exitSelectMode);
+
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && selectMode) exitSelectMode();
+  });
 
   // ── Init ────────────────────────────────────────────────────────────────
   vscode.postMessage({ type: 'ready' });
@@ -2912,7 +2940,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
   // ── Search ──────────────────────────────────────────────────────────────
   searchEl.addEventListener('input', () => {
     searchQuery = searchEl.value.toLowerCase();
-    searchClearEl.style.display = searchQuery ? 'block' : 'none';
+    searchClearEl.style.display = searchQuery ? 'flex' : 'none';
     renderCards();
   });
   searchClearEl.addEventListener('click', () => {
@@ -3893,10 +3921,6 @@ export class SidebarView implements vscode.WebviewViewProvider {
       + (note.archived   ? ' — archived' : '')
     );
 
-    // ── Select checkbox (visible only in selection mode) ──
-    const checkEl = mkEl('div', 'card-check');
-    card.appendChild(checkEl);
-
     card.addEventListener('click', e => {
       if (!selectMode) return;
       if (e.target.closest('button, input, textarea')) return;
@@ -3940,7 +3964,8 @@ export class SidebarView implements vscode.WebviewViewProvider {
       vscode.postMessage({ type: 'updateNote', id: note.id, changes: { starred: !note.starred } });
     });
 
-    row1.append(title, overflowBtn, starBtn);
+    const checkEl = mkEl('div', 'card-check');
+    row1.append(title, overflowBtn, starBtn, checkEl);
     card.append(row1);
 
     // ── Row 2: Metadata chips ──
@@ -4504,7 +4529,8 @@ export class SidebarView implements vscode.WebviewViewProvider {
     document.querySelectorAll('.tag-chip-color-pop.open').forEach(el => el.classList.remove('open'));
     openColorPop    = null;
     overflowMenu.classList.remove('open');
-    btnOverflow.classList.remove('active');
+    btnOverflow.classList.remove('open');
+    syncOverflowActive();
     document.querySelectorAll('[aria-expanded="true"]').forEach(el => el.setAttribute('aria-expanded', 'false'));
     cardOvfMenu.classList.remove('open');
     cardOvfTarget = null;
