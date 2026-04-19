@@ -29,26 +29,46 @@ async function _activate(context: vscode.ExtensionContext): Promise<void> {
   const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri;
 
   if (!workspaceRoot) {
-    // No folder open — register a minimal provider so the sidebar panel shows
-    // a helpful message instead of a blank/broken view.
     context.subscriptions.push(
-      vscode.window.registerWebviewViewProvider('devnotesView', {
+      vscode.window.registerWebviewViewProvider('devnotesNoFolderView', {
         resolveWebviewView(view: vscode.WebviewView) {
-          view.webview.options = { enableScripts: false };
+          view.webview.options = { enableScripts: true };
           view.webview.html = `<!DOCTYPE html>
-<html lang="en"><body style="
-  font-family:var(--vscode-font-family);
-  font-size:13px;
-  color:var(--vscode-descriptionForeground);
-  padding:24px 16px;
-  text-align:center;
-  line-height:1.5;
+<html lang="en">
+<body style="
+  font-family: var(--vscode-font-family);
+  font-size: 13px;
+  color: var(--vscode-foreground);
+  padding: 20px 16px;
+  line-height: 1.5;
+  margin: 0;
 ">
-  <p>DevNotes requires an open workspace folder.</p>
-  <p style="margin-top:8px;font-size:12px;">
-    Open a folder or workspace to start taking notes.
-  </p>
+  <p style="margin: 0 0 16px;">DevNotes needs a workspace.</p>
+  <button id="openBtn" style="
+    display: block;
+    width: 100%;
+    padding: 6px 0;
+    font-size: 13px;
+    font-family: var(--vscode-font-family);
+    color: var(--vscode-button-foreground);
+    background: var(--vscode-button-background);
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    text-align: center;
+  ">Open Folder</button>
+  <script>
+    const vscode = acquireVsCodeApi();
+    document.getElementById('openBtn').addEventListener('click', () => {
+      vscode.postMessage({ command: 'openFolder' });
+    });
+  </script>
 </body></html>`;
+          view.webview.onDidReceiveMessage(msg => {
+            if (msg.command === 'openFolder') {
+              vscode.commands.executeCommand('vscode.openFolder');
+            }
+          });
         },
       })
     );

@@ -28,13 +28,23 @@
       "devnotes-container": [
         {
           "type": "webview",
+          "id": "devnotesNoFolderView",
+          "name": "DevNotes",
+          "when": "workspaceFolderCount == 0"
+        },
+        {
+          "type": "webview",
           "id": "devnotesView",
-          "name": "Notes"
+          "name": "Notes",
+          "visibility": "collapsed",
+          "when": "workspaceFolderCount != 0"
         },
         {
           "type": "webview",
           "id": "devnotesActivityView",
-          "name": "Activity"
+          "name": "Activity",
+          "visibility": "collapsed",
+          "when": "workspaceFolderCount != 0"
         }
       ]
     },

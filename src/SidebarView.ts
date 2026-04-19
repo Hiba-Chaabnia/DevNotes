@@ -752,6 +752,9 @@ export class SidebarView implements vscode.WebviewViewProvider {
       conflictIcon:  JSON.stringify(svgIcon(TriangleAlert,         11)),
       archiveIcon:   JSON.stringify(svgIcon(Archive,               11)),
       bellSmall:     JSON.stringify(svgIcon(Bell,                  11)),
+      branchSmall:   JSON.stringify(svgIcon(GitBranch,             11)),
+      tagSmall:      JSON.stringify(svgIcon(TagIcon,               11)),
+      tplSmall:      JSON.stringify(svgIcon(LayoutList,            11)),
       ghPrOpen:      JSON.stringify(svgIcon(GitPullRequest,        11)),
       ghPrClosed:    JSON.stringify(svgIcon(GitPullRequestClosed,  11)),
       ghPrMerged:    JSON.stringify(svgIcon(GitMerge,              11)),
@@ -1217,7 +1220,6 @@ export class SidebarView implements vscode.WebviewViewProvider {
   /* ── Draft (inline new) card ─────────────────────────── */
   .draft-card { cursor: default; }
   .draft-card .card-title { width: 100%; }
-  .draft-card .card-row-2 { position: relative; }
   .draft-card .tag-ghost.active { opacity: 1; border-style: solid; }
   .draft-footer-done {
     background: var(--vscode-button-background);
@@ -1298,6 +1300,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
   }
 
   .card-row-2 {
+    position: relative;
     display: flex;
     align-items: center;
     gap: 4px;
@@ -1321,52 +1324,6 @@ export class SidebarView implements vscode.WebviewViewProvider {
   }
   .color-swatch:hover { transform: scale(1.15); }
   .color-swatch.selected { border-color: ${C.text}; }
-
-  /* Tag assignment popover */
-  .tag-pop {
-    position: absolute;
-    top: 30px; right: 8px;
-    background: var(--vscode-editorWidget-background, ${C.white});
-    border: 1px solid var(--vscode-panel-border);
-    border-radius: 8px;
-    padding: 5px;
-    display: none;
-    flex-direction: column;
-    gap: 2px;
-    min-width: 140px;
-    max-width: 200px;
-    max-height: 220px;
-    overflow-y: auto;
-    z-index: 50;
-    box-shadow: 0 4px 16px rgba(0,0,0,.18);
-  }
-  .tag-pop.open { display: flex; }
-  .tag-pop-empty {
-    font-size: 11px;
-    padding: 6px 8px;
-    opacity: .55;
-    color: ${C.text};
-  }
-  .tag-pop-item {
-    display: flex;
-    align-items: center;
-    gap: 7px;
-    padding: 5px 8px;
-    border-radius: 5px;
-    cursor: pointer;
-    font-size: 11px;
-    font-weight: 600;
-    color: ${C.text};
-    transition: filter .1s;
-  }
-  .tag-pop-item:hover { filter: brightness(.93); }
-  .tag-pop-check {
-    font-size: 10px;
-    margin-left: auto;
-    opacity: 0;
-    flex-shrink: 0;
-  }
-  .tag-pop-item.selected .tag-pop-check { opacity: 1; }
 
   /* Card content */
   .card-content {
@@ -1400,7 +1357,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
   .card-preview em { font-style: italic; }
   .card-preview.clamped {
     display: -webkit-box;
-    -webkit-line-clamp: 3;
+    -webkit-line-clamp: 5;
     -webkit-box-orient: vertical;
     overflow: hidden;
   }
@@ -1448,7 +1405,6 @@ export class SidebarView implements vscode.WebviewViewProvider {
     transition: opacity .18s ease, transform .18s ease;
     white-space: nowrap;
   }
-  /* Two-class selector beats single-class element styles (.card-date, .card-reminder, etc.) */
   .card-foot-slot .card-foot-secondary {
     position: absolute;
     white-space: nowrap;
@@ -1468,14 +1424,6 @@ export class SidebarView implements vscode.WebviewViewProvider {
     transform: translateY(0);
     pointer-events: auto;
   }
-
-  .card-reminder {
-    font-size: 10px;
-    white-space: nowrap;
-    color: ${C.remindWarn};
-    opacity: .9;
-  }
-  .card-reminder.overdue { color: ${C.remindOver}; opacity: 1; }
 
   /* ── Format bar (replaces row 4 while editing) ───────── */
   .card-fmtbar {
@@ -1574,10 +1522,12 @@ export class SidebarView implements vscode.WebviewViewProvider {
   }
 
   .card-tags { display: contents; } /* flattened into row2 */
+  .draft-pills { display: contents; }
 
   .tag-ghost {
     display: inline-flex;
     align-items: center;
+    gap: 4px;
     font-size: 10px;
     padding: 1px 7px;
     border-radius: 10px;
@@ -1947,24 +1897,13 @@ export class SidebarView implements vscode.WebviewViewProvider {
   .meta-chip:hover { filter: brightness(.9); }
 
   .archived-badge { background: ${C.muted}; }
+  .branch-chip    { background: rgba(128,128,128,.18); }
 
   /* Off-branch card — dimmed but still accessible */
   .card.off-branch { opacity: .42; }
   .card.off-branch:hover { opacity: .75; }
 
-  /* Branch badge in card footer */
-  .branch-badge {
-    font-size: 10px;
-    padding: 1px 5px;
-    border-radius: 10px;
-    background: rgba(0,0,0,.1);
-    color: var(--card-text);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    max-width: 100px;
-    opacity: .7;
-  }
+
 
   /* Branch scope toggle in new-note form */
   .branch-scope-label {
@@ -2385,7 +2324,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
   let selectedIds        = [];
   let knownNoteIds       = null; // null on first load — skip highlight; Set afterwards
   let openColorPop    = null;
-  let openTagPop      = null;
+  let cardTagPickerCommit = null;
   let pendingCodeLinkCallback = null;
   let draftOutsideListener   = null;
 
@@ -2768,30 +2707,16 @@ export class SidebarView implements vscode.WebviewViewProvider {
         pill.appendChild(mkEl('span', '', tag.label));
         pillsArea.appendChild(pill);
       });
-      ghostBtn.textContent = draftTags.length === 0 ? '+ tag' : '+';
+      ghostBtn.innerHTML = draftTags.length === 0 ? ${jsSvg.tagSmall} + 'tag' : ${jsSvg.tagSmall};
     }
 
-    if (tags.length > 0) {
-      tags.forEach(tag => {
-        const chip = mkEl('button', 'tag-chip');
-        chip.type = 'button';
-        chip.dataset.tid = tag.id;
-        chip.style.background = hexToRgba(tag.color, 0.18);
-        chip.style.borderColor = tag.color;
-        chip.style.color = tag.color;
-        if (tag.iconSvg) { const ico = mkEl('span', 'tag-icon'); ico.innerHTML = tag.iconSvg; chip.appendChild(ico); }
-        chip.appendChild(mkEl('span', '', tag.label));
-        chip.addEventListener('mousedown', e => {
-          e.preventDefault();
-          draftTags = draftTags.includes(tag.id)
-            ? draftTags.filter(id => id !== tag.id)
-            : [...draftTags, tag.id];
-          syncChipStates();
-          updateTagPills();
-        });
-        tagPickerEl.appendChild(chip);
-      });
+    buildTagPicker(tagPickerEl, () => draftTags, (id) => {
+      draftTags = draftTags.includes(id) ? draftTags.filter(i => i !== id) : [...draftTags, id];
+      syncChipStates();
+      updateTagPills();
+    });
 
+    if (tags.length > 0) {
       ghostBtn.addEventListener('mousedown', e => {
         e.preventDefault();
         if (tplPickerEl) tplPickerEl.style.display = 'none';
@@ -2804,7 +2729,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
 
     if (templates.length > 0) {
       tplChipBtn = mkEl('button', 'tag-ghost');
-      tplChipBtn.textContent = 'template';
+      tplChipBtn.innerHTML = ${jsSvg.tplSmall} + 'template';
       tplChipBtn.title = 'Apply a template';
       row2.appendChild(tplChipBtn);
 
@@ -2814,7 +2739,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
 
       function applyTemplate(tpl) {
         draftTemplateId = tpl ? tpl.id : null;
-        tplChipBtn.textContent = tpl ? tpl.name : 'template';
+        tplChipBtn.innerHTML = tpl ? ${jsSvg.tplSmall} + esc(tpl.name) : ${jsSvg.tplSmall} + 'template';
         tplChipBtn.classList.toggle('active', !!tpl);
         if (tpl) {
           if (tpl.content) { preview.innerHTML = simpleMarkdown(tpl.content); }
@@ -2855,7 +2780,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
     if (currentBranch) {
       const branchChip = mkEl('button', 'tag-ghost');
       branchChip.classList.toggle('active', draftBranchScope);
-      branchChip.textContent = '⎇ ' + currentBranch;
+      branchChip.innerHTML = ${jsSvg.branchSmall} + esc(currentBranch);
       branchChip.title = draftBranchScope ? 'Remove branch scope' : 'Pin to ' + currentBranch;
       branchChip.addEventListener('mousedown', e => {
         e.preventDefault();
@@ -2875,11 +2800,11 @@ export class SidebarView implements vscode.WebviewViewProvider {
       if (draftCodeLink) {
         const shortName = draftCodeLink.file.split('/').pop() || draftCodeLink.file;
         fileLinkChip.className = 'tag-ghost active';
-        fileLinkChip.innerHTML = esc(shortName + ':' + draftCodeLink.line)
+        fileLinkChip.innerHTML = ${jsSvg.codeLinkIcon} + esc(shortName + ':' + draftCodeLink.line)
           + '<span class="draft-link-remove"> ×</span>';
       } else {
         fileLinkChip.className = 'tag-ghost';
-        fileLinkChip.textContent = 'link file';
+        fileLinkChip.innerHTML = ${jsSvg.codeLinkIcon} + 'link file';
       }
     }
     renderFileLinkChip();
@@ -3828,13 +3753,73 @@ export class SidebarView implements vscode.WebviewViewProvider {
       row2.appendChild(chip);
     }
 
+    if (note.branch) {
+      const chip = mkEl('span', 'meta-chip branch-chip');
+      const ico = mkEl('span', 'tag-icon'); ico.innerHTML = ${jsSvg.branchSmall};
+      chip.append(ico, mkEl('span', '', note.branch));
+      chip.title = 'Branch: ' + note.branch;
+      row2.appendChild(chip);
+    }
+
     const hasChips = note.tags.length > 0
       || (note.linkedNoteIds && note.linkedNoteIds.length > 0)
-      || note.codeLink || note.github || note.remindAt || note.conflicted || note.archived;
+      || note.codeLink || note.github || note.remindAt || note.conflicted || note.archived || note.branch;
     if (!hasChips) {
-      const ghost = mkEl('button', 'tag-ghost', '+ tag');
-      ghost.title = 'Assign tags via the overflow menu';
+      const pillsArea = mkEl('div', 'draft-pills');
+      row2.appendChild(pillsArea);
+
+      const ghost = mkEl('button', 'tag-ghost');
+      ghost.title = 'Add tag';
+
+      let pendingTags = [...note.tags];
+
+      function updateRow2Pills() {
+        pillsArea.innerHTML = '';
+        pendingTags.forEach(tid => {
+          const tag = tags.find(t => t.id === tid);
+          if (!tag) return;
+          const pill = mkEl('span', 'tag-pill');
+          pill.style.background = hexToRgba(tag.color, 0.18);
+          pill.style.borderColor = tag.color;
+          pill.style.color = tag.color;
+          if (tag.iconSvg) { const ico = mkEl('span', 'tag-icon'); ico.innerHTML = tag.iconSvg; pill.appendChild(ico); }
+          pill.appendChild(mkEl('span', '', tag.label));
+          pillsArea.appendChild(pill);
+        });
+        ghost.innerHTML = pendingTags.length === 0 ? ${jsSvg.tagSmall} + 'tag' : ${jsSvg.tagSmall};
+      }
+      updateRow2Pills();
+
+      const picker = mkEl('div', 'draft-tag-picker card-tag-picker');
+      picker.style.display = 'none';
+      picker.addEventListener('click', e => e.stopPropagation());
+
+      buildTagPicker(picker, () => pendingTags, (id) => {
+        pendingTags = pendingTags.includes(id) ? pendingTags.filter(i => i !== id) : [...pendingTags, id];
+        updateRow2Pills();
+      });
+
+      ghost.addEventListener('click', e => {
+        e.stopPropagation();
+        const isOpen = picker.style.display !== 'none';
+        closeAllPops();
+        if (!isOpen) {
+          pendingTags = [...note.tags];
+          picker.querySelectorAll('.tag-chip').forEach(c => {
+            c.classList.toggle('active', pendingTags.includes(c.dataset.tid));
+          });
+          updateRow2Pills();
+          picker.style.display = '';
+          cardTagPickerCommit = () => {
+            if (pendingTags.slice().sort().join() !== note.tags.slice().sort().join()) {
+              vscode.postMessage({ type: 'updateNote', id: note.id, changes: { tags: pendingTags } });
+            }
+          };
+        }
+      });
+
       row2.appendChild(ghost);
+      row2.appendChild(picker);
     }
 
     card.appendChild(row2);
@@ -3913,7 +3898,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
       preview.innerHTML = simpleMarkdown(note.content);
       syncPlaceholder();
       if (!expanded) preview.classList.add('clamped');
-      const stillLong = note.content.split('\\n').length > 3 || note.content.length > 180;
+      const stillLong = note.content.split('\\n').length > 5 || note.content.length > 300;
       showMore.style.display = (stillLong && !expanded) ? 'flex' : 'none';
     });
 
@@ -3956,79 +3941,33 @@ export class SidebarView implements vscode.WebviewViewProvider {
     // ── Row 4: Footer ──
     const footer = mkEl('div', 'card-row-4');
 
-    // ── Left slot: owner ↔ branch ──
+    // ── Left slot: owner ──
     const leftSlot = mkEl('span', 'card-foot-slot card-foot-slot-left');
     const INVALID_OWNERS = ['undefined', 'null', 'unknown', ''];
     const hasOwner = note.owner && typeof note.owner === 'string'
       && !INVALID_OWNERS.includes(note.owner.trim());
 
-    const buildOwnerEl = cls => {
-      const owner   = note.owner.trim();
-      const el      = mkEl('span', 'owner-badge ' + cls);
-      el.title      = owner;
-      const circle  = mkEl('span', 'owner-initials', initials(owner));
-      const nameEl  = mkEl('span', 'owner-name', owner.split(/\s+/)[0] || owner);
+    if (hasOwner) {
+      const owner  = note.owner.trim();
+      const el     = mkEl('span', 'owner-badge');
+      el.title     = owner;
+      const circle = mkEl('span', 'owner-initials', initials(owner));
+      const nameEl = mkEl('span', 'owner-name', owner.split(/\s+/)[0] || owner);
       el.append(circle, nameEl);
-      return el;
-    };
-
-    if (hasOwner && note.branch) {
-      // Both present — hover to reveal branch, no auto-rotation
-      leftSlot.appendChild(buildOwnerEl('card-foot-primary'));
-      const branchEl = mkEl('span', 'branch-badge card-foot-secondary', '⎇ ' + note.branch);
-      leftSlot.appendChild(branchEl);
-      leftSlot.addEventListener('mouseenter', () => leftSlot.classList.add('card-foot-flipped'));
-      leftSlot.addEventListener('mouseleave', () => leftSlot.classList.remove('card-foot-flipped'));
-    } else if (hasOwner) {
-      leftSlot.appendChild(buildOwnerEl(''));
-    } else if (note.branch) {
-      leftSlot.appendChild(mkEl('span', 'branch-badge', '⎇ ' + note.branch));
+      leftSlot.appendChild(el);
     }
     footer.appendChild(leftSlot);
 
-    // ── Right slot ──
-    // Reminder is shown by default when overdue or due within 24 h;
-    // otherwise date is default and reminder peeks on hover.
+    // ── Right slot: date ──
     const rightSlot = mkEl('span', 'card-foot-slot card-foot-slot-right');
     const wasEdited = note.updatedAt - note.createdAt > 5000;
     const dateLabel = formatDate(wasEdited ? note.updatedAt : note.createdAt);
     const dateTitle = wasEdited
       ? 'Updated ' + new Date(note.updatedAt).toLocaleString()
       : 'Created '  + new Date(note.createdAt).toLocaleString();
-
-    if (note.remindAt) {
-      const isOverdue  = note.remindAt <= Date.now();
-      const isImminent = note.remindAt - Date.now() <= 86400000; // within 24 h
-      const reminderUrgent = isOverdue || isImminent;
-
-      const reminderEl = mkEl('span', 'card-reminder' + (isOverdue ? ' overdue' : ''));
-      reminderEl.textContent = '🔔 ' + formatReminder(note.remindAt);
-      reminderEl.title = isOverdue
-        ? 'Overdue — open overflow menu to reschedule'
-        : new Date(note.remindAt).toLocaleString();
-
-      const dateEl = mkEl('span', 'card-date');
-      dateEl.textContent = dateLabel;
-      dateEl.title = dateTitle;
-
-      if (reminderUrgent) {
-        // Reminder is primary; date peeks on hover
-        reminderEl.classList.add('card-foot-primary');
-        dateEl.classList.add('card-foot-secondary');
-      } else {
-        // Date is primary; reminder peeks on hover
-        dateEl.classList.add('card-foot-primary');
-        reminderEl.classList.add('card-foot-secondary');
-      }
-      rightSlot.append(reminderEl, dateEl);
-      rightSlot.addEventListener('mouseenter', () => rightSlot.classList.add('card-foot-flipped'));
-      rightSlot.addEventListener('mouseleave', () => rightSlot.classList.remove('card-foot-flipped'));
-    } else {
-      const dateEl = mkEl('span', 'card-date');
-      dateEl.textContent = dateLabel;
-      dateEl.title = dateTitle;
-      rightSlot.appendChild(dateEl);
-    }
+    const dateEl = mkEl('span', 'card-date', dateLabel);
+    dateEl.title = dateTitle;
+    rightSlot.appendChild(dateEl);
     footer.appendChild(rightSlot);
     card.appendChild(footer);
 
@@ -4179,9 +4118,10 @@ export class SidebarView implements vscode.WebviewViewProvider {
   });
 
   function closeAllPops() {
-    document.querySelectorAll('.tag-pop.open, .tag-chip-color-pop.open').forEach(el => el.classList.remove('open'));
+    if (cardTagPickerCommit) { cardTagPickerCommit(); cardTagPickerCommit = null; }
+    document.querySelectorAll('.card-tag-picker').forEach(p => { p.style.display = 'none'; });
+    document.querySelectorAll('.tag-chip-color-pop.open').forEach(el => el.classList.remove('open'));
     openColorPop    = null;
-    openTagPop      = null;
     overflowMenu.classList.remove('open');
     btnOverflow.classList.remove('active');
     document.querySelectorAll('[aria-expanded="true"]').forEach(el => el.setAttribute('aria-expanded', 'false'));
@@ -4191,6 +4131,34 @@ export class SidebarView implements vscode.WebviewViewProvider {
 
   // ── Helpers ─────────────────────────────────────────────────────────────
   function esc(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+  function buildTagPicker(container, getSelected, onToggle) {
+    if (tags.length === 0) {
+      container.appendChild(mkEl('span', 'tag-pop-empty', 'No tags yet'));
+      return;
+    }
+    tags.forEach(tag => {
+      const chip = mkEl('button', 'tag-chip');
+      chip.type = 'button';
+      chip.dataset.tid = tag.id;
+      if (tag.iconSvg) { const ico = mkEl('span', 'tag-icon'); ico.innerHTML = tag.iconSvg; chip.appendChild(ico); }
+      chip.appendChild(mkEl('span', '', tag.label));
+      const applyStyle = active => {
+        chip.classList.toggle('active', active);
+        chip.style.background  = active ? tag.color : hexToRgba(tag.color, 0.18);
+        chip.style.borderColor = active ? 'rgba(0,0,0,0.25)' : tag.color;
+        chip.style.color       = active ? '${C.text}' : tag.color;
+      };
+      applyStyle(getSelected().includes(tag.id));
+      chip.addEventListener('click', e => {
+        e.preventDefault();
+        e.stopPropagation();
+        onToggle(tag.id, chip);
+        applyStyle(getSelected().includes(tag.id));
+      });
+      container.appendChild(chip);
+    });
+  }
 
   function matchSnippet(content, query) {
     if (!content) return '';
