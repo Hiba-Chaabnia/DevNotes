@@ -39,6 +39,10 @@ function svgIcon(nodes: LucideNode, size = 14, style = '', fill = 'none'): strin
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24" fill="${fill}" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"${style ? ` style="${style}"` : ''}>${inner}</svg>`;
 }
 
+function githubSvg(size = 14): string {
+  return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.477 2 2 6.477 2 12c0 4.418 2.865 8.166 6.839 9.489.5.092.682-.217.682-.482 0-.237-.009-.868-.013-1.703-2.782.604-3.369-1.34-3.369-1.34-.454-1.154-1.11-1.462-1.11-1.462-.908-.62.069-.608.069-.608 1.003.07 1.531 1.03 1.531 1.03.892 1.529 2.341 1.087 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.11-4.555-4.943 0-1.091.39-1.984 1.029-2.683-.103-.253-.446-1.27.098-2.647 0 0 .84-.269 2.75 1.025A9.578 9.578 0 0 1 12 6.836a9.59 9.59 0 0 1 2.504.337c1.909-1.294 2.747-1.025 2.747-1.025.546 1.377.202 2.394.1 2.647.64.699 1.028 1.592 1.028 2.683 0 3.842-2.339 4.687-4.566 4.935.359.309.678.919.678 1.852 0 1.336-.012 2.415-.012 2.743 0 .267.18.578.688.48C19.138 20.163 22 16.418 22 12c0-5.523-4.477-10-10-10z"/></svg>`;
+}
+
 // Ordered palette shown in the icon picker (coding-related icons only)
 const CODING_ICONS: [string, LucideNode][] = [
   // Code / Syntax
@@ -98,6 +102,7 @@ type ToExt =
   | { type: 'removeCodeLink'; noteId: string }
   | { type: 'openGitHubLink'; url: string }
   | { type: 'connectGitHub' }
+  | { type: 'disconnectGitHub' }
   | { type: 'archiveNote'; id: string }
   | { type: 'unarchiveNote'; id: string }
   | { type: 'registerMcp' }
@@ -112,6 +117,7 @@ type ToExt =
   | { type: 'switchBranch' }
   | { type: 'openFolder' }
   | { type: 'pasteImage'; noteId: string; base64: string; ext: string }
+  | { type: 'bannerDismiss' }
 
 // ─── Provider ────────────────────────────────────────────────────────────────
 
@@ -121,9 +127,56 @@ export class SidebarView implements vscode.WebviewViewProvider {
   private currentBranch: string | undefined;
   private currentUser:   string | undefined;
   private availableBranches: string[] = [];
-  private _branchFilterActive = false;
-  private _githubConnected    = false;
-  isBranchFilterActive(): boolean { return this._branchFilterActive; }
+  private _branchFilterActive  = false;
+  private _githubConnected     = false;
+  private _mcpRegistered       = false;
+  isBranchFilterActive(): boolean  { return this._branchFilterActive; }
+  isGithubConnected(): boolean     { return this._githubConnected; }
+  isMcpRegisteredState(): boolean  { return this._mcpRegistered; }
+
+  setMcpRegistered(val: boolean): void {
+    this._mcpRegistered = val;
+    this.push();
+  }
+
+  async connectGitHub(): Promise<void> {
+    const wsRoot = vscode.workspace.workspaceFolders?.[0]?.uri;
+    if (!wsRoot) {
+      vscode.window.showErrorMessage('DevNotes: open a workspace folder first.');
+      return;
+    }
+    try {
+      const session    = await vscode.authentication.getSession('github', ['repo'], { createIfNone: true });
+      const devnotesDir = path.join(wsRoot.fsPath, '.devnotes');
+      fs.mkdirSync(devnotesDir, { recursive: true });
+      // Ensure .gitignore with wildcard exists before writing the token so it
+      // is never accidentally staged even if NoteStorage.init() hasn't run yet.
+      const giPath = path.join(devnotesDir, '.gitignore');
+      if (!fs.existsSync(giPath)) fs.writeFileSync(giPath, '*\n', 'utf-8');
+      fs.writeFileSync(path.join(devnotesDir, '.github-token'), session.accessToken, 'utf-8');
+      this._githubConnected = true;
+      this.push();
+      vscode.window.showInformationMessage('GitHub account linked. Notes can now be connected to issues, PRs, and code reviews.');
+    } catch {
+      vscode.window.showErrorMessage('GitHub sign-in was cancelled or failed.');
+    }
+  }
+
+  async disconnectGitHub(): Promise<void> {
+    const wsRoot = vscode.workspace.workspaceFolders?.[0]?.uri;
+    if (!wsRoot) return;
+    const confirmed = await vscode.window.showWarningMessage(
+      'Disconnect GitHub? Notes will no longer be linked to issues and PRs.',
+      { modal: true },
+      'Disconnect',
+    );
+    if (confirmed !== 'Disconnect') return;
+    try {
+      fs.rmSync(path.join(wsRoot.fsPath, '.devnotes', '.github-token'));
+    } catch { /* already gone */ }
+    this._githubConnected = false;
+    this.push();
+  }
 
   constructor(
     private readonly context: vscode.ExtensionContext,
@@ -233,6 +286,8 @@ export class SidebarView implements vscode.WebviewViewProvider {
       currentUser       : this.currentUser       ?? null,
       availableBranches : this.availableBranches,
       githubConnected   : this._githubConnected,
+      mcpRegistered     : this._mcpRegistered,
+      bannerDismissed   : this.context.globalState.get<boolean>('devnotes.bannerDismissed', false),
     });
   }
 
@@ -489,27 +544,13 @@ export class SidebarView implements vscode.WebviewViewProvider {
         vscode.env.openExternal(vscode.Uri.parse(msg.url));
         break;
 
-      case 'connectGitHub': {
-        const wsRoot = vscode.workspace.workspaceFolders?.[0]?.uri;
-        if (!wsRoot) {
-          vscode.window.showErrorMessage('DevNotes: open a workspace folder first.');
-          break;
-        }
-        try {
-          const session = await vscode.authentication.getSession(
-            'github', ['repo'], { createIfNone: true }
-          );
-          const devnotesDir = path.join(wsRoot.fsPath, '.devnotes');
-          fs.mkdirSync(devnotesDir, { recursive: true });
-          fs.writeFileSync(path.join(devnotesDir, '.github-token'), session.accessToken, 'utf-8');
-          this._githubConnected = true;
-          this.push();
-          vscode.window.showInformationMessage('GitHub connected! Claude can now link notes to issues and PRs.');
-        } catch {
-          vscode.window.showErrorMessage('GitHub sign-in was cancelled or failed.');
-        }
+      case 'connectGitHub':
+        await this.connectGitHub();
         break;
-      }
+
+      case 'disconnectGitHub':
+        await this.disconnectGitHub();
+        break;
 
       case 'bulkArchive': {
         for (const id of msg.noteIds) {
@@ -685,6 +726,10 @@ export class SidebarView implements vscode.WebviewViewProvider {
         vscode.commands.executeCommand('devnotes.registerMcp');
         break;
 
+      case 'bannerDismiss':
+        this.context.globalState.update('devnotes.bannerDismissed', true);
+        break;
+
       case 'pasteImage': {
         const wsRoot = vscode.workspace.workspaceFolders?.[0]?.uri;
         if (!wsRoot) break;
@@ -724,6 +769,14 @@ export class SidebarView implements vscode.WebviewViewProvider {
     const sidebarEditorUri  = webview.asWebviewUri(
       vscode.Uri.joinPath(this.context.extensionUri, 'media', 'sidebar-editor.js')
     );
+    const gifUri = (name: string) =>
+      webview.asWebviewUri(vscode.Uri.joinPath(this.context.extensionUri, 'media', name)).toString();
+    const emptyGifs = {
+      notes   : gifUri('empty-notes.gif'),
+      archived: gifUri('empty-archived.gif'),
+      stale   : gifUri('empty-stale.gif'),
+      search  : gifUri('empty-search.gif'),
+    };
 
     // SVG strings injected into the webview script (browser side can't import lucide)
     const jsSvg = {
@@ -1873,8 +1926,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
 
 
   .branch-filter-btn.active { color: var(--vscode-button-background) !important; opacity: 1; }
-  .github-connect-btn.connected { color: ${GH.open} !important; opacity: 1; }
-  .archive-view-btn.active { color: var(--vscode-button-background) !important; opacity: 1; }
+.archive-view-btn.active { color: var(--vscode-button-background) !important; opacity: 1; }
   .card.is-archived { opacity: .7; filter: grayscale(.25); }
 
 
@@ -1987,6 +2039,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
     padding: 24px;
   }
   .empty-icon { font-size: 2.4em; }
+  .empty-gif { width: 80px; height: 80px; object-fit: contain; opacity: .85; }
   .empty p { font-size: 12px; line-height: 1.5; }
 
   /* ── Code link chip ──────────────────────────────────── */
@@ -2149,6 +2202,135 @@ export class SidebarView implements vscode.WebviewViewProvider {
   .theme-option-check { width: 10px; font-size: 10px; flex-shrink: 0; opacity: 0; }
   .theme-option.active .theme-option-check { opacity: 1; }
 
+  /* ── Setup banner (Option A) ──────────────────────────────── */
+  .setup-banner {
+    margin: 8px 10px 4px;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+  }
+  .setup-banner-title {
+    font-size: 13px;
+    font-weight: 600;
+    margin-bottom: 2px;
+    padding: 0 2px;
+  }
+  .setup-banner-sub {
+    font-size: 11px;
+    color: var(--vscode-descriptionForeground);
+    margin-bottom: 6px;
+    padding: 0 2px;
+  }
+  .setup-banner-footer {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    padding-top: 4px;
+  }
+  .setup-dismiss-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 11px;
+    font-family: var(--vscode-font-family);
+    color: var(--vscode-descriptionForeground);
+    opacity: .65;
+    padding: 2px 4px;
+    border-radius: 3px;
+  }
+  .setup-dismiss-btn:hover { opacity: 1; text-decoration: underline; }
+  .setup-confirm-bar {
+    display: none;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 4px;
+    font-size: 11px;
+  }
+  .setup-confirm-bar.visible { display: flex; }
+  .setup-confirm-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 11px;
+    font-family: var(--vscode-font-family);
+    padding: 2px 4px;
+    color: var(--vscode-textLink-foreground);
+  }
+  .setup-confirm-btn:hover { text-decoration: underline; }
+  .setup-confirm-sep { opacity: .4; }
+  .setup-card {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    padding: 9px 11px;
+    border-radius: 7px;
+    border: 1px solid var(--vscode-panel-border);
+    background: var(--vscode-sideBarSectionHeader-background, rgba(255,255,255,.03));
+    cursor: pointer;
+    text-align: left;
+    font-family: var(--vscode-font-family);
+    color: var(--vscode-foreground);
+    transition: border-color .15s, background .15s;
+    position: relative;
+  }
+  .setup-card:hover {
+    border-color: var(--vscode-focusBorder);
+    background: var(--vscode-list-hoverBackground);
+  }
+  .setup-card.done {
+    border-color: rgba(74, 175, 80, .4);
+    background: rgba(74, 175, 80, .1);
+    color: rgba(74, 175, 80, .8);
+    cursor: default;
+    pointer-events: none;
+  }
+  .setup-card.done:hover {
+    border-color: rgba(74, 175, 80, .4);
+    background: rgba(74, 175, 80, .1);
+  }
+  .setup-card.done.disconnectable {
+    pointer-events: auto;
+    cursor: pointer;
+  }
+  .setup-card.done.disconnectable:hover {
+    border-color: rgba(74, 175, 80, .65);
+    background: rgba(74, 175, 80, .18);
+  }
+  .setup-card-icon {
+    flex-shrink: 0;
+    width: 28px; height: 28px;
+    border-radius: 6px;
+    background: var(--vscode-button-background);
+    display: flex; align-items: center; justify-content: center;
+    opacity: .85;
+    color: var(--vscode-button-foreground);
+  }
+  .setup-card.done .setup-card-icon {
+    background: rgba(74, 175, 80, .25);
+    color: rgba(74, 175, 80, .9);
+    opacity: 1;
+  }
+  .setup-card.done .setup-card-desc {
+    color: rgba(74, 175, 80, .6);
+  }
+  .setup-divider {
+    border: none;
+    border-top: 1px solid var(--vscode-panel-border);
+    margin: 8px 0 0;
+  }
+  .setup-card-body { flex: 1; min-width: 0; }
+  .setup-card-name {
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1.3;
+  }
+  .setup-card-desc {
+    font-size: 11px;
+    color: var(--vscode-descriptionForeground);
+    line-height: 1.4;
+    margin-top: 1px;
+  }
 </style>
 </head>
 <body>
@@ -2215,6 +2397,36 @@ export class SidebarView implements vscode.WebviewViewProvider {
 <!-- ── GitHub status filter bar ── -->
 <div class="github-filter-bar" id="github-filter-bar" style="display:none"></div>
 
+<!-- ── Setup banner ── -->
+<div class="setup-banner" id="setup-banner">
+  <div class="setup-banner-title">Set up integrations</div>
+  <div class="setup-banner-sub">Link your tools to get the most out of DevNotes.</div>
+  <button class="setup-card" id="setup-github-row">
+    <span class="setup-card-icon">${githubSvg(15)}</span>
+    <div class="setup-card-body">
+      <div class="setup-card-name">Connect GitHub</div>
+      <div class="setup-card-desc" id="setup-github-desc">Link notes to issues &amp; PRs.</div>
+    </div>
+  </button>
+  <button class="setup-card" id="setup-mcp-row">
+    <span class="setup-card-icon">${svgIcon(Bot, 15)}</span>
+    <div class="setup-card-body">
+      <div class="setup-card-name">Register MCP server</div>
+      <div class="setup-card-desc">Let Claude Code read and write your notes from the terminal.</div>
+    </div>
+  </button>
+  <div class="setup-banner-footer">
+    <button class="setup-dismiss-btn" id="setup-dismiss-btn">Dismiss</button>
+    <div class="setup-confirm-bar" id="setup-confirm-bar">
+      <button class="setup-confirm-btn" id="setup-hide-now">Hide for now</button>
+      <span class="setup-confirm-sep">·</span>
+      <button class="setup-confirm-btn" id="setup-never">Never show again</button>
+    </div>
+  </div>
+</div>
+
+<hr class="setup-divider" id="setup-divider" style="display:none">
+
 <!-- ── Card list ── -->
 <div class="card-list" id="card-list" role="list" aria-label="Notes"></div>
 
@@ -2244,14 +2456,9 @@ export class SidebarView implements vscode.WebviewViewProvider {
     <span class="ovf-check">✓</span>
   </button>
   <hr class="ovf-divider"/>
-  <button class="ovf-item github-connect-btn" id="btn-github-connect">
-    <span class="ovf-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.477 2 2 6.477 2 12c0 4.418 2.865 8.166 6.839 9.489.5.092.682-.217.682-.482 0-.237-.009-.868-.013-1.703-2.782.604-3.369-1.34-3.369-1.34-.454-1.154-1.11-1.462-1.11-1.462-.908-.62.069-.608.069-.608 1.003.07 1.531 1.03 1.531 1.03.892 1.529 2.341 1.087 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.11-4.555-4.943 0-1.091.39-1.984 1.029-2.683-.103-.253-.446-1.27.098-2.647 0 0 .84-.269 2.75 1.025A9.578 9.578 0 0 1 12 6.836a9.59 9.59 0 0 1 2.504.337c1.909-1.294 2.747-1.025 2.747-1.025.546 1.377.202 2.394.1 2.647.64.699 1.028 1.592 1.028 2.683 0 3.842-2.339 4.687-4.566 4.935.359.309.678.919.678 1.852 0 1.336-.012 2.415-.012 2.743 0 .267.18.578.688.48C19.138 20.163 22 16.418 22 12c0-5.523-4.477-10-10-10z"/></svg></span>
-    <span class="ovf-label" id="ovf-github-label">Connect GitHub</span>
-    <span class="ovf-check">✓</span>
-  </button>
-  <button class="ovf-item" id="btn-register-mcp">
-    <span class="ovf-icon">${svgIcon(Bot, 14)}</span>
-    <span class="ovf-label">Register MCP</span>
+  <button class="ovf-item" id="btn-integrations">
+    <span class="ovf-icon">${svgIcon(Settings, 14)}</span>
+    <span class="ovf-label">Integrations</span>
   </button>
 </div>
 
@@ -2297,6 +2504,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
   const COLORS          = ${colorsJson};
   const COLOR_KEYS      = Object.keys(COLORS);
   const TAG_ICON_PALETTE = ${tagIconPaletteJson};
+  const EMPTY_GIFS = ${JSON.stringify(emptyGifs)};
 
   let notes             = [];
   let tags              = [];
@@ -2361,8 +2569,6 @@ export class SidebarView implements vscode.WebviewViewProvider {
   // ── Overflow menu ────────────────────────────────────────────────────────
   const btnOverflow  = document.getElementById('btn-overflow');
   const overflowMenu = document.getElementById('overflow-menu');
-  const ovfGithubLabel = document.getElementById('ovf-github-label');
-
   btnOverflow.addEventListener('click', e => {
     e.stopPropagation();
     const rect   = btnOverflow.getBoundingClientRect();
@@ -2436,16 +2642,82 @@ export class SidebarView implements vscode.WebviewViewProvider {
     renderCards();
   });
 
-  // ── GitHub connect ───────────────────────────────────────────────────────
-  const btnGithub = document.getElementById('btn-github-connect');
-  btnGithub.addEventListener('click', () => {
-    vscode.postMessage({ type: 'connectGitHub' });
+  // ── Setup banner (Option A) ───────────────────────────────────────────────
+  const setupBanner    = document.getElementById('setup-banner');
+  const setupDivider   = document.getElementById('setup-divider');
+  const setupGithubRow = document.getElementById('setup-github-row');
+  const setupMcpRow    = document.getElementById('setup-mcp-row');
+  const setupConfirmBar = document.getElementById('setup-confirm-bar');
+  const setupDismissBtn = document.getElementById('setup-dismiss-btn');
+
+  let lastGhConnected   = false;
+  let lastMcpRegistered = false;
+  let bannerForcedOpen  = false;
+
+  // ── Integrations (reopens setup banner) ──────────────────────────────────
+  document.getElementById('btn-integrations').addEventListener('click', () => {
+    bannerForcedOpen = true;
+    setupBanner.style.display  = '';
+    setupDivider.style.display = '';
+    setupDismissBtn.style.display = '';
+    setupConfirmBar.classList.remove('visible');
+    setupGithubRow.classList.toggle('done', lastGhConnected);
+    setupGithubRow.classList.toggle('disconnectable', lastGhConnected);
+    setupMcpRow.classList.toggle('done', lastMcpRegistered);
+    overflowMenu.classList.remove('open');
   });
 
-  // ── Register MCP ─────────────────────────────────────────────────────────
-  document.getElementById('btn-register-mcp').addEventListener('click', () => {
-    vscode.postMessage({ type: 'registerMcp' });
+  const setupGithubDesc = document.getElementById('setup-github-desc');
+
+  setupGithubRow.addEventListener('click', () => {
+    if (setupGithubRow.classList.contains('done'))
+      vscode.postMessage({ type: 'disconnectGitHub' });
+    else
+      vscode.postMessage({ type: 'connectGitHub' });
   });
+  setupMcpRow.addEventListener('click', () => {
+    if (!setupMcpRow.classList.contains('done'))
+      vscode.postMessage({ type: 'registerMcp' });
+  });
+  setupDismissBtn.addEventListener('click', () => {
+    setupDismissBtn.style.display = 'none';
+    setupConfirmBar.classList.add('visible');
+  });
+
+  document.getElementById('setup-hide-now').addEventListener('click', () => {
+    bannerForcedOpen = false;
+    setupBanner.style.display  = 'none';
+    setupDivider.style.display = 'none';
+  });
+
+  document.getElementById('setup-never').addEventListener('click', () => {
+    bannerForcedOpen = false;
+    setupBanner.style.display  = 'none';
+    setupDivider.style.display = 'none';
+    vscode.postMessage({ type: 'bannerDismiss' });
+  });
+
+  function updateSetupBanner(ghConnected, mcpReg, dismissed) {
+    lastGhConnected   = ghConnected;
+    lastMcpRegistered = mcpReg;
+    const allDone = ghConnected && mcpReg;
+    // bannerForcedOpen (set by the Integrations overflow item) overrides both
+    // the auto-hide-when-done logic and the permanent dismiss flag so the user
+    // can always review their integration status.
+    if (!bannerForcedOpen && (dismissed || allDone)) {
+      setupBanner.style.display  = 'none';
+      setupDivider.style.display = 'none';
+      return;
+    }
+    setupGithubRow.classList.toggle('done', ghConnected);
+    setupGithubRow.classList.toggle('disconnectable', ghConnected);
+    if (setupGithubDesc) {
+      setupGithubDesc.textContent = ghConnected
+        ? 'Connected — click to disconnect.'
+        : 'Link notes to issues & PRs.';
+    }
+    setupMcpRow.classList.toggle('done', mcpReg);
+  }
 
   // ── Selection mode ───────────────────────────────────────────────────────
   const exportCountEl  = document.getElementById('export-count');
@@ -2557,11 +2829,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
       const hasStale = notes.some(n => !n.archived && n.updatedAt <= cutoff &&
         (n.remindAt && n.remindAt < Date.now() || /- \[ \]/.test(n.content ?? '') || n.codeLinkStale));
       btnStaleFilter.style.display = hasStale ? '' : 'none';
-      // Reflect GitHub connection status on the overflow item
-      btnGithub.classList.toggle('connected', githubConnected);
-      btnGithub.classList.toggle('active', githubConnected);
-      btnGithub.title = githubConnected ? 'GitHub connected' : 'Connect to GitHub';
-      if (ovfGithubLabel) ovfGithubLabel.textContent = githubConnected ? 'GitHub connected' : 'Connect GitHub';
+      updateSetupBanner(githubConnected, msg.mcpRegistered ?? false, msg.bannerDismissed ?? false);
       // Drop filter state for tags that no longer exist
       activeTagIds = activeTagIds.filter(id => tags.some(t => t.id === id));
       renderBranchIndicator();
@@ -3412,14 +3680,15 @@ export class SidebarView implements vscode.WebviewViewProvider {
     const visible = visibleNotes();
     if (visible.length === 0) {
       const empty = mkEl('div', 'empty');
+      const gif = (key) => '<img class="empty-gif" src="' + EMPTY_GIFS[key] + '" alt="">';
       if (showArchived) {
-        empty.innerHTML = '<div class="empty-icon">📦</div><p>No archived notes.</p>';
+        empty.innerHTML = gif('archived') + '<p>No archived notes.</p>';
       } else if (staleFilterActive) {
-        empty.innerHTML = '<div class="empty-icon">✅</div><p>No stale notes.<br>Everything looks up to date.</p>';
+        empty.innerHTML = gif('stale') + '<p>No stale notes.<br>Everything looks up to date.</p>';
       } else if (notes.length === 0) {
-        empty.innerHTML = '<div class="empty-icon">📋</div><p>No notes yet.<br>Click <strong>+</strong> to create one.</p>';
+        empty.innerHTML = gif('notes') + '<p>No notes yet.<br>Click <strong>+</strong> to create one.</p>';
       } else {
-        empty.innerHTML = '<div class="empty-icon">🔍</div><p>No notes match<br><strong>' + esc(searchQuery || 'the selected filter') + '</strong>.</p>';
+        empty.innerHTML = gif('search') + '<p>No notes match<br><strong>' + esc(searchQuery || 'the selected filter') + '</strong>.</p>';
       }
       cardList.appendChild(empty);
       return;

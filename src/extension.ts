@@ -11,7 +11,7 @@ import { ConflictPanel } from './ConflictPanel';
 import { runExport } from './ExportController';
 import { detectProjectIdentity, getCurrentBranch, getGitUser, getLocalBranches } from './GitDetector';
 import { spawnSync } from 'child_process';
-import { registerDevNotesMcp, isClaudeCodeInstalled } from './McpRegistration';
+import { registerDevNotesMcp, isClaudeCodeInstalled, isMcpRegistered } from './McpRegistration';
 import { StatusBarController } from './StatusBarController';
 
 // ─── Activation ──────────────────────────────────────────────────────────────
@@ -90,6 +90,9 @@ async function _activate(context: vscode.ExtensionContext): Promise<void> {
     (noteId) => EditorPanel.show(context, storage, noteId, () => sidebar.push()),
     () => gutterController.refresh(),
   );
+
+  // Seed MCP registration state so the banner reflects reality on first load
+  sidebar.setMcpRegistered(isMcpRegistered());
 
   // Gutter decorations — shows sticky-note icon on lines with linked notes
   gutterController = new GutterController(context, storage);
@@ -367,6 +370,7 @@ async function _activate(context: vscode.ExtensionContext): Promise<void> {
         : 'DevNotes MCP server registered with Claude Code.';
 
       vscode.window.showInformationMessage(`${label} Restart Claude Code to apply.`);
+      sidebar.setMcpRegistered(true);
     })
   );
 
@@ -434,3 +438,4 @@ function refreshBranch(sidebar: SidebarView, rootPath: string): void {
     console.error('[DevNotes] refreshBranch error:', err);
   }
 }
+

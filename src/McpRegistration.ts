@@ -20,6 +20,16 @@ export function isClaudeCodeInstalled(): boolean {
   }
 }
 
+/** Returns true when the devnotes MCP server is registered in Claude Code. */
+export function isMcpRegistered(): boolean {
+  try {
+    const output = execSync('claude mcp list', { stdio: 'pipe' }).toString();
+    return output.toLowerCase().includes('devnotes');
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Register (or update) the DevNotes MCP server using the Claude Code CLI.
  *
