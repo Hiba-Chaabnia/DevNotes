@@ -2509,7 +2509,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
 <div class="overflow-menu" id="overflow-menu">
   <button class="ovf-item mine-filter-btn" id="btn-mine-filter" style="display:none">
     <span class="ovf-icon">${svgIcon(User, 14)}</span>
-    <span class="ovf-label">My notes only</span>
+    <span class="ovf-label">Personal notes</span>
     <span class="ovf-check">●</span>
   </button>
   <button class="ovf-item" id="btn-archive-view">
@@ -2670,7 +2670,8 @@ export class SidebarView implements vscode.WebviewViewProvider {
   btnMineFilter.addEventListener('click', () => {
     mineFilterActive = !mineFilterActive;
     btnMineFilter.classList.toggle('active', mineFilterActive);
-    btnMineFilter.title = mineFilterActive ? 'Show all notes' : 'Show only my notes';
+    btnMineFilter.title = mineFilterActive ? 'Show all notes' : 'Personal notes only';
+    syncOverflowActive();
     renderCards();
   });
 
@@ -2693,7 +2694,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
   // ── Archive view toggle ──────────────────────────────────────────────────
   const btnArchiveView = document.getElementById('btn-archive-view');
   function syncOverflowActive() {
-    btnOverflow.classList.toggle('active', selectMode || showArchived || staleFilterActive);
+    btnOverflow.classList.toggle('active', selectMode || showArchived || staleFilterActive || mineFilterActive);
   }
 
   btnArchiveView.classList.add('archive-view-btn');
