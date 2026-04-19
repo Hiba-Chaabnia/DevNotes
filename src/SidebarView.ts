@@ -24,7 +24,7 @@ import {
   Terminal, Package, Layers, Workflow, Settings, Settings2, Wrench, Hammer,
   Webhook, Cable, Blocks, Component,
   Lock, Unlock, Shield, ShieldCheck, Key,
-  Zap, Box, BookOpen,
+  Zap, Box, BookOpen, Files,
   PenLine, Shapes, Palette, Ban,
 } from 'lucide';
 import type { IconNode as LucideNode } from 'lucide';
@@ -107,6 +107,7 @@ type ToExt =
   | { type: 'unarchiveNote'; id: string }
   | { type: 'registerMcp' }
   | { type: 'createGitHubIssue'; noteId: string }
+  | { type: 'linkGitHubPR';     noteId: string }
   | { type: 'bulkArchive';    noteIds: string[] }
   | { type: 'bulkDelete';     noteIds: string[] }
   | { type: 'bulkTag';        noteIds: string[] }
@@ -661,6 +662,55 @@ export class SidebarView implements vscode.WebviewViewProvider {
         break;
       }
 
+      case 'linkGitHubPR': {
+        const wsRoot = vscode.workspace.workspaceFolders?.[0]?.uri;
+        if (!wsRoot) break;
+
+        const note = this.storage.getNote(msg.noteId);
+        if (!note) break;
+
+        const tokenFile = path.join(wsRoot.fsPath, '.devnotes', '.github-token');
+        let token: string | undefined;
+        try { token = fs.readFileSync(tokenFile, 'utf-8').trim(); } catch {}
+        if (!token) {
+          vscode.window.showErrorMessage('DevNotes: connect to GitHub first (Integrations in the overflow menu).');
+          break;
+        }
+
+        const input = await vscode.window.showInputBox({
+          prompt      : 'Paste GitHub PR URL',
+          placeHolder : 'https://github.com/owner/repo/pull/123',
+          validateInput: v => parsePRUrl(v) ? undefined : 'Must be a valid GitHub PR URL',
+        });
+        if (!input) break;
+
+        const pr = parsePRUrl(input)!;
+        let prTitle: string | undefined;
+        try {
+          const data = await githubFetchPR(token, pr.owner, pr.repo, pr.number);
+          prTitle = data.title;
+        } catch { /* non-fatal — link without title */ }
+
+        const github: GitHubLink = {
+          url   : `https://github.com/${pr.owner}/${pr.repo}/pull/${pr.number}`,
+          repo  : `${pr.owner}/${pr.repo}`,
+          number: pr.number,
+          type  : 'pr',
+          status: 'open',
+          title : prTitle,
+        };
+        await this.storage.updateNote(msg.noteId, { github });
+        this.push();
+        const action = await vscode.window.showInformationMessage(
+          `PR #${pr.number} linked${prTitle ? `: "${prTitle}"` : ''}.`,
+          'Open in Browser'
+        );
+        if (action === 'Open in Browser') {
+          vscode.env.openExternal(vscode.Uri.parse(github.url));
+        }
+        break;
+      }
+
       case 'linkNote': {
         const note = this.storage.getNote(msg.noteId);
         if (!note) break;
@@ -800,12 +850,15 @@ export class SidebarView implements vscode.WebviewViewProvider {
       sortUpdated:   JSON.stringify(svgIcon(ClockArrowDown,        13)),
       sortStarred:   JSON.stringify(svgIcon(Star,                  13, '', 'currentColor')),
       sortAlpha:     JSON.stringify(svgIcon(ArrowDownAZ,           13)),
-      noteLinkIcon:  JSON.stringify(svgIcon(Link,                  11)),
+      noteLinkIcon:  JSON.stringify(svgIcon(Files,                 11)),
       codeLinkIcon:  JSON.stringify(svgIcon(FileSymlink,           11)),
+      codeLinkMenu:  JSON.stringify(svgIcon(FileSymlink,           14)),
       conflictIcon:  JSON.stringify(svgIcon(TriangleAlert,         11)),
       archiveIcon:   JSON.stringify(svgIcon(Archive,               11)),
       bellSmall:     JSON.stringify(svgIcon(Bell,                  11)),
       branchSmall:   JSON.stringify(svgIcon(GitBranch,             11)),
+      branchMenu:    JSON.stringify(svgIcon(GitBranch,             14)),
+      noteLink:      JSON.stringify(svgIcon(Files,                 14)),
       tagSmall:      JSON.stringify(svgIcon(TagIcon,               11)),
       tplSmall:      JSON.stringify(svgIcon(LayoutList,            11)),
       ghPrOpen:      JSON.stringify(svgIcon(GitPullRequest,        11)),
@@ -833,6 +886,8 @@ export class SidebarView implements vscode.WebviewViewProvider {
       popColor:      JSON.stringify(svgIcon(Palette,         10)),
       popDelete:     JSON.stringify(svgIcon(Trash2,          10)),
       popNone:       JSON.stringify(svgIcon(Ban,             13)),
+      ghIssue:       JSON.stringify(svgIcon(CircleDot,       14)),
+      ghPr:          JSON.stringify(svgIcon(GitPullRequest,  14)),
     };
 
     const checkmarkUri = 'data:image/svg+xml,' + encodeURIComponent(
@@ -4326,23 +4381,33 @@ export class SidebarView implements vscode.WebviewViewProvider {
       edit:    ${jsSvg.edit},
       remind:  ${jsSvg.remind},
       dup:     ${jsSvg.dup},
-      link:    ${jsSvg.link},
+      link:    ${jsSvg.codeLinkMenu},
       unlink:  ${jsSvg.unlink},
       archive: ${jsSvg.archive},
       share:   ${jsSvg.share},
       export:  ${jsSvg.export},
       trash:   ${jsSvg.trash},
+      ghIssue: ${jsSvg.ghIssue},
+      ghPr:    ${jsSvg.ghPr},
+      branch:    ${jsSvg.branchMenu},
+      noteLink:  ${jsSvg.noteLink},
     };
 
-    // ── Group 1: Actions ──
-    item(SVG.edit,   'Edit in editor', '',
+    // ── Group 1: Edit & Create ──
+    item(SVG.edit, 'Edit in editor', '',
       () => { vscode.postMessage({ type: 'openEditor', noteId: note.id }); closeAllPops(); });
+
+    item(SVG.dup, 'Duplicate', '',
+      () => { vscode.postMessage({ type: 'duplicateNote', noteId: note.id }); closeAllPops(); });
 
     item(SVG.remind, note.remindAt ? 'Change reminder' : 'Set reminder', '',
       () => { vscode.postMessage({ type: 'setReminder', noteId: note.id }); closeAllPops(); });
 
-    item(SVG.dup, 'Duplicate', '',
-      () => { vscode.postMessage({ type: 'duplicateNote', noteId: note.id }); closeAllPops(); });
+    divider();
+
+    // ── Group 2: Link ──
+    item(SVG.noteLink, 'Link to another note', '',
+      () => { vscode.postMessage({ type: 'linkNote', noteId: note.id }); closeAllPops(); });
 
     if (note.codeLink) {
       item(SVG.unlink, 'Remove file link', '',
@@ -4352,9 +4417,35 @@ export class SidebarView implements vscode.WebviewViewProvider {
         () => { vscode.postMessage({ type: 'linkToEditor', noteId: note.id }); closeAllPops(); });
     }
 
+    if (currentBranch) {
+      if (note.branch === currentBranch) {
+        item(SVG.branch, 'Unpin from current branch', '',
+          () => { vscode.postMessage({ type: 'setBranchScope', noteId: note.id, branch: null }); closeAllPops(); });
+      } else {
+        item(SVG.branch, 'Pin to current branch', '',
+          () => { vscode.postMessage({ type: 'setBranchScope', noteId: note.id, branch: currentBranch }); closeAllPops(); });
+      }
+    }
+
+    if (githubConnected) {
+      divider();
+
+      // ── Group 3: GitHub ──
+      if (note.github) {
+        const ispr = note.github.type === 'pr';
+        item(ispr ? SVG.ghPr : SVG.ghIssue, ispr ? 'Open GitHub PR' : 'Open GitHub Issue', '',
+          () => { vscode.postMessage({ type: 'openGitHubLink', url: note.github.url }); closeAllPops(); });
+      } else {
+        item(SVG.ghIssue, 'Create GitHub Issue', '',
+          () => { vscode.postMessage({ type: 'createGitHubIssue', noteId: note.id }); closeAllPops(); });
+        item(SVG.ghPr, 'Link to PR', '',
+          () => { vscode.postMessage({ type: 'linkGitHubPR', noteId: note.id }); closeAllPops(); });
+      }
+    }
+
     divider();
 
-    // ── Group 2: Visibility ──
+    // ── Group 4: Visibility ──
     item(SVG.archive, note.archived ? 'Unarchive' : 'Archive', '',
       () => { vscode.postMessage({ type: note.archived ? 'unarchiveNote' : 'archiveNote', id: note.id }); closeAllPops(); });
 
@@ -4363,7 +4454,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
 
     divider();
 
-    // ── Group 4: Danger ──
+    // ── Group 5: Danger ──
     item(SVG.export, 'Export', '',
       () => { vscode.postMessage({ type: 'exportNotes', noteIds: [note.id] }); closeAllPops(); });
 
@@ -4782,6 +4873,47 @@ export class SidebarView implements vscode.WebviewViewProvider {
 function getNonce(): string {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
   return Array.from({ length: 32 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
+}
+
+function parsePRUrl(url: string): { owner: string; repo: string; number: number } | undefined {
+  const m = url.trim().match(/github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)/);
+  if (!m) return undefined;
+  return { owner: m[1], repo: m[2], number: parseInt(m[3], 10) };
+}
+
+function githubFetchPR(
+  token : string,
+  owner : string,
+  repo  : string,
+  number: number,
+): Promise<{ title: string; state: string; html_url: string }> {
+  return new Promise((resolve, reject) => {
+    const req = https.request(
+      {
+        hostname: 'api.github.com',
+        path    : `/repos/${owner}/${repo}/pulls/${number}`,
+        method  : 'GET',
+        headers : {
+          'Authorization': `token ${token}`,
+          'User-Agent'   : 'DevNotes-VSCode',
+          'Accept'       : 'application/vnd.github+json',
+        },
+      },
+      res => {
+        let body = '';
+        res.on('data', (c: Buffer) => body += c.toString());
+        res.on('end', () => {
+          try {
+            const data = JSON.parse(body);
+            if (res.statusCode && res.statusCode >= 400) reject(new Error(data.message ?? String(res.statusCode)));
+            else resolve({ title: data.title, state: data.state, html_url: data.html_url });
+          } catch { reject(new Error('Invalid JSON from GitHub API')); }
+        });
+      }
+    );
+    req.on('error', reject);
+    req.end();
+  });
 }
 
 function parseGitHubOwnerRepo(remoteUrl: string): { owner: string; repo: string } | undefined {
