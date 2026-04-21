@@ -1,18 +1,18 @@
 import * as vscode from 'vscode';
 import * as fs      from 'fs';
 import * as path    from 'path';
-import { NoteStorage } from './NoteStorage';
-import { SidebarView } from './SidebarView';
-import { EditorPanel } from './EditorPanel';
-import { GutterController } from './GutterController';
-import { ReminderController } from './ReminderController';
-import { ActivityFeedView } from './ActivityFeedView';
-import { ConflictPanel } from './ConflictPanel';
-import { runExport } from './ExportController';
-import { detectProjectIdentity, getCurrentBranch, getGitUser, getLocalBranches } from './GitDetector';
+import { NoteStorage } from './services/NoteStorage';
+import { SidebarView } from './views/SidebarView';
+import { EditorPanel } from './views/EditorPanel';
+import { GutterController } from './controllers/GutterController';
+import { ReminderController } from './controllers/ReminderController';
+import { ActivityFeedView } from './views/ActivityFeedView';
+import { ConflictPanel } from './views/ConflictPanel';
+import { runExport } from './controllers/ExportController';
+import { detectProjectIdentity, getCurrentBranch, getGitUser, getLocalBranches } from './services/GitDetector';
 import { spawnSync } from 'child_process';
-import { registerDevNotesMcp, isClaudeCodeInstalled, isMcpRegistered } from './McpRegistration';
-import { StatusBarController } from './StatusBarController';
+import { registerDevNotesMcp, isClaudeCodeInstalled, isMcpRegistered } from './services/McpRegistration';
+import { StatusBarController } from './controllers/StatusBarController';
 
 // ─── Activation ──────────────────────────────────────────────────────────────
 
@@ -214,7 +214,7 @@ async function _activate(context: vscode.ExtensionContext): Promise<void> {
       const editor = vscode.window.activeTextEditor;
 
       let prompt    = 'New note';
-      let codeLink: import('./NoteStorage').CodeLink | undefined;
+      let codeLink: import('./services/NoteStorage').CodeLink | undefined;
 
       if (editor) {
         const filePath = vscode.workspace.asRelativePath(editor.document.uri, false);
@@ -232,7 +232,7 @@ async function _activate(context: vscode.ExtensionContext): Promise<void> {
       if (!title) return;
 
       // Template picker — "Blank" is pre-selected so Enter still creates a note instantly
-      type TplItem = vscode.QuickPickItem & { template?: import('./NoteStorage').Template };
+      type TplItem = vscode.QuickPickItem & { template?: import('./services/NoteStorage').Template };
       const tplItems: TplItem[] = [
         { label: '$(file) Blank', description: 'No template', picked: true },
         ...storage.getTemplates().map(t => ({
@@ -334,7 +334,7 @@ async function _activate(context: vscode.ExtensionContext): Promise<void> {
   // Export a specific set of notes by IDs (called from sidebar selection mode)
   context.subscriptions.push(
     vscode.commands.registerCommand('devnotes.exportSelected', (noteIds: string[]) => {
-      const notes = noteIds.map(id => storage.getNote(id)).filter((n): n is import('./NoteStorage').Note => !!n);
+      const notes = noteIds.map(id => storage.getNote(id)).filter((n): n is import('./services/NoteStorage').Note => !!n);
       return runExport(notes, storage.getTags());
     })
   );

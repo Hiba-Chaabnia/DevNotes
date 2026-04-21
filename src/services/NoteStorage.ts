@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
-import { parseFrontmatter, serializeFrontmatter } from './Frontmatter';
-import { NOTE_COLORS } from './colors';
+import { parseFrontmatter, serializeFrontmatter } from '../utils/Frontmatter';
+import { NOTE_COLORS } from '../utils/colors';
 export { NOTE_COLORS };
 
 // ─── Data model ──────────────────────────────────────────────────────────────

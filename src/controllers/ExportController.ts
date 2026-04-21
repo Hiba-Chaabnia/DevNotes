@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
-import { Note, Tag, NOTE_COLORS } from './NoteStorage';
-import { UI_COLORS, EXPORT_COLORS as EX } from './colors';
+import { Note, Tag, NOTE_COLORS } from '../services/NoteStorage';
+import { UI_COLORS, EXPORT_COLORS as EX } from '../utils/colors';
 
 // ─── Public entry point ───────────────────────────────────────────────────────
 

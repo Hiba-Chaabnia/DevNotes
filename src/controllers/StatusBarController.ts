@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { NoteStorage } from './NoteStorage';
+import { NoteStorage } from '../services/NoteStorage';
 
 /**
  * Manages two persistent status bar items:

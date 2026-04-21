@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { NoteStorage } from './NoteStorage';
+import { NoteStorage } from '../services/NoteStorage';
 
 /**
  * Checks notes with a remindAt timestamp every minute and fires VS Code

@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
-import { NoteStorage, Note } from './NoteStorage';
-import { ACTIVITY_PALETTE, UI_COLORS } from './colors';
+import { NoteStorage, Note } from '../services/NoteStorage';
+import { ACTIVITY_PALETTE, UI_COLORS } from '../utils/colors';
 
 // ─── Entry model ─────────────────────────────────────────────────────────────
 

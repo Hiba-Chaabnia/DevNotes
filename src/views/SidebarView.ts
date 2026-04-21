@@ -1,10 +1,10 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
-import { NoteStorage, Note, Tag, Template, GitHubLink, NOTE_COLORS, DEFAULT_TAGS } from './NoteStorage';
+import { NoteStorage, Note, Tag, Template, GitHubLink, NOTE_COLORS, DEFAULT_TAGS } from '../services/NoteStorage';
 import { EditorPanel } from './EditorPanel';
-import { UI_COLORS as C, GH_COLORS as GH, NOTE_COLORS as NC, RGB, PLATFORM_COLORS as PLATFORM } from './colors';
-import { detectProjectIdentity } from './GitDetector';
-import { parsePRUrl, parseGitHubOwnerRepo, githubFetchPR, githubCreateIssue } from './GitHubClient';
+import { UI_COLORS as C, GH_COLORS as GH, NOTE_COLORS as NC, RGB, PLATFORM_COLORS as PLATFORM } from '../utils/colors';
+import { detectProjectIdentity } from '../services/GitDetector';
+import { parsePRUrl, parseGitHubOwnerRepo, githubFetchPR, githubCreateIssue } from '../services/GitHubClient';
 import {
   Plus, Search, X, Ellipsis, User, Archive, Clock, LayoutList, Bot,
   SquarePen, Bell, Copy, Link2, Unlink2, Share2, Download,

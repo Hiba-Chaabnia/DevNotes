@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
-import { NoteStorage, BUILTIN_TEMPLATES } from './NoteStorage';
-import { PLATFORM_COLORS } from './colors';
+import { NoteStorage, BUILTIN_TEMPLATES } from '../services/NoteStorage';
+import { PLATFORM_COLORS } from '../utils/colors';
 import type { IconNode as LucideNode } from 'lucide';
 import {
   Bold, Italic, Underline, Strikethrough, Code, Code2, Link,

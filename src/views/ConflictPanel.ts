@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
-import { NoteStorage, Note, Tag, NOTE_COLORS } from './NoteStorage';
-import { UI_COLORS, RGB } from './colors';
+import { NoteStorage, Note, Tag, NOTE_COLORS } from '../services/NoteStorage';
+import { UI_COLORS, RGB } from '../utils/colors';
 
 export class ConflictPanel {
   static current?: ConflictPanel;
