@@ -15,9 +15,12 @@ export const UI_COLORS = {
   danger     : '#e05252',   // destructive actions and overflow danger items
   remindWarn : '#d4900a',   // upcoming reminder (within 24 h)
   remindOver : '#c0392b',   // overdue reminder
-  activityBg : '#7B61FF',   // activity feed accent / avatar background
-  muted      : '#94a3b8',   // neutral/inactive state (archived, gh-closed)
-  amber      : '#FFB400',   // warning highlights — conflict diff rows
+  activityBg : '#c15f3c',   // activity feed accent / avatar background
+  muted      : '#94a3b8',   // neutral/inactive state (archived, gh-closed text)
+  amber      : '#FFB400',   // warning highlights — conflict banner, diff rows
+  shared     : '#7b61ff',   // shared note indicator
+  star       : '#f59e0b',   // starred / star-filled indicator
+  neutral    : '#808080',   // mid-grey for borders, dividers, and hover states
 } as const;
 
 // ─── GitHub status colors ─────────────────────────────────────────────────────
@@ -27,14 +30,11 @@ export const GH_COLORS = {
   merged: '#8250df',
 } as const;
 
-// ─── RGB component strings for rgba() usage in CSS ───────────────────────────
-// Each entry is the "r,g,b" portion of rgba(r,g,b,a) for the matching color.
-export const RGB = {
-  text  : '26,26,46',     // UI_COLORS.text
-  red   : '255,82,77',    // NOTE_COLORS.red
-  blue  : '67,180,251',   // NOTE_COLORS.blue
-  amber : '255,180,0',    // UI_COLORS.amber
-  danger: '224,82,82',    // UI_COLORS.danger
+// ─── Conflict panel colors ────────────────────────────────────────────────────
+export const CONFLICT_COLORS = {
+  ours    : '#3b82f6',   // HEAD / our version — blue
+  theirs  : '#16a34a',   // incoming version — green
+  resolved: '#a3e635',   // diff highlights and new-tag indicator — lime
 } as const;
 
 // ─── Activity feed owner-avatar palette ──────────────────────────────────────
@@ -62,4 +62,12 @@ export const EXPORT_COLORS = {
 export const PLATFORM_COLORS = {
   vsFocusBorder: '#0078d4',
   vsDarkBg     : '#252526',
+  vsEditorDark : '#1e1e1e',
 } as const;
+
+// ─── Utility ─────────────────────────────────────────────────────────────────
+/** Converts a 6-digit hex color to its "r,g,b" string for use in rgba(). */
+export function hexToRgb(hex: string): string {
+  const n = parseInt(hex.replace('#', ''), 16);
+  return `${(n >> 16) & 255},${(n >> 8) & 255},${n & 255}`;
+}

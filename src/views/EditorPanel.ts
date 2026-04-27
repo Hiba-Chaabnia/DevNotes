@@ -1,15 +1,8 @@
 import * as vscode from 'vscode';
 import { NoteStorage } from '../services/NoteStorage';
-import { PLATFORM_COLORS } from '../utils/colors';
+import { PLATFORM_COLORS, UI_COLORS, hexToRgb } from '../utils/colors';
 import { svgIcon, getNonce } from '../utils/webview';
-import {
-  Bold, Italic, Underline, Strikethrough, Code, Code2, Link,
-  Heading1, Heading2, Heading3,
-  List, ListOrdered, ListChecks, Indent, Outdent,
-  Quote, Minus, Undo2, Redo2,
-  FileDown, FilePlus, SquareArrowOutUpRight,
-  Type, Heading, AlignJustify, Layers, LayoutTemplate,
-} from 'lucide';
+import { ALL_LUCIDE_NODES } from '../utils/icons';
 
 // ─── Panel ───────────────────────────────────────────────────────────────────
 
@@ -47,13 +40,6 @@ export class EditorPanel {
     new EditorPanel(context, storage, noteId, onUpdate);
   }
 
-  // ── Theme propagation from sidebar preview ───────────────────────────────
-
-  setTheme(vars: Record<string, string> | null): void {
-    if (this.disposed) return;
-    this.panel.webview.postMessage({ type: 'setTheme', vars });
-  }
-
   // ── Push updated content (e.g. after external file change) ─────────────
 
   push(): void {
@@ -83,7 +69,7 @@ export class EditorPanel {
 
     this.panel = vscode.window.createWebviewPanel(
       'devnotes.editor',
-      `✏ ${note.title}`,
+      `${note.title}`,
       vscode.ViewColumn.One,
       {
         enableScripts          : true,
@@ -117,7 +103,7 @@ export class EditorPanel {
           const trimmed = msg.title.trim();
           if (trimmed) {
             await this.storage.updateNote(this.noteId, { title: trimmed });
-            this.panel.title = `✏ ${trimmed}`;
+            this.panel.title = `${trimmed}`;
             this.onUpdate?.();
           }
 
@@ -228,33 +214,33 @@ export class EditorPanel {
     const content = JSON.stringify(initialContent).replace(/<\/script>/gi, '<\\/script>');
     const title   = JSON.stringify(initialTitle).replace(/<\/script>/gi, '<\\/script>');
     const ico = {
-      bold:        svgIcon(Bold),
-      italic:      svgIcon(Italic),
-      underline:   svgIcon(Underline),
-      strike:      svgIcon(Strikethrough),
-      code:        svgIcon(Code),
-      code2:       svgIcon(Code2),
-      link:        svgIcon(Link),
-      h1:          svgIcon(Heading1),
-      h2:          svgIcon(Heading2),
-      h3:          svgIcon(Heading3),
-      list:        svgIcon(List),
-      listOrdered: svgIcon(ListOrdered),
-      listChecks:  svgIcon(ListChecks),
-      indent:      svgIcon(Indent),
-      outdent:     svgIcon(Outdent),
-      quote:       svgIcon(Quote),
-      minus:       svgIcon(Minus),
-      undo:        svgIcon(Undo2),
-      redo:        svgIcon(Redo2),
-      tplDown:      svgIcon(FileDown),
-      tplUp:        svgIcon(FilePlus),
-      export:       svgIcon(SquareArrowOutUpRight),
-      grpText:      svgIcon(Type),
-      grpHeadings:  svgIcon(Heading),
-      grpLists:     svgIcon(AlignJustify),
-      grpBlocks:    svgIcon(Layers),
-      grpTemplates: svgIcon(LayoutTemplate),
+      bold:         svgIcon(ALL_LUCIDE_NODES['Bold']),
+      italic:       svgIcon(ALL_LUCIDE_NODES['Italic']),
+      underline:    svgIcon(ALL_LUCIDE_NODES['Underline']),
+      strike:       svgIcon(ALL_LUCIDE_NODES['Strikethrough']),
+      code:         svgIcon(ALL_LUCIDE_NODES['Code']),
+      code2:        svgIcon(ALL_LUCIDE_NODES['Code2']),
+      link:         svgIcon(ALL_LUCIDE_NODES['Link']),
+      h1:           svgIcon(ALL_LUCIDE_NODES['Heading1']),
+      h2:           svgIcon(ALL_LUCIDE_NODES['Heading2']),
+      h3:           svgIcon(ALL_LUCIDE_NODES['Heading3']),
+      list:         svgIcon(ALL_LUCIDE_NODES['List']),
+      listOrdered:  svgIcon(ALL_LUCIDE_NODES['ListOrdered']),
+      listChecks:   svgIcon(ALL_LUCIDE_NODES['ListChecks']),
+      indent:       svgIcon(ALL_LUCIDE_NODES['Indent']),
+      outdent:      svgIcon(ALL_LUCIDE_NODES['Outdent']),
+      quote:        svgIcon(ALL_LUCIDE_NODES['Quote']),
+      minus:        svgIcon(ALL_LUCIDE_NODES['Minus']),
+      undo:         svgIcon(ALL_LUCIDE_NODES['Undo2']),
+      redo:         svgIcon(ALL_LUCIDE_NODES['Redo2']),
+      tplDown:      svgIcon(ALL_LUCIDE_NODES['FileDown']),
+      tplUp:        svgIcon(ALL_LUCIDE_NODES['FilePlus']),
+      export:       svgIcon(ALL_LUCIDE_NODES['SquareArrowOutUpRight']),
+      grpText:      svgIcon(ALL_LUCIDE_NODES['Type']),
+      grpHeadings:  svgIcon(ALL_LUCIDE_NODES['Heading']),
+      grpLists:     svgIcon(ALL_LUCIDE_NODES['AlignJustify']),
+      grpBlocks:    svgIcon(ALL_LUCIDE_NODES['Layers']),
+      grpTemplates: svgIcon(ALL_LUCIDE_NODES['LayoutTemplate']),
     };
 
     const checkmarkUri = 'data:image/svg+xml,' + encodeURIComponent(
@@ -388,16 +374,16 @@ export class EditorPanel {
     margin: 0 auto;
   }
   .ProseMirror p { margin-bottom: .75em; }
-  .ProseMirror h1 { font-size: 1.8em; font-weight: 700; margin: 1.1em 0 .45em; line-height: 1.25; }
-  .ProseMirror h2 { font-size: 1.35em; font-weight: 700; margin: 1em 0 .4em; }
-  .ProseMirror h3 { font-size: 1.1em; font-weight: 700; margin: .9em 0 .35em; }
+  .ProseMirror h1 { font-size: 1.45em; font-weight: 700; margin: 1em 0 .4em;  line-height: 1.25; }
+  .ProseMirror h2 { font-size: 1.30em; font-weight: 700; margin: .9em 0 .35em; }
+  .ProseMirror h3 { font-size: 1.15em; font-weight: 700; margin: .8em 0 .3em; }
   .ProseMirror ul, .ProseMirror ol { padding-left: 1.6em; margin-bottom: .75em; }
   .ProseMirror li { margin: 2px 0; }
   .ProseMirror blockquote {
-    border-left: 3px solid rgba(128,128,128,.35);
+    border-left: 3px solid rgba(${hexToRgb(UI_COLORS.neutral)},.35);
     margin: .75em 0;
     padding: 2px 10px;
-    background: rgba(128,128,128,.06);
+    background: rgba(${hexToRgb(UI_COLORS.neutral)},.06);
     border-radius: 0 3px 3px 0;
   }
   .ProseMirror hr {
@@ -413,12 +399,12 @@ export class EditorPanel {
   .ProseMirror code {
     font-family: var(--vscode-editor-font-family, monospace);
     font-size: .875em;
-    background: var(--vscode-textCodeBlock-background, rgba(128,128,128,.15));
+    background: var(--vscode-textCodeBlock-background, rgba(${hexToRgb(UI_COLORS.neutral)},.15));
     padding: 1px 5px;
     border-radius: 3px;
   }
   .ProseMirror pre {
-    background: var(--vscode-textCodeBlock-background, rgba(128,128,128,.15));
+    background: var(--vscode-textCodeBlock-background, rgba(${hexToRgb(UI_COLORS.neutral)},.15));
     border-radius: 6px;
     padding: 12px 16px;
     margin-bottom: .75em;
@@ -462,6 +448,39 @@ export class EditorPanel {
   .ProseMirror img.ProseMirror-selectednode {
     outline: 2px solid var(--vscode-focusBorder, ${PLATFORM_COLORS.vsFocusBorder});
     border-radius: 5px;
+  }
+
+  /* ── Tables ── */
+  .ProseMirror table {
+    border-collapse: collapse;
+    width: 100%;
+    margin: .75em 0;
+    font-size: .93em;
+    table-layout: auto;
+  }
+  .ProseMirror th, .ProseMirror td {
+    border: 1px solid rgba(${hexToRgb(UI_COLORS.neutral)},.25);
+    padding: 5px 10px;
+    text-align: left;
+    vertical-align: top;
+    min-width: 40px;
+  }
+  .ProseMirror th {
+    font-weight: 700;
+    background: rgba(${hexToRgb(UI_COLORS.neutral)},.08);
+  }
+  .ProseMirror .selectedCell::after {
+    background: rgba(${hexToRgb(UI_COLORS.neutral)},.12);
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: 2;
+  }
+  .ProseMirror .column-resize-handle {
+    background: var(--vscode-focusBorder, ${PLATFORM_COLORS.vsFocusBorder});
+    bottom: -2px; position: absolute; right: -2px; top: 0; width: 4px;
+    pointer-events: none;
   }
 
   /* ── Status bar ── */

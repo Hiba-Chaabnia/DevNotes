@@ -1,14 +1,8 @@
 import * as vscode from 'vscode';
 import { NoteStorage, Note, Tag } from '../services/NoteStorage';
-import { UI_COLORS } from '../utils/colors';
+import { UI_COLORS, CONFLICT_COLORS as CF, hexToRgb } from '../utils/colors';
 import { getNonce, svgIcon } from '../utils/webview';
-import { Star } from 'lucide';
-import type { IconNode as LucideNode } from 'lucide';
-import * as AllLucide from 'lucide';
-
-const ALL_LUCIDE_NODES: Record<string, LucideNode> = Object.fromEntries(
-  Object.entries(AllLucide as Record<string, unknown>).filter(([, v]) => Array.isArray(v))
-) as Record<string, LucideNode>;
+import { ALL_LUCIDE_NODES } from '../utils/icons';
 
 export class ConflictPanel {
   static current?: ConflictPanel;
@@ -24,7 +18,6 @@ export class ConflictPanel {
     storage    : NoteStorage,
     noteId     : string,
     onResolved : () => void,
-    themeVars  : Record<string, string> | null = null,
   ): Promise<void> {
     const versions = await storage.getConflictVersions(noteId);
     if (!versions) {
@@ -37,19 +30,12 @@ export class ConflictPanel {
     }
 
     new ConflictPanel(context, storage, noteId, versions.ours, versions.theirs, versions.incomingRef, versions.oursRef, onResolved);
-    if (themeVars) ConflictPanel.current?.setTheme(themeVars);
-  }
-
-  // ── Theme propagation from sidebar preview ───────────────────────────────
-
-  setTheme(vars: Record<string, string> | null): void {
-    this.panel.webview.postMessage({ type: 'setTheme', vars });
   }
 
   // ── Constructor ─────────────────────────────────────────────────────────
 
   private constructor(
-    context      : vscode.ExtensionContext,
+    _context     : vscode.ExtensionContext,
     private readonly storage    : NoteStorage,
     private readonly noteId     : string,
     ours         : Note,
@@ -65,7 +51,7 @@ export class ConflictPanel {
       { enableScripts: true, retainContextWhenHidden: true },
     );
 
-    this.panel.webview.html = this.buildHtml(ours, theirs, incomingRef, oursRef, this.storage.getTags());
+    this.panel.webview.html = this.buildHtml(this.panel.webview, ours, theirs, incomingRef, oursRef, this.storage.getTags());
 
     this.panel.webview.onDidReceiveMessage(
       async (msg: { type: string; side?: 'ours' | 'theirs' | 'both'; mergedNote?: { title: string; tags: string[]; content: string } }) => {
@@ -95,7 +81,7 @@ export class ConflictPanel {
 
   // ── HTML ─────────────────────────────────────────────────────────────────
 
-  private buildHtml(ours: Note, theirs: Note, incomingRef: string, oursRef: string, tags: Tag[]): string {
+  private buildHtml(webview: vscode.Webview, ours: Note, theirs: Note, incomingRef: string, oursRef: string, tags: Tag[]): string {
     const nonce      = getNonce();
     const esc = (v: unknown) => JSON.stringify(v).replace(/<\/script>/gi, '<\\/script>');
     const escHtml    = (s: string) => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
@@ -107,29 +93,50 @@ export class ConflictPanel {
     })));
     const refJson    = esc(incomingRef);
     const oursRefJson = esc(oursRef);
-    const starEmptyJson  = esc(svgIcon(Star, 14));
-    const starFilledJson = esc(svgIcon(Star, 14, '', 'currentColor'));
+    const starEmptyJson  = esc(svgIcon(ALL_LUCIDE_NODES['Star'], 14));
+    const starFilledJson = esc(svgIcon(ALL_LUCIDE_NODES['Star'], 14, '', 'currentColor'));
+    const noTagsIcon     = '<svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="3.5 3.5" opacity="0.55"><path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/><circle cx="7.5" cy="7.5" r=".5" fill="currentColor" stroke="none"/></svg>';
+    const tagIconJson    = esc(noTagsIcon);
     const checkmarkDataUri = `data:image/svg+xml;base64,${Buffer.from(
       '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 10 10"><path d="M1.5 5l2.5 2.5 4.5-4.5" stroke="white" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>'
     ).toString('base64')}`;
+    const bannerIconSvg      = svgIcon(ALL_LUCIDE_NODES['TriangleAlert'], 16).replace('<svg ', '<svg class="banner-icon" ');
+    const actionIconUser     = svgIcon(ALL_LUCIDE_NODES['User'],          20).replace('<svg ', '<svg class="action-icon" ');
+    const actionIconGitMerge = svgIcon(ALL_LUCIDE_NODES['GitMerge'],      20).replace('<svg ', '<svg class="action-icon" ');
+    const actionIconUsers    = svgIcon(ALL_LUCIDE_NODES['Users'],         20).replace('<svg ', '<svg class="action-icon" ');
+
+    // Build storagePath → webviewUri map for images referenced in both versions
+    const imageUriMap: Record<string, string> = {};
+    const imgRegex = /!\[[^\]]*\]\(([^)]+)\)/g;
+    for (const content of [ours.content ?? '', theirs.content ?? '']) {
+      let m: RegExpExecArray | null;
+      while ((m = imgRegex.exec(content)) !== null) {
+        const storagePath = m[1];
+        const filename = storagePath.replace(/^\.devnotes\/assets\//, '');
+        const assetUri = vscode.Uri.joinPath(this.storage.folderUri, 'assets', filename);
+        imageUriMap[storagePath] = webview.asWebviewUri(assetUri).toString();
+      }
+    }
+    const imageUriMapJson = esc(imageUriMap);
+
     const toolbarIconsJson = esc({
-      bold:      svgIcon(AllLucide.Bold          as LucideNode, 14),
-      italic:    svgIcon(AllLucide.Italic        as LucideNode, 14),
-      underline: svgIcon(AllLucide.Underline     as LucideNode, 14),
-      strike:    svgIcon(AllLucide.Strikethrough as LucideNode, 14),
-      code:      svgIcon(AllLucide.Code          as LucideNode, 14),
-      h1:        svgIcon(AllLucide.Heading1      as LucideNode, 14),
-      h2:        svgIcon(AllLucide.Heading2      as LucideNode, 14),
-      h3:        svgIcon(AllLucide.Heading3      as LucideNode, 14),
-      list:      svgIcon(AllLucide.List          as LucideNode, 14),
-      listOrd:   svgIcon(AllLucide.ListOrdered   as LucideNode, 14),
-      listChecks:svgIcon(AllLucide.ListChecks    as LucideNode, 14),
-      quote:     svgIcon(AllLucide.Quote         as LucideNode, 14),
-      minus:     svgIcon(AllLucide.Minus         as LucideNode, 14),
-      code2:     svgIcon(AllLucide.Code2         as LucideNode, 14),
-      eraser:    svgIcon(AllLucide.Eraser        as LucideNode, 14),
-      undo:      svgIcon(AllLucide.Undo2         as LucideNode, 14),
-      redo:      svgIcon(AllLucide.Redo2         as LucideNode, 14),
+      bold:       svgIcon(ALL_LUCIDE_NODES['Bold'],          14),
+      italic:     svgIcon(ALL_LUCIDE_NODES['Italic'],        14),
+      underline:  svgIcon(ALL_LUCIDE_NODES['Underline'],     14),
+      strike:     svgIcon(ALL_LUCIDE_NODES['Strikethrough'], 14),
+      code:       svgIcon(ALL_LUCIDE_NODES['Code'],          14),
+      h1:         svgIcon(ALL_LUCIDE_NODES['Heading1'],      14),
+      h2:         svgIcon(ALL_LUCIDE_NODES['Heading2'],      14),
+      h3:         svgIcon(ALL_LUCIDE_NODES['Heading3'],      14),
+      list:       svgIcon(ALL_LUCIDE_NODES['List'],          14),
+      listOrd:    svgIcon(ALL_LUCIDE_NODES['ListOrdered'],   14),
+      listChecks: svgIcon(ALL_LUCIDE_NODES['ListChecks'],    14),
+      quote:      svgIcon(ALL_LUCIDE_NODES['Quote'],         14),
+      minus:      svgIcon(ALL_LUCIDE_NODES['Minus'],         14),
+      code2:      svgIcon(ALL_LUCIDE_NODES['Code2'],         14),
+      eraser:     svgIcon(ALL_LUCIDE_NODES['RemoveFormatting'], 14),
+      undo:       svgIcon(ALL_LUCIDE_NODES['Undo2'],         14),
+      redo:       svgIcon(ALL_LUCIDE_NODES['Redo2'],         14),
     });
 
     return /* html */`<!DOCTYPE html>
@@ -137,7 +144,7 @@ export class ConflictPanel {
 <head>
 <meta charset="UTF-8">
 <meta http-equiv="Content-Security-Policy"
-  content="default-src 'none'; style-src 'unsafe-inline'; img-src data:; script-src 'nonce-${nonce}';">
+  content="default-src 'none'; style-src 'unsafe-inline'; img-src ${webview.cspSource} data:; script-src 'nonce-${nonce}';">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -166,8 +173,8 @@ export class ConflictPanel {
     flex-direction: column;
     gap: 3px;
     padding: 13px 17px;
-    background: rgba(255,200,50,.07);
-    border: 1px solid rgba(255,200,50,.22);
+    background: rgba(${hexToRgb(UI_COLORS.amber)},.07);
+    border: 1px solid rgba(${hexToRgb(UI_COLORS.amber)},.22);
     border-radius: 10px;
     flex-shrink: 0;
   }
@@ -180,10 +187,10 @@ export class ConflictPanel {
     width: 16px;
     height: 16px;
     flex-shrink: 0;
-    color: rgba(255,180,0,.9);
+    color: rgba(${hexToRgb(UI_COLORS.amber)},.9);
     stroke: currentColor;
   }
-  .banner-title { font-size: 13.5px; font-weight: 700; color: rgba(255,180,0,.9); }
+  .banner-title { font-size: 13.5px; font-weight: 700; color: rgba(${hexToRgb(UI_COLORS.amber)},.9); }
   .banner-sub { font-size: 11.5px; color: var(--vscode-descriptionForeground); line-height: 1.5; }
 
   /* ── Cards row ── */
@@ -221,26 +228,26 @@ export class ConflictPanel {
     padding: 11px 15px;
     flex-shrink: 0;
   }
-  .card-ours   { border-color: rgba(59,130,246,.45); }
-  .card-theirs { border-color: rgba(22,163,74,.45); }
+  .card-ours   { border-color: rgba(${hexToRgb(CF.ours)},.45); }
+  .card-theirs { border-color: rgba(${hexToRgb(CF.theirs)},.45); }
   .card-header-ours {
-    background: rgba(59,130,246,.12);
-    border-bottom: 1.5px solid rgba(59,130,246,.35);
+    background: rgba(${hexToRgb(CF.ours)},.12);
+    border-bottom: 1.5px solid rgba(${hexToRgb(CF.ours)},.35);
   }
   .card-header-theirs {
-    background: rgba(22,163,74,.12);
-    border-bottom: 1.5px solid rgba(22,163,74,.35);
+    background: rgba(${hexToRgb(CF.theirs)},.12);
+    border-bottom: 1.5px solid rgba(${hexToRgb(CF.theirs)},.35);
   }
   .pill {
     font-size: 11px;
     font-weight: 700;
     padding: 3px 13px;
     border-radius: 20px;
-    color: #fff;
+    color: ${UI_COLORS.white};
     letter-spacing: .01em;
   }
-  .pill-ours   { background: #3b82f6; }
-  .pill-theirs { background: #16a34a; }
+  .pill-ours   { background: ${CF.ours}; }
+  .pill-theirs { background: ${CF.theirs}; }
   .card-ref {
     font-size: 11px;
     font-family: var(--vscode-editor-font-family, monospace);
@@ -293,24 +300,32 @@ export class ConflictPanel {
     opacity: .35;
   }
   .cf-star.cf-star-on {
-    color: #f59e0b;
+    color: ${UI_COLORS.star};
     opacity: 1;
   }
   .cf-star.cf-star-changed {
-    color: rgba(163,230,53,.9);
+    color: rgba(${hexToRgb(CF.resolved)},.9);
     opacity: 1;
   }
+
+  /* ── Pill tokens ── */
+  :root { --pill-font: 11px; --pill-py: 2px; --pill-px: 8px; --pill-border: 1.5px; --pill-radius: 20px; --pill-gap: 4px; }
 
   /* ── Tag pills (sidebar tinted style) ── */
   .tag-pill {
     display: inline-flex;
     align-items: center;
-    gap: 3px;
-    padding: 2px 7px;
-    border-radius: 20px;
-    font-size: 11px;
+    gap: var(--pill-gap);
+    padding: var(--pill-py) var(--pill-px);
+    border-radius: var(--pill-radius);
+    font-size: var(--pill-font);
     font-weight: 500;
-    border: 1.5px solid transparent;
+    border: var(--pill-border) solid transparent;
+  }
+  .tag-pill.default-color {
+    background: color-mix(in srgb, var(--vscode-foreground) 15%, transparent);
+    border-color: color-mix(in srgb, var(--vscode-foreground) 45%, transparent);
+    color: var(--vscode-foreground);
   }
   .tag-icon {
     display: inline-flex;
@@ -322,18 +337,26 @@ export class ConflictPanel {
 
   /* ── Diff highlights ── */
   .diff-hl-inline {
-    background: rgba(163,230,53,.28);
+    background: rgba(${hexToRgb(CF.resolved)},.28);
     border-radius: 3px;
     padding: 0 3px;
   }
+  /* ── No-tags placeholders ── */
+  .notags-ghost {
+    display: inline-flex; align-items: center; gap: var(--pill-gap);
+    padding: var(--pill-py) var(--pill-px); border-radius: var(--pill-radius);
+    border: var(--pill-border) dashed rgba(${hexToRgb(UI_COLORS.neutral)},.4);
+    font-size: var(--pill-font); opacity: .45; color: var(--vscode-foreground);
+  }
+
   /* ── New-tag indicator ── */
   .tag-pill.tag-new {
-    outline: 1px solid rgba(163,230,53,.55);
+    outline: 1px solid rgba(${hexToRgb(CF.resolved)},.55);
     outline-offset: 2px;
     margin-inline: 3px;
   }
   .diff-hl-block {
-    background: rgba(163,230,53,.14);
+    background: rgba(${hexToRgb(CF.resolved)},.14);
     border-radius: 5px;
     margin: 2px -6px;
     padding: 2px 6px;
@@ -351,7 +374,7 @@ export class ConflictPanel {
   .card-content-wrap::before {
     content: '';
     height: 1px;
-    background: rgba(128,128,128,.08);
+    background: rgba(${hexToRgb(UI_COLORS.neutral)},.08);
     margin: 0 16px;
     flex-shrink: 0;
   }
@@ -386,12 +409,12 @@ export class ConflictPanel {
   .md code {
     font-family: var(--vscode-editor-font-family, monospace);
     font-size: .88em;
-    background: rgba(128,128,128,.15);
+    background: rgba(${hexToRgb(UI_COLORS.neutral)},.15);
     border-radius: 3px;
     padding: 1px 4px;
   }
   .md pre {
-    background: rgba(128,128,128,.12);
+    background: rgba(${hexToRgb(UI_COLORS.neutral)},.12);
     border-radius: 5px;
     padding: 9px 12px;
     overflow-x: auto;
@@ -408,7 +431,12 @@ export class ConflictPanel {
     color: var(--vscode-descriptionForeground);
     margin-bottom: .55em;
   }
-  .md h1, .md h2, .md h3 { font-weight: 700; margin-bottom: .3em; }
+  .md h1 { font-size: 1.24em; font-weight: 700; margin: .4em 0 .25em; }
+  .md h2 { font-size: 1.16em; font-weight: 700; margin: .35em 0 .2em; }
+  .md h3 { font-size: 1.08em; font-weight: 600; margin: .3em 0 .2em; }
+  .md table { border-collapse: collapse; width: 100%; margin-bottom: .55em; font-size: .95em; }
+  .md th, .md td { padding: 4px 10px; border: 1px solid rgba(${hexToRgb(UI_COLORS.neutral)},.25); text-align: left; }
+  .md th { font-weight: 700; background: rgba(${hexToRgb(UI_COLORS.neutral)},.08); }
   .md ul.task-list { list-style: none; padding-left: 0; }
   .md ul.task-list li { display: flex; align-items: flex-start; gap: 6px; }
   .md ul.task-list input[type="checkbox"] {
@@ -441,8 +469,8 @@ export class ConflictPanel {
   .action-card {
     flex: 1;
     padding: 12px 14px;
-    background: rgba(128,128,128,.07);
-    border: 1px solid rgba(128,128,128,.25);
+    background: rgba(${hexToRgb(UI_COLORS.neutral)},.07);
+    border: 1px solid rgba(${hexToRgb(UI_COLORS.neutral)},.25);
     border-radius: 8px;
     cursor: pointer;
     display: flex;
@@ -459,29 +487,29 @@ export class ConflictPanel {
     gap: 8px;
   }
   .action-card:hover {
-    background: rgba(128,128,128,.13);
-    border-color: rgba(128,128,128,.45);
+    background: rgba(${hexToRgb(UI_COLORS.neutral)},.13);
+    border-color: rgba(${hexToRgb(UI_COLORS.neutral)},.45);
   }
   #keep-ours {
-    border-color: rgba(59,130,246,.35);
-    background: rgba(59,130,246,.06);
+    border-color: rgba(${hexToRgb(CF.ours)},.35);
+    background: rgba(${hexToRgb(CF.ours)},.06);
   }
   #keep-ours:hover {
-    background: rgba(59,130,246,.12);
-    border-color: rgba(59,130,246,.55);
+    background: rgba(${hexToRgb(CF.ours)},.12);
+    border-color: rgba(${hexToRgb(CF.ours)},.55);
   }
-  #keep-ours .action-title { color: rgba(59,130,246,.9); }
-  #keep-ours .action-icon  { stroke: rgba(59,130,246,.7); }
+  #keep-ours .action-title { color: rgba(${hexToRgb(CF.ours)},.9); }
+  #keep-ours .action-icon  { stroke: rgba(${hexToRgb(CF.ours)},.7); }
   #keep-theirs {
-    border-color: rgba(22,163,74,.35);
-    background: rgba(22,163,74,.06);
+    border-color: rgba(${hexToRgb(CF.theirs)},.35);
+    background: rgba(${hexToRgb(CF.theirs)},.06);
   }
   #keep-theirs:hover {
-    background: rgba(22,163,74,.12);
-    border-color: rgba(22,163,74,.55);
+    background: rgba(${hexToRgb(CF.theirs)},.12);
+    border-color: rgba(${hexToRgb(CF.theirs)},.55);
   }
-  #keep-theirs .action-title { color: rgba(22,163,74,.9); }
-  #keep-theirs .action-icon  { stroke: rgba(22,163,74,.7); }
+  #keep-theirs .action-title { color: rgba(${hexToRgb(CF.theirs)},.9); }
+  #keep-theirs .action-icon  { stroke: rgba(${hexToRgb(CF.theirs)},.7); }
   .action-icon {
     width: 20px;
     height: 20px;
@@ -521,7 +549,7 @@ export class ConflictPanel {
   .modal-sub { font-size: 11px; color: var(--vscode-descriptionForeground); line-height: 1.5; }
   .modal-header-right { display: flex; align-items: stretch; }
   .modal-seg {
-    display: flex; background: rgba(128,128,128,.1);
+    display: flex; background: rgba(${hexToRgb(UI_COLORS.neutral)},.1);
     border-radius: 6px; padding: 2px; gap: 1px;
   }
   .modal-seg-btn {
@@ -572,7 +600,7 @@ export class ConflictPanel {
     gap: 6px; padding: 10px 0 6px;
   }
   .merged-card-sep {
-    height: 1px; background: rgba(128,128,128,.08); margin: 0 16px;
+    height: 1px; background: rgba(${hexToRgb(UI_COLORS.neutral)},.08); margin: 0 16px;
   }
   .merged-card-content {
     flex: 1; min-height: 0; overflow-y: auto;
@@ -596,13 +624,13 @@ export class ConflictPanel {
   }
   .edit-tag-remove:hover { opacity: 1; }
   .edit-tag-add {
-    background: none; border: 1px dashed rgba(128,128,128,.4);
-    border-radius: 20px; padding: 2px 9px;
-    font-size: 11px; cursor: pointer;
+    background: none; border: var(--pill-border) dashed rgba(${hexToRgb(UI_COLORS.neutral)},.4);
+    border-radius: var(--pill-radius); padding: var(--pill-py) var(--pill-px);
+    font-size: var(--pill-font); cursor: pointer;
     color: var(--vscode-descriptionForeground);
     font-family: var(--vscode-font-family); transition: border-color .1s;
   }
-  .edit-tag-add:hover { border-color: rgba(128,128,128,.7); color: var(--vscode-foreground); }
+  .edit-tag-add:hover { border-color: rgba(${hexToRgb(UI_COLORS.neutral)},.7); color: var(--vscode-foreground); }
   .tag-dropdown { position: relative; display: inline-block; }
   .tag-dropdown-menu {
     position: absolute; top: calc(100% + 4px); left: 0;
@@ -623,7 +651,7 @@ export class ConflictPanel {
   .mc-toolbar {
     display: none; align-items: center; flex-wrap: wrap;
     gap: 1px; padding: 4px 8px;
-    border-top: 1px solid rgba(128,128,128,.1); flex-shrink: 0;
+    border-top: 1px solid rgba(${hexToRgb(UI_COLORS.neutral)},.1); flex-shrink: 0;
   }
   .mc-toolbar.visible { display: flex; }
   .mc-tb-btn {
@@ -635,8 +663,8 @@ export class ConflictPanel {
     transition: background .1s, opacity .1s;
   }
   .mc-tb-btn:hover { background: var(--vscode-toolbar-hoverBackground); opacity: 1; }
-  .mc-tb-btn.is-active { background: rgba(128,128,128,.2); opacity: 1; }
-  .mc-tb-sep { width: 1px; height: 16px; background: rgba(128,128,128,.25); margin: 0 3px; flex-shrink: 0; }
+  .mc-tb-btn.is-active { background: rgba(${hexToRgb(UI_COLORS.neutral)},.2); opacity: 1; }
+  .mc-tb-sep { width: 1px; height: 16px; background: rgba(${hexToRgb(UI_COLORS.neutral)},.25); margin: 0 3px; flex-shrink: 0; }
 
 </style>
 </head>
@@ -644,11 +672,7 @@ export class ConflictPanel {
 
 <div class="banner">
   <div class="banner-heading">
-    <svg class="banner-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-      <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/>
-      <path d="M12 9v4"/>
-      <path d="M12 17h.01"/>
-    </svg>
+    ${bannerIconSvg}
     <span class="banner-title" id="conflict-title"></span>
   </div>
   <div class="banner-sub">A git merge conflict was detected. Review both versions and choose how to proceed.</div>
@@ -687,33 +711,21 @@ export class ConflictPanel {
 <div class="action-row">
   <button class="action-card" id="keep-ours">
     <div class="action-head">
-      <svg class="action-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
-        <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/>
-        <circle cx="12" cy="7" r="4"/>
-      </svg>
+      ${actionIconUser}
       <div class="action-title">Keep mine</div>
     </div>
     <div class="action-desc" id="mine-desc"></div>
   </button>
   <button class="action-card action-card-merge" id="btn-merge-preview">
     <div class="action-head">
-      <svg class="action-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
-        <circle cx="18" cy="18" r="3"/>
-        <circle cx="6" cy="6" r="3"/>
-        <path d="M6 21V9a9 9 0 0 0 9 9"/>
-      </svg>
+      ${actionIconGitMerge}
       <div class="action-title">Merge versions</div>
     </div>
     <div class="action-desc">Preview and combine both versions</div>
   </button>
   <button class="action-card" id="keep-theirs">
     <div class="action-head">
-      <svg class="action-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
-        <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/>
-        <circle cx="9" cy="7" r="4"/>
-        <path d="M22 21v-2a4 4 0 0 0-3-3.87"/>
-        <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
-      </svg>
+      ${actionIconUsers}
       <div class="action-title">Keep theirs</div>
     </div>
     <div class="action-desc" id="theirs-desc"></div>
@@ -747,10 +759,12 @@ export class ConflictPanel {
   const ours        = ${oursJson};
   const theirs      = ${theirsJson};
   const tags        = ${tagsJson};
+  const imageUriMap = ${imageUriMapJson};
   const incomingRef = ${refJson};
   const oursRef     = ${oursRefJson};
   const starEmpty      = ${starEmptyJson};
   const starFilled     = ${starFilledJson};
+  const tagIcon        = ${tagIconJson};
   const toolbarIcons   = ${toolbarIconsJson};
 
   document.getElementById('conflict-title').textContent = 'Conflict in "' + ours.title + '"';
@@ -771,9 +785,13 @@ export class ConflictPanel {
     return 'rgba(' + r + ',' + g + ',' + b + ',' + alpha + ')';
   }
   function applyPillStyle(el, color) {
-    el.style.background  = hexToRgba(color, 0.18);
-    el.style.borderColor = color;
-    el.style.color       = color;
+    if (!color || color === 'default') {
+      el.classList.add('default-color');
+    } else {
+      el.style.background  = hexToRgba(color, 0.18);
+      el.style.borderColor = color;
+      el.style.color       = color;
+    }
   }
 
   function renderFields(container, note, other, isTheirs) {
@@ -819,15 +837,13 @@ export class ConflictPanel {
     wrap.style.flexWrap = 'wrap';
     wrap.style.gap      = '4px';
     const otherSet = new Set(otherTags);
-    if (!noteTags || noteTags.length === 0) {
-      wrap.style.opacity  = '.45';
-      wrap.style.fontSize = '12px';
-      wrap.textContent    = '—';
+    const knownTags = (noteTags || []).map(id => tags.find(t => t.id === id)).filter(Boolean);
+    if (knownTags.length === 0) {
+      wrap.innerHTML = '<span class="notags-ghost">' + tagIcon + 'No tags</span>';
       return wrap;
     }
-    noteTags.forEach(tid => {
-      const t = tags.find(t => t.id === tid);
-      if (!t) return;
+    knownTags.forEach(t => {
+      const tid = t.id;
       const pill = document.createElement('span');
       pill.className = 'tag-pill' + (isTheirs && !otherSet.has(tid) ? ' tag-new' : '');
       applyPillStyle(pill, t.color);
@@ -859,7 +875,7 @@ export class ConflictPanel {
   function renderTheirsContent(container, oursContent, theirsContent) {
     const oursLines   = oursContent.split('\\n');
     const theirsLines = theirsContent.split('\\n');
-    const {bDiff} = diffLines(oursLines, theirsLines);
+    const bDiff = diffLines(oursLines, theirsLines);
 
     // Group consecutive lines by type
     const groups = [];
@@ -891,24 +907,21 @@ export class ConflictPanel {
       for (let j = 1; j <= N; j++)
         dp[i][j] = A[i-1] === B[j-1] ? dp[i-1][j-1] + 1 : Math.max(dp[i-1][j], dp[i][j-1]);
 
-    const aDiff = [], bDiff = [];
+    const bDiff = [];
     let i = M, j = N;
     while (i > 0 || j > 0) {
       if (i > 0 && j > 0 && A[i-1] === B[j-1]) {
-        aDiff.unshift({text: A[i-1], type: 'same'});
         bDiff.unshift({text: B[j-1], type: 'same'});
         i--; j--;
       } else if (j > 0 && (i === 0 || dp[i][j-1] >= dp[i-1][j])) {
         bDiff.unshift({text: B[j-1], type: 'ins'});
         j--;
       } else {
-        aDiff.unshift({text: A[i-1], type: 'del'});
         i--;
       }
     }
-    aLines.slice(300).forEach(t => aDiff.push({text: t, type: 'same'}));
     bLines.slice(300).forEach(t => bDiff.push({text: t, type: 'same'}));
-    return {aDiff, bDiff};
+    return bDiff;
   }
 
   // ── Scroll hints + sync ──────────────────────────────────────────────────
@@ -953,14 +966,14 @@ export class ConflictPanel {
     mergedTagIds  = [...new Set([...ours.tags, ...theirs.tags])];
     mergedContent = !oursC ? theirsC : !theirsC ? oursC : oursC === theirsC ? oursC : oursC + '\\n\\n---\\n\\n' + theirsC;
     modalMode     = 'preview';
-    document.getElementById('tab-preview').classList.add('active');
-    document.getElementById('tab-edit').classList.remove('active');
     buildAndFillCard();
+    tabPreviewBtn.classList.add('active');
+    tabEditBtn.classList.remove('active');
     modal.classList.add('open');
   }
 
   // ── Card refs (set once per openModal, used by applyEditMode) ──
-  let _titleEl = null, _tagsRow = null, _tagsWrap = null, _rendered = null, _toolbar = null;
+  let _titleEl = null, _tagsWrap = null, _rendered = null, _toolbar = null;
 
   function buildAndFillCard() {
     const body = document.getElementById('modal-body');
@@ -1032,9 +1045,20 @@ export class ConflictPanel {
       const isEmpty = !sp || sp.textContent.replace(/​/g, '').trim() === '';
       if (isEmpty) {
         const p = document.createElement('p'); p.innerHTML = '<br>';
-        ul.insertAdjacentElement('afterend', p);
+        const after = [];
+        let sib = li.nextElementSibling;
+        while (sib) { after.push(sib); sib = sib.nextElementSibling; }
         li.remove();
-        if (!ul.children.length) ul.remove();
+        if (!ul.children.length) {
+          ul.replaceWith(p);
+        } else if (after.length) {
+          const ul2 = document.createElement('ul'); ul2.className = 'task-list';
+          after.forEach(item => ul2.appendChild(item));
+          ul.insertAdjacentElement('afterend', ul2);
+          ul.insertAdjacentElement('afterend', p);
+        } else {
+          ul.insertAdjacentElement('afterend', p);
+        }
         const r = document.createRange();
         r.selectNodeContents(p); r.collapse(true);
         sel.removeAllRanges(); sel.addRange(r);
@@ -1054,7 +1078,7 @@ export class ConflictPanel {
     rendered.addEventListener('mouseup', () => { if (_toolbar) updateToolbarState(_toolbar); });
     contentEl.appendChild(rendered);
 
-    _titleEl = titleEl; _tagsRow = tagsRow; _tagsWrap = tagsWrap;
+    _titleEl = titleEl; _tagsWrap = tagsWrap;
     _rendered = rendered; _toolbar = toolbar;
 
     rebuildTags();
@@ -1063,8 +1087,9 @@ export class ConflictPanel {
   function rebuildTags() {
     const wrap = _tagsWrap;
     wrap.innerHTML = '';
-    if (mergedTagIds.length === 0 && modalMode !== 'edit') {
-      wrap.style.opacity = '.45'; wrap.style.fontSize = '12px'; wrap.textContent = '—';
+    const resolvedTags = mergedTagIds.filter(id => tags.find(t => t.id === id));
+    if (resolvedTags.length === 0 && modalMode !== 'edit') {
+      wrap.innerHTML = '<span class="notags-ghost">' + tagIcon + 'No tags</span>';
       return;
     }
     wrap.style.opacity = ''; wrap.style.fontSize = '';
@@ -1120,20 +1145,19 @@ export class ConflictPanel {
   }
 
   // Tab switching — NO re-render, just toggle interactivity
-  document.getElementById('tab-preview').addEventListener('click', () => {
-    if (modalMode === 'preview') return;
-    modalMode = 'preview';
-    document.getElementById('tab-preview').classList.add('active');
-    document.getElementById('tab-edit').classList.remove('active');
-    applyEditMode(false);
-  });
-  document.getElementById('tab-edit').addEventListener('click', () => {
-    if (modalMode === 'edit') return;
-    modalMode = 'edit';
-    document.getElementById('tab-edit').classList.add('active');
-    document.getElementById('tab-preview').classList.remove('active');
-    applyEditMode(true);
-  });
+  const tabPreviewBtn = document.getElementById('tab-preview');
+  const tabEditBtn    = document.getElementById('tab-edit');
+
+  function setModalMode(mode) {
+    modalMode = mode;
+    const isEdit = mode === 'edit';
+    tabPreviewBtn.classList.toggle('active', !isEdit);
+    tabEditBtn.classList.toggle('active',     isEdit);
+    applyEditMode(isEdit);
+  }
+
+  tabPreviewBtn.addEventListener('click', () => { if (modalMode !== 'preview') setModalMode('preview'); });
+  tabEditBtn.addEventListener('click',   () => { if (modalMode !== 'edit')    setModalMode('edit'); });
 
   // ── Formatting toolbar ───────────────────────────────────────────────────
   function buildToolbar() {
@@ -1277,17 +1301,6 @@ export class ConflictPanel {
   document.getElementById('keep-ours').addEventListener('click',   () => vscode.postMessage({ type: 'resolve', side: 'ours' }));
   document.getElementById('keep-theirs').addEventListener('click', () => vscode.postMessage({ type: 'resolve', side: 'theirs' }));
 
-  // ── Theme propagation from sidebar preview ────────────────────────────────
-  window.addEventListener('message', ({ data }) => {
-    if (data?.type !== 'setTheme') return;
-    const root = document.documentElement;
-    if (data.vars) {
-      Object.entries(data.vars).forEach(([k, v]) => root.style.setProperty(k, v));
-    } else {
-      root.removeAttribute('style');
-    }
-  });
-
   // ── HTML → Markdown (reverses simpleMarkdown output for contenteditable save) ──
   function htmlToMd(html) {
     const tmp = document.createElement('div');
@@ -1340,12 +1353,19 @@ export class ConflictPanel {
   function simpleMarkdown(md) {
     if (!md) return '';
     const e = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-    const inline = raw => e(raw)
-      .replace(/\\*\\*(.+?)\\*\\*/g, '<strong>$1</strong>')
-      .replace(/\\*(.+?)\\*/g,        '<em>$1</em>')
-      .replace(/\`(.+?)\`/g,          '<code>$1</code>')
-      .replace(/~~(.+?)~~/g,          '<del>$1</del>')
-      .replace(/\\+\\+(.+?)\\+\\+/g,  '<u>$1</u>');
+    const inline = raw => {
+      const imgMatch = raw.match(/^!\\[([^\\]]*)\\]\\(([^)]+)\\)/);
+      if (imgMatch) {
+        const src = imageUriMap[imgMatch[2]] || imgMatch[2];
+        return '<img src="' + src + '" alt="' + e(imgMatch[1]) + '" style="max-width:100%;border-radius:4px;margin:4px 0;display:block;">';
+      }
+      return e(raw)
+        .replace(/\\*\\*(.+?)\\*\\*/g, '<strong>$1</strong>')
+        .replace(/\\*(.+?)\\*/g,        '<em>$1</em>')
+        .replace(/\`(.+?)\`/g,          '<code>$1</code>')
+        .replace(/~~(.+?)~~/g,          '<del>$1</del>')
+        .replace(/\\+\\+(.+?)\\+\\+/g,  '<u>$1</u>');
+    };
     const lines = md.split('\\n');
     const out = []; let i = 0;
     while (i < lines.length) {
@@ -1379,6 +1399,19 @@ export class ConflictPanel {
       } else if (/^(#{1,3})\\s/.test(lines[i])) {
         const lvl = lines[i].match(/^(#+)/)[1].length;
         out.push('<h' + lvl + '>' + inline(lines[i].replace(/^#+\\s/, '')) + '</h' + lvl + '>'); i++;
+      } else if (/^\\|/.test(lines[i])) {
+        const rows = [];
+        while (i < lines.length && /^\\|/.test(lines[i])) {
+          const isSep = /^[\\|\\s\\-:]+$/.test(lines[i]);
+          if (!isSep) {
+            const cells = lines[i].split('|').slice(1, -1).map(c => c.trim());
+            rows.push({ cells, isHeader: rows.length === 0 });
+          }
+          i++;
+        }
+        const thead = rows.length > 0 ? '<thead><tr>' + rows[0].cells.map(c => '<th>' + inline(c) + '</th>').join('') + '</tr></thead>' : '';
+        const tbody = rows.slice(1).map(r => '<tr>' + r.cells.map(c => '<td>' + inline(c) + '</td>').join('') + '</tr>').join('');
+        out.push('<table>' + thead + (tbody ? '<tbody>' + tbody + '</tbody>' : '') + '</table>');
       } else if (lines[i].trim() === '---') {
         out.push('<hr>'); i++;
       } else {
@@ -1395,6 +1428,7 @@ export class ConflictPanel {
   }
 })();
 </script>
+
 </body>
 </html>`;
   }
