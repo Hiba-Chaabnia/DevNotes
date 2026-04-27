@@ -468,7 +468,7 @@ export class NoteStorage {
       if (idx === -1) this.notes.push(note);
       else            this.notes[idx] = note;
     } finally {
-      setTimeout(() => this.selfWrites.delete(id), 5000);
+      setTimeout(() => this.selfWrites.delete(id), 500);
     }
   }
 
@@ -691,7 +691,7 @@ export class NoteStorage {
       );
     } finally {
       // Clear after a short delay — watcher events arrive asynchronously
-      setTimeout(() => this.selfWrites.delete(note.id), 5000);
+      setTimeout(() => this.selfWrites.delete(note.id), 500);
     }
   }
 
@@ -770,7 +770,7 @@ export class NoteStorage {
   private updateGitignore(id: string, shared: boolean): Promise<void> {
     this.gitignoreWriteQueue = this.gitignoreWriteQueue
       .then(() => this.doUpdateGitignore(id, shared))
-      .catch(() => {});
+      .catch((err) => { console.error('[DevNotes] .gitignore update failed:', err); });
     return this.gitignoreWriteQueue;
   }
 
