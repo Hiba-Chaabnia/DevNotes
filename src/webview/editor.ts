@@ -405,6 +405,15 @@ function fromEditorMd(md: string): string {
     if (data?.type === 'insertImage') {
       editor.chain().focus().setImage({ src: data.src as string, alt: 'image' }).run();
     }
+    if (data?.type === 'setTheme') {
+      const root = document.documentElement;
+      if (data.vars) {
+        Object.entries(data.vars as Record<string, string>).forEach(([k, v]) => root.style.setProperty(k, v));
+      } else {
+        // Reset all inline overrides — VS Code native vars take over again
+        root.removeAttribute('style');
+      }
+    }
   });
 
   // ── Responsive toolbar ───────────────────────────────────────────────────────
