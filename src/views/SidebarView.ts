@@ -1,33 +1,14 @@
-import * as vscode from 'vscode';
+﻿import * as vscode from 'vscode';
 import { NoteStorage, Note, Tag, GitHubLink, DEFAULT_TAGS } from '../services/NoteStorage';
-import { UI_COLORS as C, GH_COLORS as GH, NOTE_COLORS as NC, RGB } from '../utils/colors';
+import { UI_COLORS as C, GH_COLORS as GH, NOTE_COLORS as NC, PLATFORM_COLORS as PC, hexToRgb } from '../utils/colors';
 import { svgIcon, getNonce } from '../utils/webview';
 import { detectProjectIdentity } from '../services/GitDetector';
 import { parsePRUrl, parseGitHubOwnerRepo, githubFetchPR, githubCreateIssue } from '../services/GitHubClient';
-import {
-  Plus, Search, X, Ellipsis, User, Archive, Clock, LayoutList, Bot,
-  SquarePen, Bell, Copy, Link2, Unlink2, Share2, SquareArrowOutUpRight,
-  Trash2, GitBranch, ArrowLeftRight, Star, FolderGit, FolderOpen,
-  ClockArrowDown, ArrowDownAZ, Tag as TagIcon, FileSymlink, TriangleAlert,
-  GitPullRequest, GitPullRequestClosed, GitMerge, CircleDot, CircleCheck,
-  Bold, Italic, Underline, Strikethrough,
-  List, ListOrdered, ListChecks, Code, Code2, Indent, Outdent, RemoveFormatting, Check,
-  ChevronDown, ChevronUp,
-  Settings, Files,
-  PenLine, Shapes, Palette, Ban,
-} from 'lucide';
-import type { IconNode as LucideNode } from 'lucide';
-import * as AllLucide from 'lucide';
+import { ALL_LUCIDE_NODES } from '../utils/icons';
 
 function githubSvg(size = 14): string {
   return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.477 2 2 6.477 2 12c0 4.418 2.865 8.166 6.839 9.489.5.092.682-.217.682-.482 0-.237-.009-.868-.013-1.703-2.782.604-3.369-1.34-3.369-1.34-.454-1.154-1.11-1.462-1.11-1.462-.908-.62.069-.608.069-.608 1.003.07 1.531 1.03 1.531 1.03.892 1.529 2.341 1.087 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.11-4.555-4.943 0-1.091.39-1.984 1.029-2.683-.103-.253-.446-1.27.098-2.647 0 0 .84-.269 2.75 1.025A9.578 9.578 0 0 1 12 6.836a9.59 9.59 0 0 1 2.504.337c1.909-1.294 2.747-1.025 2.747-1.025.546 1.377.202 2.394.1 2.647.64.699 1.028 1.592 1.028 2.683 0 3.842-2.339 4.687-4.566 4.935.359.309.678.919.678 1.852 0 1.336-.012 2.415-.012 2.743 0 .267.18.578.688.48C19.138 20.163 22 16.418 22 12c0-5.523-4.477-10-10-10z"/></svg>`;
 }
-
-
-// All Lucide icons available for user search — every array-valued export is an icon node
-const ALL_LUCIDE_NODES: Record<string, LucideNode> = Object.fromEntries(
-  Object.entries(AllLucide as Record<string, unknown>).filter(([, v]) => Array.isArray(v))
-) as Record<string, LucideNode>;
 
 // ─── Message types ────────────────────────────────────────────────────────────
 
@@ -75,7 +56,6 @@ type ToExt =
   | { type: 'openFolder' }
   | { type: 'pasteImage'; noteId: string; base64: string; ext: string }
   | { type: 'bannerDismiss' }
-  | { type: 'setTheme'; vars: Record<string, string> | null }
 
 async function readGitHubToken(wsRoot: vscode.Uri): Promise<string | undefined> {
   try {
@@ -173,7 +153,6 @@ export class SidebarView implements vscode.WebviewViewProvider {
     private readonly onOpenEditor: (noteId: string) => void,
     private readonly onNoteLinkChanged: () => void = () => {},
     private readonly onNoteUpdated: (noteId: string) => void = () => {},
-    private readonly onSetTheme: (vars: Record<string, string> | null) => void = () => {},
   ) {}
 
   setProjectName(name: string): void {
@@ -228,24 +207,6 @@ export class SidebarView implements vscode.WebviewViewProvider {
     });
   }
 
-  /** Call this after any storage mutation to sync the sidebar. */
-  showChipPreview(): void {
-    if (!this.view) {
-      vscode.commands.executeCommand('devnotesView.focus');
-    }
-    this.view?.webview.postMessage({
-      type  : 'showChipPreview',
-      colors: {
-        green   : NC.green,
-        blue    : NC.blue,
-        orange  : NC.orange,
-        yellow  : NC.yellow,
-        lavender: NC.lavender,
-        red     : NC.red,
-      },
-    });
-  }
-
   push(): void {
     clearTimeout(this._pushTimer);
     this._pushTimer = setTimeout(() => this._flush(), 16);
@@ -273,9 +234,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
     if (wsRoot) {
       const imgRegex = /!\[[^\]]*\]\(\.devnotes\/assets\/([^)]+)\)/g;
       for (const note of notes) {
-        imgRegex.lastIndex = 0;
-        let match: RegExpExecArray | null;
-        while ((match = imgRegex.exec(note.content)) !== null) {
+        for (const match of note.content.matchAll(imgRegex)) {
           const filename = match[1];
           const storagePath = `.devnotes/assets/${filename}`;
           if (!imageUriMap[storagePath]) {
@@ -612,9 +571,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
         break;
 
       case 'bulkArchive': {
-        for (const id of msg.noteIds) {
-          await this.storage.updateNote(id, { archived: true, starred: false });
-        }
+        await Promise.all(msg.noteIds.map(id => this.storage.updateNote(id, { archived: true, starred: false })));
         this.push();
         break;
       }
@@ -627,9 +584,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
           'Delete'
         );
         if (ans !== 'Delete') break;
-        for (const id of msg.noteIds) {
-          await this.storage.deleteNote(id);
-        }
+        await Promise.all(msg.noteIds.map(id => this.storage.deleteNote(id)));
         this.push();
         break;
       }
@@ -712,8 +667,9 @@ export class SidebarView implements vscode.WebviewViewProvider {
           if (action === 'Open in Browser') {
             vscode.env.openExternal(vscode.Uri.parse(issue.html_url));
           }
-        } catch (err: any) {
-          vscode.window.showErrorMessage(`DevNotes: failed to create issue — ${err.message ?? err}`);
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          vscode.window.showErrorMessage(`DevNotes: failed to create issue — ${errMsg}`);
         }
         break;
       }
@@ -852,10 +808,6 @@ export class SidebarView implements vscode.WebviewViewProvider {
         break;
       }
 
-      case 'setTheme':
-        this.onSetTheme(msg.vars);
-        break;
-
     }
   }
 
@@ -883,66 +835,66 @@ export class SidebarView implements vscode.WebviewViewProvider {
 
     // SVG strings injected into the webview script (browser side can't import lucide)
     const jsSvg = {
-      edit:        JSON.stringify(svgIcon(SquarePen, 14)),
-      remind:      JSON.stringify(svgIcon(Bell,      14)),
-      dup:         JSON.stringify(svgIcon(Copy,      14)),
-      link:        JSON.stringify(svgIcon(Link2,     14)),
-      unlink:      JSON.stringify(svgIcon(Unlink2,   14)),
-      archive:     JSON.stringify(svgIcon(Archive,   14)),
-      share:       JSON.stringify(svgIcon(Share2,    14)),
-      export:      JSON.stringify(svgIcon(SquareArrowOutUpRight, 14)),
-      trash:       JSON.stringify(svgIcon(Trash2,    14)),
-      overflow:    JSON.stringify(svgIcon(Ellipsis,  14)),
-      star:        JSON.stringify(svgIcon(Star,      14)),
-      starFilled:  JSON.stringify(svgIcon(Star,      14, '', 'currentColor')),
-      unlinkSmall: JSON.stringify(svgIcon(X,           10)),
-      folderGit:   JSON.stringify(svgIcon(FolderGit,  13, 'flex-shrink:0')),
-      folderOpen:  JSON.stringify(svgIcon(FolderOpen, 13, 'flex-shrink:0')),
-      branch:      JSON.stringify(svgIcon(GitBranch,     11, 'flex-shrink:0')),
-      branchSwitch: JSON.stringify(svgIcon(ArrowLeftRight, 11, 'flex-shrink:0')),
-      sortUpdated:   JSON.stringify(svgIcon(ClockArrowDown,        13)),
-      sortStarred:   JSON.stringify(svgIcon(Star,                  13, '', 'currentColor')),
-      sortAlpha:     JSON.stringify(svgIcon(ArrowDownAZ,           13)),
-      noteLinkIcon:  JSON.stringify(svgIcon(Files,                 11)),
-      codeLinkIcon:  JSON.stringify(svgIcon(FileSymlink,           11)),
-      codeLinkMenu:  JSON.stringify(svgIcon(FileSymlink,           14)),
-      conflictIcon:  JSON.stringify(svgIcon(TriangleAlert,         11)),
-      archiveIcon:   JSON.stringify(svgIcon(Archive,               11)),
-      shareSmall:    JSON.stringify(svgIcon(Share2,                11)),
-      bellSmall:     JSON.stringify(svgIcon(Bell,                  11)),
-      branchSmall:   JSON.stringify(svgIcon(GitBranch,             11)),
-      branchMenu:    JSON.stringify(svgIcon(GitBranch,             14)),
-      noteLink:      JSON.stringify(svgIcon(Files,                 14)),
-      tagSmall:      JSON.stringify(svgIcon(TagIcon,               11)),
-      tplSmall:      JSON.stringify(svgIcon(LayoutList,            11)),
-      ghPrOpen:      JSON.stringify(svgIcon(GitPullRequest,        11)),
-      ghPrClosed:    JSON.stringify(svgIcon(GitPullRequestClosed,  11)),
-      ghPrMerged:    JSON.stringify(svgIcon(GitMerge,              11)),
-      ghIssueOpen:   JSON.stringify(svgIcon(CircleDot,             11)),
-      ghIssueClosed: JSON.stringify(svgIcon(CircleCheck,           11)),
-      fmtBold:       JSON.stringify(svgIcon(Bold,             13)),
-      fmtItalic:     JSON.stringify(svgIcon(Italic,           13)),
-      fmtUnderline:  JSON.stringify(svgIcon(Underline,        13)),
-      fmtStrike:     JSON.stringify(svgIcon(Strikethrough,    13)),
-      fmtList:       JSON.stringify(svgIcon(List,             13)),
-      fmtListNum:    JSON.stringify(svgIcon(ListOrdered,      13)),
-      fmtChecklist:  JSON.stringify(svgIcon(ListChecks,       13)),
-      fmtCode:       JSON.stringify(svgIcon(Code,             13)),
-      fmtCodeInline: JSON.stringify(svgIcon(Code2,            13)),
-      fmtIndent:     JSON.stringify(svgIcon(Indent,           13)),
-      fmtOutdent:    JSON.stringify(svgIcon(Outdent,          13)),
-      fmtClear:      JSON.stringify(svgIcon(RemoveFormatting, 13)),
-      fmtDone:       JSON.stringify(svgIcon(Check,            13)),
-      chevronDown:   JSON.stringify(svgIcon(ChevronDown,     12)),
-      chevronUp:     JSON.stringify(svgIcon(ChevronUp,       12)),
-      popRename:     JSON.stringify(svgIcon(PenLine,         10)),
-      popIcon:       JSON.stringify(svgIcon(Shapes,          10)),
-      popColor:      JSON.stringify(svgIcon(Palette,         10)),
-      popDelete:     JSON.stringify(svgIcon(Trash2,          14)),
-      popNone:       JSON.stringify(svgIcon(Ban,             13)),
-      newTag:        JSON.stringify(svgIcon(TagIcon,         13)),
-      ghIssue:       JSON.stringify(svgIcon(CircleDot,       14)),
-      ghPr:          JSON.stringify(svgIcon(GitPullRequest,  14)),
+      edit:        JSON.stringify(svgIcon(ALL_LUCIDE_NODES['SquarePen'],            14)),
+      remind:      JSON.stringify(svgIcon(ALL_LUCIDE_NODES['Bell'],                 14)),
+      dup:         JSON.stringify(svgIcon(ALL_LUCIDE_NODES['Copy'],                 14)),
+      link:        JSON.stringify(svgIcon(ALL_LUCIDE_NODES['Link2'],                14)),
+      unlink:      JSON.stringify(svgIcon(ALL_LUCIDE_NODES['Unlink2'],              14)),
+      archive:     JSON.stringify(svgIcon(ALL_LUCIDE_NODES['Archive'],              14)),
+      share:       JSON.stringify(svgIcon(ALL_LUCIDE_NODES['Share2'],               14)),
+      export:      JSON.stringify(svgIcon(ALL_LUCIDE_NODES['SquareArrowOutUpRight'],14)),
+      trash:       JSON.stringify(svgIcon(ALL_LUCIDE_NODES['Trash2'],               14)),
+      overflow:    JSON.stringify(svgIcon(ALL_LUCIDE_NODES['Ellipsis'],             14)),
+      star:        JSON.stringify(svgIcon(ALL_LUCIDE_NODES['Star'],                 14)),
+      starFilled:  JSON.stringify(svgIcon(ALL_LUCIDE_NODES['Star'],                 14, '', 'currentColor')),
+      unlinkSmall: JSON.stringify(svgIcon(ALL_LUCIDE_NODES['X'],                    10)),
+      folderGit:   JSON.stringify(svgIcon(ALL_LUCIDE_NODES['FolderGit'],            13, 'flex-shrink:0')),
+      folderOpen:  JSON.stringify(svgIcon(ALL_LUCIDE_NODES['FolderOpen'],           13, 'flex-shrink:0')),
+      branch:      JSON.stringify(svgIcon(ALL_LUCIDE_NODES['GitBranch'],            11, 'flex-shrink:0')),
+      branchSwitch: JSON.stringify(svgIcon(ALL_LUCIDE_NODES['ArrowLeftRight'],      11, 'flex-shrink:0')),
+      sortUpdated:   JSON.stringify(svgIcon(ALL_LUCIDE_NODES['ClockArrowDown'],     13)),
+      sortStarred:   JSON.stringify(svgIcon(ALL_LUCIDE_NODES['Star'],               13, '', 'currentColor')),
+      sortAlpha:     JSON.stringify(svgIcon(ALL_LUCIDE_NODES['ArrowDownAZ'],        13)),
+      noteLinkIcon:  JSON.stringify(svgIcon(ALL_LUCIDE_NODES['Files'],              11)),
+      codeLinkIcon:  JSON.stringify(svgIcon(ALL_LUCIDE_NODES['FileSymlink'],        11)),
+      codeLinkMenu:  JSON.stringify(svgIcon(ALL_LUCIDE_NODES['FileSymlink'],        14)),
+      conflictIcon:  JSON.stringify(svgIcon(ALL_LUCIDE_NODES['TriangleAlert'],      11)),
+      archiveIcon:   JSON.stringify(svgIcon(ALL_LUCIDE_NODES['Archive'],            11)),
+      shareSmall:    JSON.stringify(svgIcon(ALL_LUCIDE_NODES['Share2'],             11)),
+      bellSmall:     JSON.stringify(svgIcon(ALL_LUCIDE_NODES['Bell'],               11)),
+      branchSmall:   JSON.stringify(svgIcon(ALL_LUCIDE_NODES['GitBranch'],          11)),
+      branchMenu:    JSON.stringify(svgIcon(ALL_LUCIDE_NODES['GitBranch'],          14)),
+      noteLink:      JSON.stringify(svgIcon(ALL_LUCIDE_NODES['Files'],              14)),
+      tagSmall:      JSON.stringify(svgIcon(ALL_LUCIDE_NODES['Tag'],                11)),
+      tplSmall:      JSON.stringify(svgIcon(ALL_LUCIDE_NODES['LayoutList'],         11)),
+      ghPrOpen:      JSON.stringify(svgIcon(ALL_LUCIDE_NODES['GitPullRequest'],     11)),
+      ghPrClosed:    JSON.stringify(svgIcon(ALL_LUCIDE_NODES['GitPullRequestClosed'],11)),
+      ghPrMerged:    JSON.stringify(svgIcon(ALL_LUCIDE_NODES['GitMerge'],           11)),
+      ghIssueOpen:   JSON.stringify(svgIcon(ALL_LUCIDE_NODES['CircleDot'],          11)),
+      ghIssueClosed: JSON.stringify(svgIcon(ALL_LUCIDE_NODES['CircleCheck'],        11)),
+      fmtBold:       JSON.stringify(svgIcon(ALL_LUCIDE_NODES['Bold'],               13)),
+      fmtItalic:     JSON.stringify(svgIcon(ALL_LUCIDE_NODES['Italic'],             13)),
+      fmtUnderline:  JSON.stringify(svgIcon(ALL_LUCIDE_NODES['Underline'],          13)),
+      fmtStrike:     JSON.stringify(svgIcon(ALL_LUCIDE_NODES['Strikethrough'],      13)),
+      fmtList:       JSON.stringify(svgIcon(ALL_LUCIDE_NODES['List'],               13)),
+      fmtListNum:    JSON.stringify(svgIcon(ALL_LUCIDE_NODES['ListOrdered'],        13)),
+      fmtChecklist:  JSON.stringify(svgIcon(ALL_LUCIDE_NODES['ListChecks'],         13)),
+      fmtCode:       JSON.stringify(svgIcon(ALL_LUCIDE_NODES['Code'],               13)),
+      fmtCodeInline: JSON.stringify(svgIcon(ALL_LUCIDE_NODES['Code2'],              13)),
+      fmtIndent:     JSON.stringify(svgIcon(ALL_LUCIDE_NODES['Indent'],             13)),
+      fmtOutdent:    JSON.stringify(svgIcon(ALL_LUCIDE_NODES['Outdent'],            13)),
+      fmtClear:      JSON.stringify(svgIcon(ALL_LUCIDE_NODES['RemoveFormatting'],   13)),
+      fmtDone:       JSON.stringify(svgIcon(ALL_LUCIDE_NODES['Check'],              13)),
+      chevronDown:   JSON.stringify(svgIcon(ALL_LUCIDE_NODES['ChevronDown'],        12)),
+      chevronUp:     JSON.stringify(svgIcon(ALL_LUCIDE_NODES['ChevronUp'],          12)),
+      popRename:     JSON.stringify(svgIcon(ALL_LUCIDE_NODES['PenLine'],            10)),
+      popIcon:       JSON.stringify(svgIcon(ALL_LUCIDE_NODES['Shapes'],             10)),
+      popColor:      JSON.stringify(svgIcon(ALL_LUCIDE_NODES['Palette'],            10)),
+      popDelete:     JSON.stringify(svgIcon(ALL_LUCIDE_NODES['Trash2'],             14)),
+      popNone:       JSON.stringify(svgIcon(ALL_LUCIDE_NODES['Ban'],                13)),
+      newTag:        JSON.stringify(svgIcon(ALL_LUCIDE_NODES['Tag'],                13)),
+      ghIssue:       JSON.stringify(svgIcon(ALL_LUCIDE_NODES['CircleDot'],          14)),
+      ghPr:          JSON.stringify(svgIcon(ALL_LUCIDE_NODES['GitPullRequest'],     14)),
     };
 
     const checkmarkUri = 'data:image/svg+xml,' + encodeURIComponent(
@@ -1193,11 +1145,14 @@ export class SidebarView implements vscode.WebviewViewProvider {
   }
 
 
+  /* ── Pill tokens ── */
+  :root { --pill-font: 11px; --pill-py: 2px; --pill-px: 8px; --pill-border: 1.5px; --pill-radius: 20px; --pill-gap: 4px; }
+
   .tag-chip {
-    font-size: 11px;
-    padding: 2px 7px;
-    border-radius: 20px;
-    border: 1.5px solid transparent;
+    font-size: var(--pill-font);
+    padding: var(--pill-py) var(--pill-px);
+    border-radius: var(--pill-radius);
+    border: var(--pill-border) solid transparent;
     cursor: pointer;
     font-weight: 500;
     color: ${C.text};
@@ -1205,7 +1160,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
     white-space: nowrap;
     display: inline-flex;
     align-items: center;
-    gap: 2px;
+    gap: var(--pill-gap);
   }
   .tag-chip:hover { opacity: .85; }
   .tag-chip.active { border-color: ${C.text}; }
@@ -1216,7 +1171,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
   .color-swatch.default-swatch {
     display: flex; align-items: center; justify-content: center;
     font-size: 12px; line-height: 1;
-    color: var(--vscode-editor-background, #1e1e1e);
+    color: var(--vscode-editor-background, ${PC.vsEditorDark});
   }
   .tag-chip.default-color {
     background: color-mix(in srgb, var(--vscode-foreground) 15%, transparent);
@@ -1226,7 +1181,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
   .tag-chip.default-color.active {
     background: var(--vscode-foreground);
     border-color: rgba(0,0,0,.2);
-    color: var(--vscode-editor-background, #1e1e1e);
+    color: var(--vscode-editor-background, ${PC.vsEditorDark});
   }
   .tag-pill.default-color {
     background: color-mix(in srgb, var(--vscode-foreground) 15%, transparent);
@@ -1237,7 +1192,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
   .tag-chip-color-pop {
     display: none;
     position: fixed;
-    background: var(--vscode-editorWidget-background, #fff);
+    background: var(--vscode-editorWidget-background, ${C.white});
     border: 1px solid var(--vscode-panel-border);
     border-radius: 6px;
     padding: 8px;
@@ -1301,14 +1256,14 @@ export class SidebarView implements vscode.WebviewViewProvider {
   .color-picker-hue::-webkit-slider-thumb {
     -webkit-appearance: none; appearance: none;
     width: 14px; height: 14px; border-radius: 50%;
-    background: #fff; border: 2px solid rgba(0,0,0,.35); cursor: pointer;
+    background: ${C.white}; border: 2px solid rgba(0,0,0,.35); cursor: pointer;
     box-shadow: 0 1px 3px rgba(0,0,0,.3);
   }
   .custom-swatch-wrap { position: relative; display: inline-flex; flex-shrink: 0; }
   .custom-swatch-del {
     position: absolute; top: -4px; right: -4px;
     width: 13px; height: 13px; border-radius: 50%;
-    background: var(--vscode-errorForeground, #e05252); color: #fff;
+    background: var(--vscode-errorForeground, ${C.danger}); color: ${C.white};
     font-size: 9px; line-height: 1; border: none; cursor: pointer;
     display: none; align-items: center; justify-content: center; padding: 0; z-index: 1;
   }
@@ -1374,13 +1329,14 @@ export class SidebarView implements vscode.WebviewViewProvider {
 
 
   .add-tag-btn {
-    font-size: 11px;
-    padding: 2px 6px;
-    border-radius: 20px;
+    font-size: var(--pill-font);
+    padding: var(--pill-py) var(--pill-px);
+    border-radius: var(--pill-radius);
     background: none;
-    border: 1.5px dashed var(--vscode-panel-border);
+    border: var(--pill-border) dashed var(--vscode-panel-border);
     color: var(--vscode-descriptionForeground);
     cursor: pointer;
+    gap: var(--pill-gap);
   }
   .add-tag-btn:hover { border-color: var(--vscode-foreground); color: var(--vscode-foreground); }
 
@@ -1470,7 +1426,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
     border-radius: 4px;
   }
   .card:hover .card-overflow-btn { opacity: .5; }
-  .card-overflow-btn:hover { opacity: 1 !important; background: rgba(128,128,128,.15); }
+  .card-overflow-btn:hover { opacity: 1 !important; background: rgba(${hexToRgb(C.neutral)},.15); }
 
   .star-btn {
     background: none; border: none; cursor: pointer;
@@ -1514,7 +1470,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
   .card-row-2:empty { display: none; }
 
   .card-row-3 {
-    border-top: 1px solid rgba(128,128,128,.08);
+    border-top: 1px solid rgba(${hexToRgb(C.neutral)},.08);
     padding-top: 5px;
   }
 
@@ -1543,11 +1499,12 @@ export class SidebarView implements vscode.WebviewViewProvider {
   .card-preview { user-select: none; cursor: text; }
   .card-preview[data-empty]::before {
     content: attr(data-placeholder);
-    color: var(--vscode-input-placeholderForeground, rgba(128,128,128,.45));
+    color: var(--vscode-input-placeholderForeground, rgba(${hexToRgb(C.neutral)},.45));
     pointer-events: none;
   }
   .card-preview p { margin: 0 0 4px; }
-  .card-preview blockquote { margin: 0 0 4px 0; padding: 2px 8px; border-left: 3px solid rgba(128,128,128,.35); background: rgba(128,128,128,.06); border-radius: 0 2px 2px 0; }
+  .card-preview blockquote { margin: 0 0 4px 0; padding: 2px 8px; border-left: 3px solid rgba(${hexToRgb(C.neutral)},.35); background: rgba(${hexToRgb(C.neutral)},.06); border-radius: 0 2px 2px 0; }
+  .card-preview hr { border: none; border-top: 1px solid rgba(${hexToRgb(C.neutral)},.25); margin: 4px 0; }
   .card-preview ul, .card-preview ol { padding-left: 1.2em; margin: 0 0 4px; }
   .card-preview li { margin: 1px 0; }
   .card-preview code {
@@ -1591,7 +1548,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
     justify-content: space-between;
     flex-wrap: wrap;
     gap: 4px;
-    border-top: 1px solid rgba(128,128,128,.08);
+    border-top: 1px solid rgba(${hexToRgb(C.neutral)},.08);
     padding-top: 5px;
     margin-top: 1px;
   }
@@ -1633,7 +1590,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
     display: none;
     align-items: center;
     gap: 2px;
-    border-top: 1px solid rgba(128,128,128,.08);
+    border-top: 1px solid rgba(${hexToRgb(C.neutral)},.08);
     padding-top: 5px;
     margin-top: 1px;
     position: relative;
@@ -1652,7 +1609,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
     align-items: center;
     transition: opacity .1s, background .1s;
   }
-  .card-fmt-btn:hover { opacity: 1; background: rgba(128,128,128,.12); }
+  .card-fmt-btn:hover { opacity: 1; background: rgba(${hexToRgb(C.neutral)},.12); }
   .card-fmt-btn.active { opacity: 1; color: var(--vscode-button-background); }
   .card-fmt-sep { flex: 1; min-width: 4px; }
   .card-fmt-done {
@@ -1668,7 +1625,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
     flex-shrink: 0;
     transition: opacity .1s, background .1s;
   }
-  .card-fmt-done:hover { opacity: 1; background: rgba(128,128,128,.12); }
+  .card-fmt-done:hover { opacity: 1; background: rgba(${hexToRgb(C.neutral)},.12); }
 
   /* Collapsible groups */
   .fmt-grp { display: flex; align-items: center; gap: 2px; }
@@ -1710,19 +1667,29 @@ export class SidebarView implements vscode.WebviewViewProvider {
   .task-item.done > span { opacity: .5; text-decoration: line-through; }
 
   /* Rich block content inside preview */
-  .card-preview h2 { font-size: 1em; font-weight: 700; margin: 2px 0; }
-  .card-preview h3 { font-size: .9em; font-weight: 600; margin: 2px 0; opacity: .85; }
+  .card-preview h1 { font-size: 1.1923em; font-weight: 700; margin: 3px 0 2px; }
+  .card-preview h2 { font-size: 1.1154em; font-weight: 700; margin: 2px 0; }
+  .card-preview h3 { font-size: 1.0385em; font-weight: 600; margin: 2px 0; opacity: .8; }
+
+  .card-preview .table-scroll { overflow-x: auto; margin: 2px 0 4px; transform: rotateX(180deg); }
+  .card-preview table { border-collapse: collapse; width: 100%; font-size: .9em; white-space: nowrap; transform: rotateX(180deg); }
+  .card-preview th, .card-preview td { padding: 2px 7px; border: 1px solid rgba(${hexToRgb(C.neutral)},.22); text-align: left; vertical-align: top; }
+  .card-preview th { font-weight: 700; background: rgba(${hexToRgb(C.neutral)},.08); }
   .card-preview pre {
-    background: rgba(128,128,128,.1); border-radius: 3px;
+    background: rgba(${hexToRgb(C.neutral)},.1); border-radius: 3px;
     padding: 4px 6px; font-family: monospace; font-size: .85em;
     margin: 2px 0; white-space: pre-wrap;
   }
   .card-preview ol  { list-style: decimal; padding-left: 18px; margin: 2px 0; }
   .card-preview ul:not(.task-list) { list-style: disc; padding-left: 18px; margin: 2px 0; }
+  .card-preview .cell-list { margin: 1px 0; padding-left: 14px; white-space: normal; }
+  .card-preview .cell-list li { margin: 0; line-height: 1.4; }
+  .card-preview .cell-list.task-list { padding-left: 0; list-style: none; }
+  .card-preview .cell-list.task-list li { display: flex; align-items: flex-start; gap: 4px; }
 
   /* Format bar separator between button groups */
   .card-fmt-sep-bar {
-    width: 1px; height: 14px; background: rgba(128,128,128,.22);
+    width: 1px; height: 14px; background: rgba(${hexToRgb(C.neutral)},.22);
     margin: 0 2px; flex-shrink: 0;
   }
 
@@ -1732,12 +1699,11 @@ export class SidebarView implements vscode.WebviewViewProvider {
   .tag-ghost {
     display: inline-flex;
     align-items: center;
-    gap: 4px;
-    font-size: 11px;
-    padding: 2px 7px;
-    border-radius: 20px;
-    line-height: 1;
-    border: 1.5px dashed rgba(128,128,128,.35);
+    gap: var(--pill-gap);
+    font-size: var(--pill-font);
+    padding: var(--pill-py) var(--pill-px);
+    border-radius: var(--pill-radius);
+    border: var(--pill-border) dashed rgba(${hexToRgb(C.neutral)},.35);
     background: none;
     color: var(--card-text);
     opacity: .35;
@@ -2057,7 +2023,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
     display: none;
     width: 16px; height: 16px;
     border-radius: 4px;
-    border: 1.5px solid rgba(${RGB.text},.35);
+    border: 1.5px solid rgba(${hexToRgb(C.text)},.35);
     background: rgba(255,255,255,.1);
     align-items: center;
     justify-content: center;
@@ -2157,15 +2123,15 @@ export class SidebarView implements vscode.WebviewViewProvider {
 
   /* ── Shared chip base ───────────────────────────────────── */
   .tag-pill, .meta-chip {
-    font-size: 11px;
-    padding: 2px 7px;
-    border-radius: 20px;
-    border: 1.5px solid transparent;
+    font-size: var(--pill-font);
+    padding: var(--pill-py) var(--pill-px);
+    border-radius: var(--pill-radius);
+    border: var(--pill-border) solid transparent;
     font-weight: 500;
     cursor: pointer;
     display: inline-flex;
     align-items: center;
-    gap: 3px;
+    gap: var(--pill-gap);
     line-height: 1;
     white-space: nowrap;
     transition: filter .12s;
@@ -2173,8 +2139,8 @@ export class SidebarView implements vscode.WebviewViewProvider {
   }
   .tag-pill:hover, .meta-chip:hover { filter: brightness(.9); }
 
-  .archived-badge { background: rgba(148,163,184,.18); border-color: ${C.muted};       color: ${C.muted}; }
-  .branch-chip    { background: rgba(128,128,128,.18); border-color: rgba(128,128,128,.5); color: rgba(128,128,128,1); }
+  .archived-badge { background: rgba(${hexToRgb(C.muted)},.18);    border-color: ${C.muted};    color: ${C.muted}; }
+  .branch-chip    { background: rgba(${hexToRgb(C.neutral)},.18); border-color: rgba(${hexToRgb(C.neutral)},.5); color: rgba(${hexToRgb(C.neutral)},1); }
 
   /* Off-branch card — dimmed but still accessible */
   .card.off-branch { opacity: .42; }
@@ -2198,7 +2164,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
   .branch-scope-label code {
     font-family: var(--vscode-editor-font-family, monospace);
     font-size: 10px;
-    background: rgba(128,128,128,.15);
+    background: rgba(${hexToRgb(C.neutral)},.15);
     padding: 1px 4px;
     border-radius: 3px;
   }
@@ -2238,18 +2204,18 @@ export class SidebarView implements vscode.WebviewViewProvider {
   .stale-filter-btn.active { color: var(--vscode-button-background) !important; opacity: 1; }
 
   /* ── Conflict / shared indicators ───────────────────── */
-  .conflict-badge { background: rgba(224,82,82,.2);    border-color: ${C.danger};       color: ${C.danger}; }
-  .shared-badge   { background: rgba(123,97,255,.18); border-color: ${C.activityBg};  color: ${C.activityBg}; }
+  .conflict-badge { background: rgba(${hexToRgb(C.danger)},.2);  border-color: ${C.danger};  color: ${C.danger}; }
+  .shared-badge   { background: rgba(${hexToRgb(C.shared)},.18); border-color: ${C.shared}; color: ${C.shared}; }
 
   /* ── Reminder badge ─────────────────────────────────── */
-  .reminder-badge         { background: rgba(212,144,10,.18); border-color: ${C.remindWarn}; color: ${C.remindWarn}; }
-  .reminder-badge.overdue { background: rgba(255,134,55,.25); border-color: ${NC.orange};    color: ${NC.orange}; }
+  .reminder-badge         { background: rgba(${hexToRgb(C.remindWarn)},.18); border-color: ${C.remindWarn}; color: ${C.remindWarn}; }
+  .reminder-badge.overdue { background: rgba(${hexToRgb(NC.orange)},.25);   border-color: ${NC.orange};    color: ${NC.orange}; }
 
   /* ── GitHub status badge ────────────────────────────── */
   .github-badge { text-transform: lowercase; }
-  .github-badge.gh-open   { background: rgba(6,214,160,.18);  border-color: ${GH.open};   color: ${GH.open}; }
-  .github-badge.gh-closed { background: rgba(136,136,136,.18); border-color: ${C.muted};  color: ${C.muted}; }
-  .github-badge.gh-merged { background: rgba(130,80,223,.18); border-color: ${GH.merged}; color: ${GH.merged}; }
+  .github-badge.gh-open   { background: rgba(${hexToRgb(GH.open)},.18);   border-color: ${GH.open};   color: ${GH.open}; }
+  .github-badge.gh-closed { background: rgba(${hexToRgb(C.muted)},.18);   border-color: ${C.muted};   color: ${C.muted}; }
+  .github-badge.gh-merged { background: rgba(${hexToRgb(GH.merged)},.18); border-color: ${GH.merged}; color: ${GH.merged}; }
 
 
   /* ── Empty state ─────────────────────────────────────── */
@@ -2279,7 +2245,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
   .conflict-badge .chip-text,
   .github-badge .chip-text { transform: translateY(1px); }
   .code-link-chip {
-    background: rgba(67,180,251,.18);
+    background: rgba(${hexToRgb(NC.blue)},.18);
     border-color: ${NC.blue};
     color: ${NC.blue};
     font-family: var(--vscode-editor-font-family, monospace);
@@ -2294,7 +2260,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
   }
   .note-links-row { display: contents; } /* flattened into row2 */
   .note-link-chip {
-    background: rgba(219,149,253,.18);
+    background: rgba(${hexToRgb(NC.lavender)},.18);
     border-color: ${NC.lavender};
     color: ${NC.lavender};
     max-width: 160px;
@@ -2313,151 +2279,11 @@ export class SidebarView implements vscode.WebviewViewProvider {
   .nc-hint {
     margin-left: auto;
     font-size: 10px;
-    color: rgba(${RGB.text},.38);
+    color: rgba(${hexToRgb(C.text)},.38);
     white-space: nowrap;
     pointer-events: none;
     user-select: none;
   }
-
-  /* ── Chip preview simulation ─────────────────────────── */
-  .chip-preview {
-    padding: 10px;
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    overflow-y: auto;
-  }
-  .chip-preview-close-bar {
-    display: flex;
-    align-items: center;
-    padding-bottom: 8px;
-    margin-bottom: 4px;
-    border-bottom: 1px solid var(--vscode-panel-border);
-  }
-  .chip-preview-close-btn {
-    font-size: 11px;
-    cursor: pointer;
-    background: none;
-    border: none;
-    color: var(--vscode-foreground);
-    opacity: .65;
-    padding: 2px 6px;
-    border-radius: 4px;
-    font-family: var(--vscode-font-family);
-  }
-  .chip-preview-close-btn:hover { opacity: 1; background: var(--vscode-toolbar-hoverBackground); }
-  .chip-preview-group {
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 4px;
-    padding: 3px 0;
-  }
-  .chip-preview-label {
-    font-size: 9px;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: .06em;
-    opacity: .4;
-    width: 68px;
-    flex-shrink: 0;
-    color: var(--vscode-foreground);
-  }
-
-  /* ── Theme preview bar ───────────────────────────────── */
-  .theme-bar {
-    flex-shrink: 0;
-    border-top: 1px solid var(--vscode-panel-border);
-    padding: 4px 8px 5px;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    background: var(--vscode-sideBar-background);
-    position: relative;
-  }
-  .theme-bar-label {
-    font-size: 9px;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: .07em;
-    color: var(--vscode-descriptionForeground);
-    opacity: .5;
-    flex-shrink: 0;
-    user-select: none;
-  }
-  .theme-step-btn {
-    flex-shrink: 0;
-    width: 20px; height: 20px;
-    display: flex; align-items: center; justify-content: center;
-    border: 1px solid var(--vscode-panel-border);
-    border-radius: 3px;
-    background: none;
-    color: var(--vscode-foreground);
-    font-size: 14px;
-    line-height: 1;
-    cursor: pointer;
-    transition: border-color .12s, background .12s;
-    font-family: var(--vscode-font-family);
-    padding: 0;
-  }
-  .theme-step-btn:hover { border-color: var(--vscode-focusBorder); background: var(--vscode-list-hoverBackground); }
-  .theme-select-btn {
-    flex: 1;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    padding: 2px 7px;
-    border-radius: 4px;
-    border: 1px solid var(--vscode-panel-border);
-    background: none;
-    cursor: pointer;
-    font-family: var(--vscode-font-family);
-    font-size: 11px;
-    color: var(--vscode-foreground);
-    transition: border-color .12s, background .12s;
-    min-width: 0;
-  }
-  .theme-select-btn:hover { border-color: var(--vscode-focusBorder); background: var(--vscode-list-hoverBackground); }
-  .theme-select-btn.open  { border-color: var(--vscode-focusBorder); }
-  .theme-select-name { flex: 1; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .theme-select-arrow { font-size: 9px; opacity: .6; flex-shrink: 0; transition: transform .15s; }
-  .theme-select-btn.open .theme-select-arrow { transform: rotate(180deg); }
-  .theme-dot {
-    width: 8px; height: 8px;
-    border-radius: 50%;
-    flex-shrink: 0;
-    border: 1px solid rgba(128,128,128,.25);
-  }
-  .theme-dropdown {
-    position: absolute;
-    bottom: calc(100% + 4px);
-    left: 8px; right: 8px;
-    background: var(--vscode-editorWidget-background, var(--vscode-sideBar-background));
-    border: 1px solid var(--vscode-panel-border);
-    border-radius: 5px;
-    box-shadow: 0 4px 16px rgba(0,0,0,.25);
-    overflow-y: auto;
-    max-height: 260px;
-    z-index: 999;
-    display: none;
-  }
-  .theme-dropdown.open { display: block; }
-  .theme-option {
-    display: flex;
-    align-items: center;
-    gap: 7px;
-    padding: 5px 10px;
-    font-size: 11px;
-    color: var(--vscode-foreground);
-    cursor: pointer;
-    transition: background .1s;
-    font-family: var(--vscode-font-family);
-    white-space: nowrap;
-  }
-  .theme-option:hover   { background: var(--vscode-list-hoverBackground); }
-  .theme-option.active  { background: var(--vscode-list-activeSelectionBackground); color: var(--vscode-list-activeSelectionForeground, var(--vscode-foreground)); }
-  .theme-option-check { width: 10px; font-size: 10px; flex-shrink: 0; opacity: 0; }
-  .theme-option.active .theme-option-check { opacity: 1; }
 
   /* ── Setup banner (Option A) ──────────────────────────────── */
   .setup-banner {
@@ -2595,25 +2421,25 @@ export class SidebarView implements vscode.WebviewViewProvider {
 <!-- ── Top bar ── -->
 <div class="topbar">
   <div class="topbar-row">
-    <span class="project-pill" id="project-name"><span class="pill-primary">${svgIcon(FolderGit, 13, 'flex-shrink:0')}<span class="pill-label">Loading…</span></span><span class="pill-action"><span class="pill-action-inner"><span class="pill-copy">${svgIcon(FolderOpen, 13, 'flex-shrink:0')}<span class="pill-label">Open folder</span><span class="pill-sep">·</span></span><span class="pill-copy">${svgIcon(FolderOpen, 13, 'flex-shrink:0')}<span class="pill-label">Open folder</span><span class="pill-sep">·</span></span><span class="pill-copy">${svgIcon(FolderOpen, 13, 'flex-shrink:0')}<span class="pill-label">Open folder</span><span class="pill-sep">·</span></span></span></span></span>
+    <span class="project-pill" id="project-name"><span class="pill-primary">${svgIcon(ALL_LUCIDE_NODES['FolderGit'], 13, 'flex-shrink:0')}<span class="pill-label">Loading…</span></span><span class="pill-action"><span class="pill-action-inner"><span class="pill-copy">${svgIcon(ALL_LUCIDE_NODES['FolderOpen'], 13, 'flex-shrink:0')}<span class="pill-label">Open folder</span><span class="pill-sep">·</span></span><span class="pill-copy">${svgIcon(ALL_LUCIDE_NODES['FolderOpen'], 13, 'flex-shrink:0')}<span class="pill-label">Open folder</span><span class="pill-sep">·</span></span><span class="pill-copy">${svgIcon(ALL_LUCIDE_NODES['FolderOpen'], 13, 'flex-shrink:0')}<span class="pill-label">Open folder</span><span class="pill-sep">·</span></span></span></span></span>
     <span class="branch-pill" id="branch-pill"></span>
     <div style="flex:1"></div>
     <button class="new-note-pill" id="btn-new" title="New Note">
-      ${svgIcon(Plus, 11)}
+      ${svgIcon(ALL_LUCIDE_NODES['Plus'], 11)}
       New
     </button>
   </div>
 
   <div class="topbar-row">
     <div class="search-row">
-      ${svgIcon(Search, 12, 'opacity:.5;flex-shrink:0')}
+      ${svgIcon(ALL_LUCIDE_NODES['Search'], 12, 'opacity:.5;flex-shrink:0')}
       <input id="search" type="text" placeholder="Search notes…" autocomplete="off">
-      <button class="search-clear" id="search-clear" title="Clear search" style="display:none">${svgIcon(X, 11)}</button>
+      <button class="search-clear" id="search-clear" title="Clear search" style="display:none">${svgIcon(ALL_LUCIDE_NODES['X'], 11)}</button>
     </div>
-    <button class="icon-btn branch-filter-btn" id="btn-branch-filter" title="Show current branch only" style="display:none">${svgIcon(GitBranch, 13)}</button>
-    <button class="icon-btn sort-btn" id="btn-sort" title="Sort: last updated">${svgIcon(ClockArrowDown, 13)}</button>
+    <button class="icon-btn branch-filter-btn" id="btn-branch-filter" title="Show current branch only" style="display:none">${svgIcon(ALL_LUCIDE_NODES['GitBranch'], 13)}</button>
+    <button class="icon-btn sort-btn" id="btn-sort" title="Sort: last updated">${svgIcon(ALL_LUCIDE_NODES['ClockArrowDown'], 13)}</button>
     <button class="icon-btn overflow-btn" id="btn-overflow" title="More options">
-      ${svgIcon(Ellipsis, 14)}
+      ${svgIcon(ALL_LUCIDE_NODES['Ellipsis'], 14)}
     </button>
   </div>
 </div>
@@ -2622,7 +2448,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
 <div class="note-card-overlay" id="note-card-overlay">
   <div class="note-card" id="note-card">
     <div class="note-card-header">
-      <button class="note-card-close" id="btn-cancel-new" title="Cancel">${svgIcon(X, 12)}</button>
+      <button class="note-card-close" id="btn-cancel-new" title="Cancel">${svgIcon(ALL_LUCIDE_NODES['X'], 12)}</button>
     </div>
     <input class="note-card-title" id="new-title" type="text" placeholder="Note title…" maxlength="120" autocomplete="off">
     <div class="note-card-body is-empty" id="new-body" data-placeholder="Start writing…"></div>
@@ -2664,7 +2490,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
     </div>
   </button>
   <button class="setup-card" id="setup-mcp-row">
-    <span class="setup-card-icon">${svgIcon(Bot, 15)}</span>
+    <span class="setup-card-icon">${svgIcon(ALL_LUCIDE_NODES['Bot'], 15)}</span>
     <div class="setup-card-body">
       <div class="setup-card-name">Register MCP server</div>
       <div class="setup-card-desc">Let Claude Code read and write your notes from the terminal.</div>
@@ -2691,28 +2517,28 @@ export class SidebarView implements vscode.WebviewViewProvider {
 <!-- ── Overflow menu (⋯ button) ── -->
 <div class="overflow-menu" id="overflow-menu">
   <button class="ovf-item mine-filter-btn" id="btn-mine-filter" style="display:none">
-    <span class="ovf-icon">${svgIcon(User, 14)}</span>
+    <span class="ovf-icon">${svgIcon(ALL_LUCIDE_NODES['User'], 14)}</span>
     <span class="ovf-label">Personal notes</span>
     <span class="ovf-check">●</span>
   </button>
   <button class="ovf-item" id="btn-archive-view">
-    <span class="ovf-icon">${svgIcon(Archive, 14)}</span>
+    <span class="ovf-icon">${svgIcon(ALL_LUCIDE_NODES['Archive'], 14)}</span>
     <span class="ovf-label">Archived notes</span>
     <span class="ovf-check">●</span>
   </button>
   <button class="ovf-item stale-filter-btn" id="btn-stale-filter">
-    <span class="ovf-icon">${svgIcon(Clock, 14)}</span>
+    <span class="ovf-icon">${svgIcon(ALL_LUCIDE_NODES['Clock'], 14)}</span>
     <span class="ovf-label">Stale notes</span>
     <span class="ovf-check">●</span>
   </button>
   <button class="ovf-item" id="btn-select">
-    <span class="ovf-icon">${svgIcon(LayoutList, 14)}</span>
+    <span class="ovf-icon">${svgIcon(ALL_LUCIDE_NODES['LayoutList'], 14)}</span>
     <span class="ovf-label">Selection mode</span>
     <span class="ovf-check">●</span>
   </button>
   <hr class="ovf-divider"/>
   <button class="ovf-item" id="btn-integrations">
-    <span class="ovf-icon">${svgIcon(Settings, 14)}</span>
+    <span class="ovf-icon">${svgIcon(ALL_LUCIDE_NODES['Settings'], 14)}</span>
     <span class="ovf-label">Integrations</span>
   </button>
 </div>
@@ -2721,18 +2547,18 @@ export class SidebarView implements vscode.WebviewViewProvider {
 <div class="export-bar" id="export-bar">
   <span class="export-count" id="export-count">0 selected</span>
   <button class="btn btn-ghost btn-sel-all" id="btn-sel-all" title="Select all visible notes">All</button>
-  <button class="btn btn-ghost" id="btn-archive-sel" title="Archive selected" disabled>${svgIcon(Archive, 13)}</button>
-  <button class="btn btn-ghost" id="btn-tag-sel" title="Assign tag to selected" disabled>${svgIcon(TagIcon, 13)}</button>
-  <button class="btn btn-ghost" id="btn-export-sel" title="Export selected" disabled>${svgIcon(SquareArrowOutUpRight, 13)}</button>
-  <button class="btn btn-ghost btn-danger" id="btn-delete-sel" title="Delete selected" disabled>${svgIcon(Trash2, 13)}</button>
+  <button class="btn btn-ghost" id="btn-archive-sel" title="Archive selected" disabled>${svgIcon(ALL_LUCIDE_NODES['Archive'], 13)}</button>
+  <button class="btn btn-ghost" id="btn-tag-sel" title="Assign tag to selected" disabled>${svgIcon(ALL_LUCIDE_NODES['Tag'], 13)}</button>
+  <button class="btn btn-ghost" id="btn-export-sel" title="Export selected" disabled>${svgIcon(ALL_LUCIDE_NODES['SquareArrowOutUpRight'], 13)}</button>
+  <button class="btn btn-ghost btn-danger" id="btn-delete-sel" title="Delete selected" disabled>${svgIcon(ALL_LUCIDE_NODES['Trash2'], 13)}</button>
   <button class="btn btn-ghost" id="btn-cancel-sel">Cancel</button>
 </div>
 
 <!-- ── Add tag form ── -->
 <div class="add-tag-form" id="add-tag-form">
   <div class="add-tag-form-title">
-    <span class="add-tag-form-title-icon">${svgIcon(TagIcon, 13)}</span>New Tag
-    <button class="add-tag-form-close" id="btn-cancel-tag" title="Cancel">${svgIcon(X, 13)}</button>
+    <span class="add-tag-form-title-icon">${svgIcon(ALL_LUCIDE_NODES['Tag'], 13)}</span>New Tag
+    <button class="add-tag-form-close" id="btn-cancel-tag" title="Cancel">${svgIcon(ALL_LUCIDE_NODES['X'], 13)}</button>
   </div>
   <div class="add-tag-form-sep"></div>
   <p class="add-tag-form-section-label">Tag Name</p>
@@ -2747,19 +2573,6 @@ export class SidebarView implements vscode.WebviewViewProvider {
   <div class="add-tag-form-footer">
     <button class="btn btn-primary" id="btn-confirm-tag" disabled>Add Tag</button>
   </div>
-</div>
-
-<!-- ── Theme preview bar ── -->
-<div class="theme-bar" id="theme-bar">
-  <span class="theme-bar-label">Preview</span>
-  <button class="theme-step-btn" id="theme-prev" title="Previous theme">‹</button>
-  <button class="theme-select-btn" id="theme-select-btn" title="Browse all themes">
-    <span class="theme-dot" id="theme-select-dot"></span>
-    <span class="theme-select-name" id="theme-select-name">Current</span>
-    <span class="theme-select-arrow">▾</span>
-  </button>
-  <button class="theme-step-btn" id="theme-next" title="Next theme">›</button>
-  <div class="theme-dropdown" id="theme-dropdown"></div>
 </div>
 
 <script nonce="${nonce}" src="${sidebarEditorUri}"></script>
@@ -3000,6 +2813,11 @@ export class SidebarView implements vscode.WebviewViewProvider {
   // ── Selection mode ───────────────────────────────────────────────────────
   const exportCountEl  = document.getElementById('export-count');
   const btnSelAll      = document.getElementById('btn-sel-all');
+  const btnArchiveSel  = document.getElementById('btn-archive-sel');
+  const btnTagSel      = document.getElementById('btn-tag-sel');
+  const btnExportSel   = document.getElementById('btn-export-sel');
+  const btnDeleteSel   = document.getElementById('btn-delete-sel');
+  const btnCancelSel   = document.getElementById('btn-cancel-sel');
 
   function exitSelectMode() {
     selectMode  = false;
@@ -3018,10 +2836,10 @@ export class SidebarView implements vscode.WebviewViewProvider {
     exportCountEl.textContent = n + ' selected';
     exportBar.classList.toggle('visible', selectMode);
     const hasSelection = n > 0;
-    document.getElementById('btn-archive-sel').disabled = !hasSelection;
-    document.getElementById('btn-tag-sel').disabled     = !hasSelection;
-    document.getElementById('btn-export-sel').disabled  = !hasSelection;
-    document.getElementById('btn-delete-sel').disabled  = !hasSelection;
+    btnArchiveSel.disabled = !hasSelection;
+    btnTagSel.disabled     = !hasSelection;
+    btnExportSel.disabled  = !hasSelection;
+    btnDeleteSel.disabled  = !hasSelection;
     const visibleCount = cardList.querySelectorAll('.card[tabindex="0"]').length;
     btnSelAll.classList.toggle('all-selected', n > 0 && n === visibleCount);
     btnSelAll.title = (n > 0 && n === visibleCount) ? 'Deselect all' : 'Select all visible notes';
@@ -3052,31 +2870,31 @@ export class SidebarView implements vscode.WebviewViewProvider {
     updateExportBar();
   });
 
-  document.getElementById('btn-archive-sel').addEventListener('click', () => {
+  btnArchiveSel.addEventListener('click', () => {
     if (selectedIds.length === 0) return;
     vscode.postMessage({ type: 'bulkArchive', noteIds: [...selectedIds] });
     exitSelectMode();
   });
 
-  document.getElementById('btn-tag-sel').addEventListener('click', () => {
+  btnTagSel.addEventListener('click', () => {
     if (selectedIds.length === 0) return;
     vscode.postMessage({ type: 'bulkTag', noteIds: [...selectedIds] });
     exitSelectMode();
   });
 
-  document.getElementById('btn-export-sel').addEventListener('click', () => {
+  btnExportSel.addEventListener('click', () => {
     if (selectedIds.length === 0) return;
     vscode.postMessage({ type: 'exportNotes', noteIds: [...selectedIds] });
     exitSelectMode();
   });
 
-  document.getElementById('btn-delete-sel').addEventListener('click', () => {
+  btnDeleteSel.addEventListener('click', () => {
     if (selectedIds.length === 0) return;
     vscode.postMessage({ type: 'bulkDelete', noteIds: [...selectedIds] });
     exitSelectMode();
   });
 
-  document.getElementById('btn-cancel-sel').addEventListener('click', exitSelectMode);
+  btnCancelSel.addEventListener('click', exitSelectMode);
 
   document.addEventListener('keydown', e => {
     if (e.key === 'Escape' && selectMode) exitSelectMode();
@@ -3095,10 +2913,6 @@ export class SidebarView implements vscode.WebviewViewProvider {
     }
     if (msg.type === 'lucideSearchResults') {
       if (iconSearchResultsCb) iconSearchResultsCb(msg.icons);
-      return;
-    }
-    if (msg.type === 'showChipPreview') {
-      renderChipPreview(msg.colors);
       return;
     }
     if (msg.type === 'imageReady') {
@@ -3433,7 +3247,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
     preview.setAttribute('data-placeholder', 'Start writing…');
     preview.setAttribute('aria-label', 'Note content');
     preview.toggleAttribute('data-empty', true);
-    preview.addEventListener('input', () => preview.toggleAttribute('data-empty', preview.textContent.trim() === ''));
+    preview.addEventListener('input', () => preview.toggleAttribute('data-empty', preview.textContent.trim() === '' && !preview.querySelector('img')));
     contentWrap.appendChild(preview);
     row3.appendChild(contentWrap);
     card.appendChild(row3);
@@ -4161,86 +3975,6 @@ if (searchQuery) {
     });
   }
 
-  function renderChipPreview(colors) {
-    cardList.innerHTML = '';
-    const wrap = mkEl('div', 'chip-preview');
-
-    const closeBar = mkEl('div', 'chip-preview-close-bar');
-    const closeBtn = mkEl('button', 'chip-preview-close-btn');
-    closeBtn.textContent = '← Close preview';
-    closeBtn.addEventListener('click', () => { renderTagBar(); renderCards(); });
-    closeBar.appendChild(closeBtn);
-    wrap.appendChild(closeBar);
-
-    function group(labelText, chips) {
-      const row = mkEl('div', 'chip-preview-group');
-      row.appendChild(mkEl('span', 'chip-preview-label', labelText));
-      chips.forEach(c => row.appendChild(c));
-      wrap.appendChild(row);
-    }
-
-    function makeRemoveBtn() {
-      const rm = mkEl('span', 'chip-remove');
-      rm.innerHTML = ${jsSvg.unlinkSmall};
-      return rm;
-    }
-
-    // ── Tag pills ──
-    const tagDefs = [
-      { color: colors.green, label: 'Backend' },
-      { color: colors.blue,  label: 'API', icon: true },
-      { color: null,         label: 'Design' },
-    ];
-    group('Tags', tagDefs.map(({ color, label, icon }) => {
-      const pill = mkEl('button', 'tag-pill');
-      applyPillStyle(pill, color);
-      if (icon) { const ico = mkEl('span', 'tag-icon'); ico.innerHTML = ${jsSvg.tagSmall}; pill.appendChild(ico); }
-      pill.appendChild(mkEl('span', 'chip-label', label));
-      pill.appendChild(makeRemoveBtn());
-      return pill;
-    }));
-
-    // ── Note link ──
-    const noteLink = makeChip('button', 'note-link-chip', ${jsSvg.noteLinkIcon}, 'Simplify pattern documentation refactor', 'chip-label');
-    const nlUnlink = mkEl('span', 'chip-remove'); nlUnlink.innerHTML = ${jsSvg.unlinkSmall};
-    noteLink.appendChild(nlUnlink);
-    group('Note link', [noteLink]);
-
-    // ── Code link ──
-    const codeLink = makeChip('button', 'code-link-chip', ${jsSvg.codeLinkIcon}, 'SidebarView.ts:4357', 'chip-label');
-    const clRemove = mkEl('span', 'chip-remove'); clRemove.innerHTML = ${jsSvg.unlinkSmall};
-    codeLink.appendChild(clRemove);
-    group('Code link', [codeLink]);
-
-    // ── GitHub ──
-    const ghDefs = [
-      { cls: 'gh-open',   icon: ${jsSvg.ghPrOpen},      label: 'PR#12 open'  },
-      { cls: 'gh-closed', icon: ${jsSvg.ghPrClosed},    label: 'pr#8 closed' },
-      { cls: 'gh-merged', icon: ${jsSvg.ghPrMerged},    label: 'pr#3 merged' },
-      { cls: 'gh-open',   icon: ${jsSvg.ghIssueOpen},   label: '#2 open'     },
-      { cls: 'gh-closed', icon: ${jsSvg.ghIssueClosed}, label: '#5 closed'   },
-    ];
-    group('GitHub', ghDefs.map(({ cls, icon, label }) => makeChip('button', \`github-badge \${cls}\`, icon, label)));
-
-    // ── Reminders ──
-    group('Reminder', [
-      makeChip('span', 'reminder-badge',         ${jsSvg.bellSmall}, 'Tomorrow' ),
-      makeChip('span', 'reminder-badge',         ${jsSvg.bellSmall}, 'Jan 15'   ),
-      makeChip('span', 'reminder-badge overdue', ${jsSvg.bellSmall}, '2h overdue'),
-      makeChip('span', 'reminder-badge overdue', ${jsSvg.bellSmall}, '3d overdue'),
-    ]);
-
-    // ── Status badges ──
-    group('Status', [
-      makeChip('span',   'shared-badge',   ${jsSvg.shareSmall},   'Shared'      ),
-      makeChip('span',   'archived-badge', ${jsSvg.archiveIcon},  'Archived'    ),
-      makeChip('button', 'conflict-badge', ${jsSvg.conflictIcon}, 'Conflict'    ),
-      makeChip('span',   'branch-chip',    ${jsSvg.branchSmall},  'feat/sidebar'),
-    ]);
-
-    cardList.appendChild(wrap);
-  }
-
   function renderCards() {
     cardList.innerHTML = '';
     const visible = visibleNotes();
@@ -4691,7 +4425,7 @@ if (searchQuery) {
     const preview  = mkEl('div', 'card-preview clamped');
     preview.dataset.placeholder = 'Start writing…';
     preview.innerHTML = searchQuery ? matchSnippet(note.content, searchQuery) : simpleMarkdown(note.content);
-    const syncPlaceholder = () => preview.toggleAttribute('data-empty', preview.textContent.trim() === '');
+    const syncPlaceholder = () => preview.toggleAttribute('data-empty', preview.textContent.trim() === '' && !preview.querySelector('img'));
     syncPlaceholder();
     preview.addEventListener('input', syncPlaceholder);
 
@@ -5353,9 +5087,9 @@ if (searchQuery) {
         case 'code':                           { const t = inner.replace(/^\\n+|\\n+$/g, ''); return t ? \`\\\`\${t}\\\`\` : ''; }
         case 'del':    case 's': case 'strike': { const t = inner.replace(/^\\n+|\\n+$/g, ''); return t ? \`~~\${t}~~\` : ''; }
         case 'u':                              { const t = inner.replace(/^\\n+|\\n+$/g, ''); return t ? \`++\${t}++\` : ''; }
-        case 'h1':                             return \`# \${inner}\\n\`;
-        case 'h2':                             return \`## \${inner}\\n\`;
-        case 'h3':                             return \`### \${inner}\\n\`;
+        case 'h1':                             return \`# \${inner}\\n\\n\`;
+        case 'h2':                             return \`## \${inner}\\n\\n\`;
+        case 'h3':                             return \`### \${inner}\\n\\n\`;
         case 'pre':                            return \`\\\`\\\`\\\`\\n\${node.textContent.trim()}\\n\\\`\\\`\\\`\\n\`;
         case 'blockquote':                     return inner.trim().split('\\n').map(l => \`> \${l}\`).join('\\n') + '\\n';
         case 'br':                             return '\\n';
@@ -5374,6 +5108,45 @@ if (searchQuery) {
           return \`- \${inner.trim()}\\n\`;
         }
         case 'ul':     case 'ol':              return inner;
+        case 'table': {
+          // Serialise each table row back to markdown pipe syntax.
+          // Cells that contain a .cell-list are converted to <br>-separated list items
+          // (the format simpleMarkdown expects) rather than newline-separated ones.
+          const walkCell = cell => {
+            const list = cell.querySelector('.cell-list');
+            if (list) {
+              const isOl = list.tagName.toLowerCase() === 'ol';
+              const lis  = Array.from(list.querySelectorAll('li'));
+              const parts = lis.map((li, n) => {
+                const cb = li.querySelector('input[type="checkbox"]');
+                if (cb) {
+                  const span = li.querySelector('span');
+                  const txt  = span
+                    ? walk(span).trim()
+                    : Array.from(li.childNodes).filter(c => !(c.nodeType === 1 && c.tagName.toLowerCase() === 'input')).map(walk).join('').trim();
+                  return \`- [\${cb.checked ? 'x' : ' '}] \${txt}\`;
+                }
+                const t = Array.from(li.childNodes).map(walk).join('').trim();
+                return isOl ? \`\${n + 1}. \${t}\` : \`- \${t}\`;
+              });
+              return parts.join('<br>');
+            }
+            return Array.from(cell.childNodes).map(walk).join('').trim().replace(/\\n+/g, ' ');
+          };
+          const walkRow = tr => {
+            const cells = Array.from(tr.querySelectorAll('th, td'));
+            return \`| \${cells.map(walkCell).join(' | ')} |\`;
+          };
+          const rows = Array.from(node.querySelectorAll('tr'));
+          if (!rows.length) return inner;
+          const lines = [];
+          rows.forEach((tr, i) => {
+            lines.push(walkRow(tr));
+            if (i === 0) lines.push(\`| \${Array.from(tr.querySelectorAll('th, td')).map(() => '---').join(' | ')} |\`);
+          });
+          return lines.join('\\n') + '\\n\\n';
+        }
+        case 'thead': case 'tbody': case 'tr': case 'th': case 'td': return inner;
         case 'p':      case 'div':             { const t = inner.replace(/\\n+$/, ''); return t.trim() ? t + '\\n\\n' : '\\n\\n'; }
         case 'img': {
           const sp  = node.getAttribute('data-storage-path') || node.getAttribute('src') || '';
@@ -5397,11 +5170,14 @@ if (searchQuery) {
         return '<img src="' + src + '" alt="' + esc(imgMatch[1]) + '" data-storage-path="' + esc(storagePath) + '" style="max-width:100%;border-radius:4px;margin:4px 0;display:block;">';
       }
       let l = esc(raw)
+        .replace(/↵/g,                  '<br>')
+        .replace(/&lt;br[^&]*&gt;/gi,   '<br>')
         .replace(/\\*\\*(.+?)\\*\\*/g, '<strong>$1</strong>')
         .replace(/\\*(.+?)\\*/g,        '<em>$1</em>')
         .replace(/\`(.+?)\`/g,          '<code>$1</code>')
         .replace(/~~(.+?)~~/g,          '<del>$1</del>')
-        .replace(/\\+\\+(.+?)\\+\\+/g,  '<u>$1</u>');
+        .replace(/\\+\\+(.+?)\\+\\+/g,  '<u>$1</u>')
+        .replace(/(?<!!)\\[([^\\]]+)\\]\\(([^)]+)\\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
       if (/^(#{1,3})\\s/.test(raw)) {
         const lvl = raw.match(/^(#+)/)[1].length;
         l = \`<h\${lvl}>\${l.replace(/^#+\\s/, '')}</h\${lvl}>\`;
@@ -5451,6 +5227,54 @@ if (searchQuery) {
           i++;
         }
         out.push(\`<blockquote>\${bqLines.join('<br>')}</blockquote>\`);
+      } else if (/^([-*_] *){3,}$/.test(lines[i].trim())) {
+        out.push('<hr>');
+        i++;
+      } else if (/^\\|/.test(lines[i])) {
+        const rows = [];
+        while (i < lines.length && /^\\|/.test(lines[i])) {
+          if (!/^[\\|\\s\\-:]+$/.test(lines[i])) {
+            const cells = lines[i].split('|').slice(1, -1).map(c => c.trim());
+            rows.push(cells);
+          }
+          i++;
+        }
+        if (rows.length > 0) {
+          // Renders a table cell: detects <br>-separated bullet/ordered/checkbox lists.
+          // After a tiptap round-trip, markdown-special chars get backslash-escaped
+          // (e.g. "- item" → "\- item", "[x]" → "\[x\]"). We strip those escapes
+          // before pattern-matching so list detection stays reliable.
+          const cellContent = raw => {
+            const html = inline(raw);
+            const parts = html.split('<br>');
+            if (parts.length < 2) return html;
+            const norm = p => p.replace(/\\\\(.)/g, '$1');
+            const ps = parts.map(norm);
+            const allCheck   = ps.every(p => /^[-*] \\[[ x]\\] /.test(p));
+            const allBullet  = !allCheck && ps.every(p => /^[-*] \\S/.test(p));
+            const allOrdered = !allCheck && !allBullet && ps.every(p => /^\\d+\\. \\S/.test(p));
+            if (allCheck) {
+              const its = ps.map(p => {
+                const ck = /^[-*] \\[x\\] /i.test(p);
+                const tx = p.replace(/^[-*] \\[[ x]\\] /i, '');
+                return '<li class="task-item' + (ck ? ' done' : '') + '"><input type="checkbox" class="task-check"' + (ck ? ' checked' : '') + ' disabled> <span>' + tx + '</span></li>';
+              }).join('');
+              return '<ul class="cell-list task-list">' + its + '</ul>';
+            }
+            if (allBullet) {
+              const its = ps.map(p => '<li>' + p.replace(/^[-*] /, '') + '</li>').join('');
+              return '<ul class="cell-list">' + its + '</ul>';
+            }
+            if (allOrdered) {
+              const its = ps.map(p => '<li>' + p.replace(/^\\d+\\. /, '') + '</li>').join('');
+              return '<ol class="cell-list">' + its + '</ol>';
+            }
+            return html;
+          };
+          const head = \`<thead><tr>\${rows[0].map(c => \`<th>\${cellContent(c)}</th>\`).join('')}</tr></thead>\`;
+          const body = rows.slice(1).map(r => \`<tr>\${r.map(c => \`<td>\${cellContent(c)}</td>\`).join('')}</tr>\`).join('');
+          out.push(\`<div class="table-scroll"><table>\${head}\${body ? \`<tbody>\${body}</tbody>\` : ''}</table></div>\`);
+        }
       } else {
         if (!lines[i].trim()) {
           let blanks = 0;
@@ -5459,181 +5283,18 @@ if (searchQuery) {
           for (let b = 0; b < brs; b++) out.push('<p><br></p>');
           continue;
         }
-        out.push(\`<p>\${inline(lines[i])}</p>\`);
+        const rendered = inline(lines[i]);
+        out.push(/^<h[1-6]>/.test(rendered) ? rendered : \`<p>\${rendered}</p>\`);
         i++;
       }
     }
     return out.join('');
   }
 
-  // ── Theme preview ────────────────────────────────────────────────────────
-  // Each entry: name shown on chip, dot = sidebar bg color (null for Current), vars = CSS overrides
-  const T = (s,f,df,pb,lh,ew,eb,bb,bf,btn,btf,fb,ib,ifo,lnk,err,sel,bsh,bshf) => ({
-    '--vscode-sideBar-background':             s,
-    '--vscode-foreground':                     f,
-    '--vscode-editor-foreground':              f,
-    '--vscode-descriptionForeground':          df,
-    '--vscode-panel-border':                   pb,
-    '--vscode-list-hoverBackground':           lh,
-    '--vscode-editorWidget-background':        ew,
-    '--vscode-editor-background':              eb,
-    '--vscode-badge-background':               bb,
-    '--vscode-badge-foreground':               bf,
-    '--vscode-button-background':              btn,
-    '--vscode-button-foreground':              btf,
-    '--vscode-button-secondaryBackground':     bsh,
-    '--vscode-button-secondaryForeground':     bshf,
-    '--vscode-focusBorder':                    fb,
-    '--vscode-input-background':               ib,
-    '--vscode-input-foreground':               ifo,
-    '--vscode-textLink-foreground':            lnk,
-    '--vscode-errorForeground':                err,
-    '--vscode-list-activeSelectionBackground': sel,
-  });
-
-  const THEMES = [
-    { name: 'Current',         dot: null     , vars: null },
-    // ── Built-in dark ───────────────────────────────────────────────────────
-    { name: 'Dark+',           dot: '#252526', vars: T('#252526','#cccccc','rgba(204,204,204,.7)','#3c3c3c','rgba(255,255,255,.06)','#252526','#1e1e1e','#4d4d4d','#fff','#0e639c','#fff','#007fd4','#3c3c3c','#cccccc','#3794ff','#f48771','#094771','#3a3d41','#cccccc') },
-    { name: 'Dark Modern',     dot: '#1e1e1e', vars: T('#1e1e1e','#cccccc','rgba(204,204,204,.7)','#2d2d2d','rgba(255,255,255,.06)','#1e1e1e','#1e1e1e','#4d4d4d','#fff','#0078d4','#fff','#005fb8','#3c3c3c','#cccccc','#3794ff','#f48771','#0060c0','#45454a','#cccccc') },
-    { name: 'Abyss',           dot: '#060621', vars: T('#060621','#6688cc','rgba(102,136,204,.7)','#2b2b4a','#061940','#262641','#000c18','#0063a5','#aac','#2b3c5d','#aac','#596f99','#181f2f','#6688cc','#3794ff','#f48771','#06141f','#1a1a30','#6688cc') },
-    { name: 'Kimbie Dark',     dot: '#221a0f', vars: T('#221a0f','#d3af86','rgba(211,175,134,.7)','#4b3a2a','rgba(255,255,255,.05)','#2a1f14','#221a0f','#7f5f00','#fff','#dc3958','#fff','#dc3958','#3d2b1f','#d3af86','#d06c76','#dc3958','#4b1818','#3d2b1f','#d3af86') },
-    { name: 'Monokai',         dot: '#1e1f1c', vars: T('#1e1f1c','#f8f8f2','rgba(248,248,242,.7)','#414339','#3e3d32','#1e1f1c','#272822','#75715e','#f8f8f2','#75715e','#f8f8f2','#99947c','#414339','#f8f8f2','#66d9e8','#f92672','#3e3d32','#49483e','#f8f8f2') },
-    { name: 'Monokai Dimmed',  dot: '#1e1e1e', vars: T('#1e1e1e','#c5c8c6','rgba(197,200,198,.7)','#3e3e3e','rgba(255,255,255,.06)','#1e1e1e','#1e1e1e','#4d4d4d','#fff','#52a8ff','#fff','#52a8ff','#3c3c3c','#c5c8c6','#52a8ff','#c94c16','#073655','#3a3d41','#c5c8c6') },
-    { name: 'Red',             dot: '#390000', vars: T('#390000','#f8f8f8','rgba(248,248,248,.7)','#8b0000','rgba(255,255,255,.06)','#3c0000','#390000','#a30000','#fff','#a30000','#fff','#ff0000','#600000','#f8f8f8','#ff8080','#f48771','#6f1313','#600000','#f8f8f8') },
-    { name: 'Sol. Dark',       dot: '#00212b', vars: T('#00212b','#93a1a1','rgba(147,161,161,.7)','#003847','#004454aa','#00212b','#002b36','#047aa6','#fdf6e3','#2aa198','#fdf6e3','#2aa198','#003847','#93a1a1','#2aa198','#dc322f','#003847','#003847','#93a1a1') },
-    { name: 'Sol. Light',      dot: '#eee8d5', vars: T('#eee8d5','#657b83','rgba(101,123,131,.7)','#ddd6c1','#dfca8844','#eee8d5','#fdf6e3','#b58900','#fdf6e3','#ac9d57','#fdf6e3','#b49471','#ddd6c1','#586e75','#2aa198','#dc322f','#dfca8899','#c9c2b0','#657b83') },
-    { name: 'TN Blue',         dot: '#001c40', vars: T('#001c40','#ffffff','rgba(255,255,255,.7)','#00346e','rgba(255,255,255,.1)','#001c40','#002451','#bbdaff','#001733','#bbdaff','#001733','#bbdaff','#001733','#ffffff','#7285b7','#ff9da4','#003e80','#002f6c','#ffffff') },
-    { name: 'HC Dark',         dot: '#000000', vars: T('#000000','#ffffff','rgba(255,255,255,.7)','#6fc3df','rgba(255,255,255,.12)','#000000','#000000','#000000','#ffffff','#0e639c','#ffffff','#f38518','#000000','#ffffff','#3794ff','#f48771','#000000','#1a1a1a','#ffffff') },
-    // ── Built-in light ──────────────────────────────────────────────────────
-    { name: 'Light+',          dot: '#f3f3f3', vars: T('#f3f3f3','#616161','rgba(97,97,97,.7)','#e4e4e4','rgba(0,0,0,.06)','#f3f3f3','#ffffff','#c4c4c4','#333','#007acc','#fff','#0090f1','#ffffff','#616161','#006ab1','#a1260d','#0060c033','#5f6a79','#fff') },
-    { name: 'Light Modern',    dot: '#f8f8f8', vars: T('#f8f8f8','#3b3b3b','rgba(59,59,59,.7)','#e5e5e5','rgba(0,0,0,.06)','#f8f8f8','#ffffff','#c0c0c0','#fff','#0078d4','#fff','#0069ba','#ffffff','#3b3b3b','#006ab1','#a1260d','#0060c033','#5f6a79','#fff') },
-    { name: 'Quiet Light',     dot: '#f5f5f5', vars: T('#f5f5f5','#333333','rgba(51,51,51,.7)','#e4e4e4','rgba(0,0,0,.05)','#f5f5f5','#f5f5f5','#9e9e9e','#fff','#007acc','#fff','#007acc','#ffffff','#333333','#007acc','#e51400','#0000ff1a','#cdcecf','#333') },
-    { name: 'HC Light',        dot: '#ffffff', vars: T('#ffffff','#000000','rgba(0,0,0,.7)','#0f4a85','rgba(0,0,0,.06)','#ffffff','#ffffff','#0f4a85','#fff','#0f4a85','#fff','#0f4a85','#ffffff','#000000','#0000ee','#b5200d','#0f4a851a','#d4d4d4','#000') },
-    // ── Community dark ──────────────────────────────────────────────────────
-    { name: 'One Dark',        dot: '#21252b', vars: T('#21252b','#abb2bf','#abb2bf','#3e4452','#2c313a','#21252b','#282c34','#282c34','#abb2bf','#404754','#abb2bf','#3e4452','#1d1f23','#abb2bf','#61afef','#e06c75','#2c313c','#3e4451','#abb2bf') },
-    { name: 'GH Dark',         dot: '#161b22', vars: T('#161b22','#e6edf3','#8b949e','#30363d','rgba(177,186,196,.12)','#1c2128','#0d1117','#1f6feb','#fff','#238636','#fff','#388bfd','#0d1117','#c9d1d9','#58a6ff','#f85149','#1f6feb33','#21262d','#c9d1d9') },
-    { name: 'GH Dimmed',       dot: '#2d333b', vars: T('#2d333b','#adbac7','rgba(173,186,199,.7)','#444c56','rgba(177,186,196,.1)','#2d333b','#22272e','#388bfd','#fff','#347d39','#cdd9e5','#388bfd','#22272e','#adbac7','#539bf5','#e5534b','#3b5070','#373e47','#adbac7') },
-    { name: 'GH Light',        dot: '#f6f8fa', vars: T('#f6f8fa','#24292f','#57606a','#d0d7de','rgba(234,238,242,.7)','#f6f8fa','#ffffff','#0969da','#fff','#2da44e','#fff','#0969da','#ffffff','#24292f','#0969da','#cf222e','#ddf4ff','#ebecf0','#24292f') },
-    { name: 'Dracula',         dot: '#21222c', vars: T('#21222c','#f8f8f2','rgba(248,248,242,.7)','#6272a4','rgba(255,255,255,.06)','#21222c','#282a36','#ff79c6','#282a36','#bd93f9','#282a36','#ff79c6','#282a36','#f8f8f2','#8be9fd','#ff5555','#44475a','#44475a','#f8f8f2') },
-    { name: 'Nord',            dot: '#2e3440', vars: T('#2e3440','#d8dee9','rgba(216,222,233,.7)','#3b4252','rgba(255,255,255,.05)','#2e3440','#2e3440','#88c0d0','#2e3440','#88c0d0','#2e3440','#88c0d0','#3b4252','#d8dee9','#88c0d0','#bf616a','#4c566a','#3b4252','#d8dee9') },
-    { name: 'Catppuccin',      dot: '#181825', vars: T('#181825','#cdd6f4','rgba(205,214,244,.7)','#313244','rgba(205,214,244,.05)','#1e1e2e','#1e1e2e','#cba6f7','#1e1e2e','#cba6f7','#1e1e2e','#cba6f7','#313244','#cdd6f4','#89b4fa','#f38ba8','#45475a','#45475a','#cdd6f4') },
-    { name: 'Catppuccin M',    dot: '#1e2030', vars: T('#1e2030','#cad3f5','rgba(202,211,245,.7)','#363a4f','rgba(202,211,245,.05)','#24273a','#24273a','#c6a0f6','#24273a','#c6a0f6','#24273a','#c6a0f6','#363a4f','#cad3f5','#8aadf4','#ed8796','#494d64','#494d64','#cad3f5') },
-    { name: 'Catppuccin F',    dot: '#292c3c', vars: T('#292c3c','#c6d0f5','rgba(198,208,245,.7)','#414559','rgba(198,208,245,.05)','#303446','#303446','#ca9ee6','#303446','#ca9ee6','#303446','#ca9ee6','#414559','#c6d0f5','#8caaee','#e78284','#51576d','#51576d','#c6d0f5') },
-    { name: 'Catppuccin L',    dot: '#e6e9ef', vars: T('#e6e9ef','#4c4f69','rgba(76,79,105,.7)','#ccd0da','rgba(0,0,0,.06)','#eff1f5','#eff1f5','#8839ef','#eff1f5','#8839ef','#eff1f5','#8839ef','#eff1f5','#4c4f69','#1e66f5','#d20f39','#8839ef1a','#ccd0da','#4c4f69') },
-    { name: 'Tokyo Night',     dot: '#16161e', vars: T('#16161e','#787c99','#515670','#101014','#13131a','#16161e','#1a1b26','#7e83b230','#acb0d0','#3d59a1','#ffffff','#545c7e','#14141b','#a9b1d6','#7aa2f7','#f7768e','#283457','#24283b','#a9b1d6') },
-    { name: 'TN Storm',        dot: '#1f2335', vars: T('#1f2335','#8089b3','#545c7e','#1b1e2e','#1b1e2e','#1f2335','#24283b','#7e83b233','#a9b1d6','#3d59a1','#ffffff','#545c7e','#1b1e2e','#a9b1d6','#7aa2f7','#f7768e','#2d3f76','#292e42','#a9b1d6') },
-    { name: 'TN Light',        dot: '#d6d8df', vars: T('#d6d8df','#363c4d','#707280','#c1c2c7','#e1e2e8','#d6d8df','#e6e7ed','#97979833','#363c4d','#2959aa','#ffffff','#70728033','#e6e7ed','#363c4d','#2e7de9','#f52a65','#2e7de91a','#b4b6c2','#343b58') },
-    { name: 'Night Owl',       dot: '#011627', vars: T('#011627','#d6deeb','rgba(214,222,235,.7)','#5f7e97','#011627','#021320','#011627','#5f7e97','#fff','#7e57c2','#ffffffcc','#80a4c2','#0b253a','#ffffffcc','#82aaff','#ff6363','#1d3b53','#1d3b53','#d6deeb') },
-    { name: 'Cobalt2',         dot: '#15232d', vars: T('#15232d','#aaaaaa','#aaaaaa','#ffc600','#193549','#15232d','#193549','#ffc600','#000','#0088ff','#fff','#0d3a58','#193549','#ffc600','#80aedf','#ff628c','#1e344d','#193549','#aaaaaa') },
-    { name: 'Gruvbox',         dot: '#282828', vars: T('#282828','#ebdbb2','rgba(235,219,178,.7)','#3c3836','rgba(255,255,255,.05)','#282828','#282828','#d79921','#282828','#98971a','#282828','#d79921','#3c3836','#ebdbb2','#83a598','#cc241d','#504945','#3c3836','#ebdbb2') },
-    { name: 'Material',        dot: '#263238', vars: T('#263238','#b0bec5','rgba(176,190,197,.7)','#2a3a42','rgba(255,255,255,.05)','#263238','#263238','#80cbc4','#263238','#80cbc4','#263238','#80cbc4','#2a3a42','#b0bec5','#80cbc4','#ef5350','#37474f','#2e3c43','#b0bec5') },
-    { name: 'Shades/Purple',   dot: '#1e1e3f', vars: T('#1e1e3f','#a599e9','rgba(165,153,233,.7)','#2d2b55','rgba(255,255,255,.06)','#2d2b55','#2d2b55','#fad000','#1e1e3f','#fad000','#1e1e3f','#fad000','#2d2b55','#a599e9','#fb94ff','#ff628c','#342b6b','#2d2b55','#a599e9') },
-    { name: 'Synthwave',       dot: '#262335', vars: T('#262335','#ffffff','rgba(255,255,255,.7)','#262335','rgba(255,255,255,.06)','#262335','#262335','#f97e72','#262335','#f97e72','#262335','#f97e72','#1a1a2e','#ffffff','#72f1b8','#fe4450','#2e2c3d','#332d4a','#ffffff') },
-    { name: 'Andromeda',       dot: '#1c1e26', vars: T('#1c1e26','#d5ced9','rgba(213,206,217,.7)','#262931','rgba(255,255,255,.05)','#23262e','#23262e','#00e8c6','#1c1e26','#00e8c6','#1c1e26','#00e8c6','#1c1e26','#d5ced9','#00e8c6','#ff5370','#262931','#2d303b','#d5ced9') },
-    { name: 'Moonlight',       dot: '#1e2030', vars: T('#1e2030','#c8d3f5','rgba(200,211,245,.7)','#2f3354','rgba(255,255,255,.06)','#212337','#212337','#82aaff','#212337','#82aaff','#212337','#82aaff','#2f3354','#c8d3f5','#82aaff','#ff5370','#2d3f76','#2f3354','#c8d3f5') },
-    { name: 'Everforest',      dot: '#2d353b', vars: T('#2d353b','#d3c6aa','rgba(211,198,170,.7)','#3a464c','rgba(255,255,255,.05)','#2d353b','#2d353b','#a7c080','#2d353b','#a7c080','#2d353b','#a7c080','#3a464c','#d3c6aa','#7fbbb3','#e67e80','#425047','#3a464c','#d3c6aa') },
-    { name: 'Rose Piné',       dot: '#191724', vars: T('#191724','#e0def4','#908caa','#0000','#6e6a861a','#1f1d2e','#191724','#ebbcba','#191724','#ebbcba','#191724','#6e6a8633','#232034','#e0def4','#9ccfd8','#eb6f92','#403d52','#26233a','#e0def4') },
-    { name: 'Rose Moon',       dot: '#232136', vars: T('#232136','#e0def4','#908caa','#0000','#817c9c14','#2a273f','#232136','#ea9a97','#232136','#ea9a97','#232136','#817c9c26','#322e49','#e0def4','#9ccfd8','#eb6f92','#44415a','#393552','#e0def4') },
-    { name: 'Rose Dawn',       dot: '#faf4ed', vars: T('#faf4ed','#575279','#797593','#0000','#6e6a860d','#fffaf3','#faf4ed','#d7827e','#faf4ed','#d7827e','#faf4ed','#6e6a8614','#f9f2ea','#575279','#286983','#b4637a','#907aa91a','#dfdad9','#575279') },
-    { name: 'Horizon',         dot: '#16181f', vars: T('#16181f','#d5d8da','rgba(213,216,218,.7)','#1c1e2a','rgba(255,255,255,.05)','#1c1e26','#1c1e26','#e93c58','#fff','#e93c58','#fff','#e93c58','#16181f','#d5d8da','#26bbd9','#e93c58','#232530','#232530','#d5d8da') },
-    { name: 'Palenight',       dot: '#242837', vars: T('#242837','#a6accd','rgba(166,172,205,.7)','#2f3347','rgba(255,255,255,.05)','#292d3e','#292d3e','#82aaff','#292d3e','#82aaff','#292d3e','#82aaff','#2f3347','#a6accd','#89ddff','#f07178','#3c4159','#2f3347','#a6accd') },
-  ];
-
-  // Snapshot all theme variable names from VS Code's inline styles at load time
-  const ALL_THEME_VARS = [...new Set(THEMES.flatMap(t => t.vars ? Object.keys(t.vars) : []))];
-  const vsCodeSnapshot = {};
-  const computedRoot = getComputedStyle(document.documentElement);
-  ALL_THEME_VARS.forEach(k => {
-    vsCodeSnapshot[k] = computedRoot.getPropertyValue(k).trim();
-  });
-
-  let activeTheme = null;
-  const themeSelectBtn  = document.getElementById('theme-select-btn');
-  const themeSelectName = document.getElementById('theme-select-name');
-  const themeSelectDot  = document.getElementById('theme-select-dot');
-  const themeDropdown   = document.getElementById('theme-dropdown');
-  const themePrevBtn    = document.getElementById('theme-prev');
-  const themeNextBtn    = document.getElementById('theme-next');
-
-  let activeThemeIndex = 0;
-
-  function applyTheme(theme, index) {
-    activeTheme = theme.name;
-    activeThemeIndex = index;
-    const vars = theme.vars ?? vsCodeSnapshot;
-    Object.entries(vars).forEach(([k, v]) => document.documentElement.style.setProperty(k, v));
-    themeSelectName.textContent = theme.name;
-    themeSelectDot.style.background = theme.dot || '';
-    themeSelectDot.style.display = theme.dot ? '' : 'none';
-    themeDropdown.querySelectorAll('.theme-option').forEach(o =>
-      o.classList.toggle('active', o.dataset.theme === theme.name)
-    );
-    // Propagate to editor and conflict panels — null means "reset to VS Code native"
-    vscode.postMessage({ type: 'setTheme', vars: theme.vars ?? null });
-  }
-
-  themePrevBtn.addEventListener('click', (e) => {
-    e.stopPropagation();
-    const idx = (activeThemeIndex - 1 + THEMES.length) % THEMES.length;
-    applyTheme(THEMES[idx], idx);
-  });
-
-  themeNextBtn.addEventListener('click', (e) => {
-    e.stopPropagation();
-    const idx = (activeThemeIndex + 1) % THEMES.length;
-    applyTheme(THEMES[idx], idx);
-  });
-
-  THEMES.forEach((theme, index) => {
-    const opt = document.createElement('div');
-    opt.className = 'theme-option' + (theme.name === 'Current' ? ' active' : '');
-    opt.dataset.theme = theme.name;
-
-    const check = document.createElement('span');
-    check.className = 'theme-option-check';
-    check.textContent = '✓';
-    opt.appendChild(check);
-
-    if (theme.dot) {
-      const dot = document.createElement('span');
-      dot.className = 'theme-dot';
-      dot.style.background = theme.dot;
-      opt.appendChild(dot);
-    }
-    opt.appendChild(document.createTextNode(theme.name));
-
-    opt.addEventListener('click', () => {
-      applyTheme(theme, index);
-      themeDropdown.classList.remove('open');
-      themeSelectBtn.classList.remove('open');
-    });
-    themeDropdown.appendChild(opt);
-  });
-
-  themeSelectBtn.addEventListener('click', (e) => {
-    e.stopPropagation();
-    const isOpen = themeDropdown.classList.toggle('open');
-    themeSelectBtn.classList.toggle('open', isOpen);
-    if (isOpen) {
-      const activeOpt = themeDropdown.querySelector('.theme-option.active');
-      if (activeOpt) activeOpt.scrollIntoView({ block: 'nearest' });
-    }
-  });
-
-  document.addEventListener('click', () => {
-    themeDropdown.classList.remove('open');
-    themeSelectBtn.classList.remove('open');
-  });
-
-  // Init dot for Current (no dot)
-  themeSelectDot.style.display = 'none';
-
 })();
 </script>
+
 </body>
 </html>`;
   }
 }
-
-

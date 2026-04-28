@@ -17,8 +17,229 @@ import TaskItem from '@tiptap/extension-task-item';
 import Image from '@tiptap/extension-image';
 import Underline from '@tiptap/extension-underline';
 import Link from '@tiptap/extension-link';
-import { TableKit } from '@tiptap/extension-table';
+import { Table, TableCell, TableHeader, TableRow } from '@tiptap/extension-table';
 import { Markdown } from 'tiptap-markdown';
+
+// tiptap-markdown's default table serializer calls `state.renderInline(cellContent)` only
+// when `cellContent.textContent.trim()` is truthy — but image nodes have no textContent,
+// so images in table cells are silently dropped on every save. This override adds an
+// explicit image branch so `![alt](src)` is preserved after round-tripping through tiptap.
+// Serialize inline node content (text + marks) to markdown without touching the
+// serializer's state buffer. Used by FixedTable to serialize list item text with
+// bold/italic/code/strike/underline marks preserved.
+function serializeCellInline(paraNode: any): string {
+  let out = '';
+  // Link marks span one or more consecutive text nodes sharing the same href.
+  // Buffer them so they serialize as [text](href) rather than plain text.
+  let linkBuf  = '';
+  let linkHref = '';
+  const flushLink = () => {
+    if (linkHref) { out += `[${linkBuf}](${linkHref})`; linkBuf = ''; linkHref = ''; }
+  };
+
+  paraNode.forEach((child: any) => {
+    if (child.isText) {
+      let t = child.text as string;
+      const hasBold   = child.marks.some((m: any) => m.type.name === 'bold');
+      const hasItalic = child.marks.some((m: any) => m.type.name === 'italic');
+      const hasCode   = child.marks.some((m: any) => m.type.name === 'code');
+      const hasStrike = child.marks.some((m: any) => m.type.name === 'strike');
+      const hasUnder  = child.marks.some((m: any) => m.type.name === 'underline');
+      const linkMark  = child.marks.find((m: any) => m.type.name === 'link');
+      if (hasCode)                t = `\`${t}\``;
+      else if (hasBold && hasItalic) t = `***${t}***`;
+      else if (hasBold)           t = `**${t}**`;
+      else if (hasItalic)         t = `*${t}*`;
+      if (hasStrike) t = `~~${t}~~`;
+      if (hasUnder)  t = `++${t}++`;
+      if (linkMark) {
+        const href = (linkMark.attrs.href ?? '') as string;
+        if (href !== linkHref) { flushLink(); linkHref = href; }
+        linkBuf += t;
+      } else {
+        flushLink();
+        out += t;
+      }
+    } else if (child.type.name === 'hardBreak') {
+      flushLink();
+      out += '<br>';
+    }
+  });
+  flushLink();
+  return out;
+}
+
+// Strips a list-marker prefix (e.g. "- ", "1. ", "- [x] ") from the first text
+// node in a segment array. Returns a new array with the prefix removed, preserving
+// any inline marks on the remaining text and any subsequent nodes untouched.
+function cleanCellPrefix(nodes: any[], prefixRe: RegExp, schema: any): any[] {
+  if (!nodes.length) return nodes;
+  const first = nodes[0];
+  if (!first.isText) return nodes;
+  const stripped = first.text.replace(prefixRe, '');
+  if (stripped === first.text) return nodes;
+  const rest = nodes.slice(1);
+  return stripped ? [schema.text(stripped, first.marks), ...rest] : (rest.length ? rest : []);
+}
+
+// After tiptap-markdown parses a note, table cells that store lists as
+// "<br>-separated plain text" end up as flat paragraphs with hardBreak nodes.
+// This plugin detects those paragraphs and converts them to real tiptap list
+// nodes so the editor renders proper bullets / numbers / checkboxes.
+// The FixedTable serializer already knows how to write those nodes back to the
+// "<br>-separated" file format, so round-trips are lossless.
+const CellListNormalizer = Extension.create({
+  name: 'cellListNormalizer',
+
+  addProseMirrorPlugins() {
+    const { schema } = this.editor;
+
+    return [
+      new Plugin({
+        key: new PluginKey('cellListNormalizer'),
+        appendTransaction(transactions, _old, newState) {
+          if (!transactions.some(t => t.docChanged)) return null;
+
+          const tr = newState.tr;
+          let modified = false;
+
+          newState.doc.descendants((node: any, pos: number) => {
+            const isCell = node.type.name === 'tableCell' || node.type.name === 'tableHeader';
+            if (!isCell) return true; // keep descending non-cell ancestors
+
+            const first = node.firstChild;
+            // Only normalise cells whose sole block child is a plain paragraph.
+            // Cells already holding a list / image are left alone.
+            if (!first || first.type.name !== 'paragraph' || node.childCount !== 1) {
+              return false;
+            }
+
+            // Split the paragraph's inline content by hardBreak nodes into segments.
+            const segs: any[][] = [];
+            let cur: any[] = [];
+            first.forEach((child: any) => {
+              if (child.type.name === 'hardBreak') { segs.push(cur); cur = []; }
+              else cur.push(child);
+            });
+            segs.push(cur);
+            if (segs.length < 2) return false; // single segment — not a list
+
+            // Detect list type from the first segment's raw text.
+            const segText = (seg: any[]) => seg.map((n: any) => n.isText ? n.text : '').join('');
+            const t0 = segText(segs[0]);
+            const isTask    = /^- \[[ x]\] /i.test(t0);
+            const isBullet  = !isTask && /^- /.test(t0);
+            const isOrdered = !isTask && !isBullet && /^\d+\. /.test(t0);
+            if (!isTask && !isBullet && !isOrdered) return false;
+
+            // All segments must match the same type.
+            if (!segs.every((seg: any[]) => {
+              const t = segText(seg);
+              if (isTask)    return /^- \[[ x]\] /i.test(t);
+              if (isBullet)  return /^- /.test(t);
+              return /^\d+\. /.test(t);
+            })) return false;
+
+            const mkPara = (children: any[]) =>
+              schema.nodes.paragraph.create(null, children.length ? children : []);
+
+            let listNode: any;
+            if (isTask) {
+              listNode = schema.nodes.taskList.create(null,
+                segs.map((seg: any[]) => {
+                  const raw = segText(seg);
+                  const checked = /^- \[x\] /i.test(raw);
+                  return schema.nodes.taskItem.create({ checked },
+                    mkPara(cleanCellPrefix(seg, /^- \[[ x]\] /i, schema)));
+                }));
+            } else if (isBullet) {
+              listNode = schema.nodes.bulletList.create(null,
+                segs.map((seg: any[]) =>
+                  schema.nodes.listItem.create(null,
+                    mkPara(cleanCellPrefix(seg, /^- /, schema)))));
+            } else {
+              listNode = schema.nodes.orderedList.create(null,
+                segs.map((seg: any[]) =>
+                  schema.nodes.listItem.create(null,
+                    mkPara(cleanCellPrefix(seg, /^\d+\. /, schema)))));
+            }
+
+            // pos is the tableCell position; pos+1 is where its paragraph starts.
+            const from = tr.mapping.map(pos + 1);
+            const to   = tr.mapping.map(pos + 1 + first.nodeSize);
+            tr.replaceWith(from, to, listNode);
+            modified = true;
+            return false; // don't descend into the cell's children
+          });
+
+          return modified ? tr : null;
+        },
+      }),
+    ];
+  },
+});
+
+const FixedTable = Table.extend({
+  addStorage() {
+    return {
+      markdown: {
+        serialize(state: any, node: any) {
+          // Helper: get the markdown text of a list item, preserving inline marks.
+          const itemText = (item: any): string => {
+            const para = item.firstChild;
+            return para ? serializeCellInline(para) : item.textContent;
+          };
+
+          state.inTable = true;
+          node.forEach((row: any, _p: any, i: number) => {
+            state.write('| ');
+            row.forEach((col: any, _p2: any, j: number) => {
+              if (j) state.write(' | ');
+              const cell = col.firstChild;
+              if (!cell) {
+                // empty cell — write nothing
+              } else if (cell.type.name === 'image') {
+                const { src = '', alt = '', title } = cell.attrs;
+                state.write(`![${alt}](${src}${title ? ` "${title}"` : ''})`);
+              } else if (cell.type.name === 'bulletList') {
+                const parts: string[] = [];
+                cell.forEach((item: any) => parts.push(`- ${itemText(item)}`));
+                state.write(parts.join('<br>'));
+              } else if (cell.type.name === 'orderedList') {
+                const parts: string[] = [];
+                let idx = 1;
+                cell.forEach((item: any) => parts.push(`${idx++}. ${itemText(item)}`));
+                state.write(parts.join('<br>'));
+              } else if (cell.type.name === 'taskList') {
+                const parts: string[] = [];
+                cell.forEach((item: any) => {
+                  const checked = item.attrs?.checked ? 'x' : ' ';
+                  parts.push(`- [${checked}] ${itemText(item)}`);
+                });
+                state.write(parts.join('<br>'));
+              } else if (cell.textContent.trim()) {
+                // serializeCellInline handles hardBreak → <br> so that line breaks
+                // inside cells round-trip correctly (state.renderInline would use
+                // the default hardBreak serializer which emits \\\n, terminating the row).
+                state.write(serializeCellInline(cell));
+              }
+            });
+            state.write(' |');
+            state.ensureNewLine();
+            if (!i) {
+              const sep = Array.from({ length: row.childCount }).map(() => '---').join(' | ');
+              state.write(`| ${sep} |`);
+              state.ensureNewLine();
+            }
+          });
+          state.closeBlock(node);
+          state.inTable = false;
+        },
+        parse: {},
+      },
+    };
+  },
+});
 
 // ── Globals injected by EditorPanel.ts before this script loads ──────────────
 declare function acquireVsCodeApi(): { postMessage(msg: unknown): void };
@@ -164,7 +385,7 @@ function toEditorMd(md: string): string {
   const out: string[] = [];
   let inCode = false;
   const isStructural = (l: string) =>
-    l.trim() === '' || /^([-*] |\d+\. |#{1,6} |>|```)/.test(l);
+    l.trim() === '' || /^([-*] |\d+\. |#{1,6} |>|```|\|)/.test(l);
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     if (line.startsWith('```')) inCode = !inCode;
@@ -236,9 +457,13 @@ function fromEditorMd(md: string): string {
       Image.configure({ inline: false, allowBase64: true }),
       Underline,
       Link.configure({ openOnClick: false, autolink: true }),
-      TableKit,
+      FixedTable,
+      TableCell,
+      TableHeader,
+      TableRow,
       IndentLimiter,
       BlankParaPreserver,
+      CellListNormalizer,
       Markdown.configure({
         html: true,
         linkify: true,
@@ -404,15 +629,6 @@ function fromEditorMd(md: string): string {
     }
     if (data?.type === 'insertImage') {
       editor.chain().focus().setImage({ src: data.src as string, alt: 'image' }).run();
-    }
-    if (data?.type === 'setTheme') {
-      const root = document.documentElement;
-      if (data.vars) {
-        Object.entries(data.vars as Record<string, string>).forEach(([k, v]) => root.style.setProperty(k, v));
-      } else {
-        // Reset all inline overrides — VS Code native vars take over again
-        root.removeAttribute('style');
-      }
     }
   });
 
