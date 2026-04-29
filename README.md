@@ -1,974 +1,244 @@
 # DevNotes
 
-A VS Code extension that gives you a **project-scoped note panel** — rich text notes that live alongside your code, organized in a sidebar view.
+▎ Notes that stick where they belong.
+
+The problem isn't that developers don't document. It's that there's nowhere good to put it. Markdown files in the repo root accumulate and get ignored. Code comments can't hold screenshots. External apps don't know your codebase.
+
+DevNotes was built for exactly this gap: notes are linked to specific files and lines, organized by branch, stored alongside their images and attachments, shared selectively with teammates, and never more than a sidebar away.
+
+And because DevNotes is also an MCP server, AI assistants like Claude Code can access that context directly—without copy-pasting notes into every conversation.
+
+---
+
+> **Beta**
+>
+> DevNotes is in beta and actively looking for feedback from both solo developers and teams before the public release. If you hit a bug, notice unexpected behaviour, or have an idea for improvement, please [open an issue](https://github.com/hibachaabnia/devnotes/issues). Your reports directly shape what ships.
+>
+> Beta focus areas:
+> - **Solo use** — note creation, code linking, reminders, tags, the inline editor
+> - **Team use** — shared notes, git conflict resolution, the activity feed, GitHub integration
+
+---
 
 ## Features
 
-- **Sidebar panel** — quick access to all notes from the activity bar, with inline search and tag filtering
-- **Rich text editor** — click ✏ on any note to open a full Tiptap editor with a formatting toolbar (bold, italic, headings, lists, task lists, code blocks, and more)
-- **Quick Capture** — press `Ctrl+Alt+Q` from anywhere to create a note instantly; auto-links to the current file and line when an editor is focused
-- **Branch-scoped notes** — scope any note to a git branch; the sidebar detects your current branch live and lets you filter to branch-relevant notes instantly
-- **Reminders** — set a reminder on any note; VS Code fires a notification when it's due with options to open, snooze, or dismiss
-- **Export** — export a single note, a hand-picked selection, or all notes as Markdown, HTML, or clipboard copy
-- **Bulk actions** — enter selection mode to archive, delete, tag, or export multiple notes at once; an **All** toggle selects every visible card in one click
-- **Image paste** — paste screenshots and images directly into the rich editor; images are saved to `.devnotes/assets/` and embedded inline
-- **Note templates** — six built-in templates for common developer workflows (Bug Report, ADR, Meeting Notes, Standup, Feature Spec, Code Review); save any note as a custom template
-- **Code-linked notes** — attach a note to any file and line number; a gutter icon marks the line and hovering it shows the note title with a clickable link back to the note
-- **Tags** — assign tags to notes for filtering; create custom tags with any color; delete tags you no longer need
-- **Color-coded notes** — eight color options per note, changeable at any time from the card
-- **Starred notes** — star important notes to pin them to the top of the list
-- **Note archiving** — archive completed or inactive notes to declutter the list without deleting them; a dedicated archive view lets you browse and restore them at any time
-- **Stale notes filter** — click the clock icon in the toolbar to instantly surface notes that haven't been touched in 14+ days and still have open todos or a bug tag; the same logic the MCP's `get_stale_notes` tool uses, now available as a one-click filter in the sidebar
-- **Status bar integration** — two persistent items in the bottom status bar surface overdue reminders and notes linked to the current file without opening the sidebar; works in VS Code, Windsurf, Cursor, and all VS Code-based editors
-- **Project-scoped storage** — notes are tied to the workspace, not a global account
-- **Git-aware** — detects the current repo so notes stay relevant to the project
-- **Opt-in sharing** — share individual notes with teammates through git, with nothing exposed by default
-- **Activity feed** — a live panel showing recent changes to shared notes, grouped by day with owner avatars and clickable titles
-- **Conflict resolution UI** — when a shared note has a git merge conflict, a visual two-column panel lets you keep yours, keep theirs, or merge both versions
-- **Note ownership** — notes are automatically attributed to the git user who created them; filter to your own notes instantly with the "Mine" button
-- **GitHub integration** — one-click OAuth connection via the sidebar; link any note to an existing issue or PR, or create a new GitHub issue directly from a note; a color-coded status badge (green open, grey closed, purple merged) appears on the card; filter notes by GitHub status (open/closed/merged) using the filter bar that appears automatically when linked notes exist; the MCP server fetches the full description and comments so Claude can reason about the issue without leaving your workspace
-- **Note duplication** — clone any note with one click; the copy inherits title, content, color, tags, and branch scope
-- **Note linking** — link any note to one or more other notes with automatic back-links; linked notes appear as clickable chips on the card and open instantly in the rich editor; unlinking removes both directions at once
-- **Sort options** — cycle the note list between last updated, date created, and alphabetical order; starred notes always stay pinned to the top regardless of sort
-- **Card keyboard shortcuts** — navigate the note list with arrow keys and trigger actions (open, star, archive, rename, delete) without touching the mouse
-- **Claude Code integration** — an MCP server lets Claude Code create notes, read them, append solutions, query todos, search full-text with ranked snippets, and generate standups or PR handoffs — all talking to the same `.devnotes/` files the extension uses
+**Notes**
+- Sidebar card view with inline editing and rich markdown preview
+- Full rich-text editor with tables, images, task lists, code blocks, and more
+- Quick capture from anywhere with `Ctrl+Alt+Q` — auto-links to the current `file:line`
+- Duplicate, archive, star, and bulk-manage notes
 
-## Quick Capture
+**Code linking**
+- Attach any note to a specific file and line in your workspace
+- Gutter icon marks every line that has a linked note
+- Hover tooltip shows the note title directly on the linked line
+- Status bar shows notes linked to the currently open file
+- Code links update automatically when files are renamed inside VS Code
 
-Press **`Ctrl+Alt+Q`** (Mac: **`Cmd+Alt+Q`**) from anywhere in VS Code to capture a note instantly without touching the mouse.
+**Organisation**
+- Tags with custom colours and Lucide icons (built-in: Idea, Todo, Bug, Meeting, Reference)
+- Branch-scoped notes that only surface on the relevant git branch
+- Reminders with an overdue indicator in the status bar
+- Search and filter by tag, branch, and archived state
 
-- **Editor open** — the note is automatically linked to your current file and cursor line. No extra steps needed.
-- **No editor open** — a plain unlinked note is created.
+**Team**
+- Notes are private by default; opt in to sharing per note — DevNotes updates `.gitignore` so shared notes flow through git like any other file
+- Git conflict resolution panel with Keep Ours, Keep Theirs, and Merge Both options
+- Activity feed showing recent note changes with attribution (you, teammate, or Claude Code)
 
-In both cases a single input box appears, you type a title, and press `Enter`. The note lands in the sidebar immediately.
+**Integrations**
+- GitHub: connect via OAuth, link notes to issues or pull requests, track open/closed/merged status
+- Claude Code: register DevNotes as an MCP server so Claude can read, create, and update notes from the conversation
 
-### Changing the keybinding
+**Export**
+- Export notes as a styled, self-contained HTML file (images embedded)
+- Copy notes as Markdown to paste into Slack, Notion, GitHub, and elsewhere
 
-Every VS Code keybinding is user-overridable:
-
-1. Open **Keyboard Shortcuts** with `Ctrl+K Ctrl+S`
-2. Search for **DevNotes: Quick Capture Note**
-3. Click the pencil icon and press your preferred combination
-
-Or add it directly to `keybindings.json`:
-
-```json
-{
-  "key": "ctrl+shift+`",
-  "command": "devnotes.quickCapture"
-}
-```
-
-## Branch-Scoped Notes
-
-Notes are global by default — visible regardless of which branch you're on. You can optionally scope any note to a specific branch so it surfaces only in that context and recedes everywhere else.
-
-### Branch indicator
-
-When you're inside a git repository, a `⎇ branch-name` pill appears in the sidebar top bar next to the project name. It updates live whenever you switch branches — no restart needed.
-
-### Filtering to the current branch
-
-Click the `⎇` button in the top bar to toggle **branch filter mode**. When active:
-
-- Notes scoped to the **current branch** show normally
-- Notes scoped to **other branches** are hidden
-- **Global notes** (no branch set) always remain visible
-
-Click the button again to return to the full list.
-
-### Scoping a note to a branch
-
-**From the card** — hover any note card to reveal the action buttons. Click the `⎇` branch button to scope that note to your current branch. The button highlights when the note is scoped. Click it again to make the note global.
-
-**At creation (sidebar form)** — the new-note form shows a "Scope to current branch" checkbox when a branch is detected. If the branch filter is active when you open the form, the checkbox is pre-checked automatically.
-
-**Via Quick Capture** (`Ctrl+Alt+Q`) — after the template step, a branch scope picker appears:
-
-```
-○ Global — visible on all branches      ← pre-selected by default
-○ Scope to feature/auth                 ← pre-selected if filter is active
-```
-
-Press `Enter` to accept the default, or arrow to change it.
-
-### Visual treatment of off-branch notes
-
-When the branch filter is **inactive**, notes scoped to other branches remain visible but are dimmed to 42% opacity so they don't compete for attention. A small `⎇ branch-name` badge in the card footer shows which branch they belong to.
-
-### How branch detection works
-
-The current branch is read directly from `.git/HEAD` — no git commands or shell processes are involved. A file watcher on `.git/HEAD` detects branch switches instantly so the sidebar always reflects your current context.
-
-Detached HEAD state (e.g. during a rebase or when checking out a commit directly) is handled gracefully — the branch indicator is hidden and no scoping options are offered.
-
-### Note format with a branch scope
-
-```markdown
----
-id: lp9k3fab
-title: Auth refactor plan
-color: purple
-tags: idea
-branch: feature/auth-v2
-createdAt: 1712345678
-updatedAt: 1712349000
 ---
 
-Notes specific to this feature branch.
-```
+## Quick Start
 
-## Reminders
+1. Open a workspace folder in VS Code.
+2. Click the DevNotes icon in the activity bar.
+3. Press `Ctrl+Alt+Q` (`Cmd+Alt+Q` on Mac) to capture your first note. If an editor is focused, the note is automatically linked to that file and line.
+4. Use the sidebar to view, filter, and edit your notes.
 
-Set a reminder on any note so it surfaces at the right time — useful for follow-ups, deferred bugs, or anything you want to revisit later.
-
-### Setting a reminder
-
-Hover any note card to reveal its action buttons, then click **🔔**. A picker appears with preset options:
-
-| Option | When it fires |
-|---|---|
-| Tomorrow morning | Next day at 9:00 AM |
-| In 2 days | Two days from now at 9:00 AM |
-| Next week | Seven days from now at 9:00 AM |
-| Next month | Thirty days from now at 9:00 AM |
-| Custom date… | Any date you enter (YYYY-MM-DD), fires at 9:00 AM |
-
-If the note already has a reminder, a **Remove reminder** option appears at the top of the picker.
-
-### Reminder badge
-
-Once set, a `🔔 Tomorrow`, `🔔 Apr 28`, or similar badge appears on the card — always visible, not just on hover. Overdue reminders display in a distinct reddish style so they stand out.
-
-### Notification
-
-When a reminder comes due, VS Code fires a notification:
-
-```
-🔔 DevNote: "Fix auth token expiry"
-[Open]  [Snooze 1h]  [Snooze tomorrow]  [Dismiss]
-```
-
-| Action | What happens |
-|---|---|
-| **Open** | Opens the note in the rich editor; reminder stays set |
-| **Snooze 1h** | Pushes the reminder forward by one hour |
-| **Snooze tomorrow** | Reschedules to 9:00 AM the next day |
-| **Dismiss** | Clears the reminder entirely |
-| *(close popup)* | Auto-snoozed 1 hour to prevent re-firing immediately |
-
-Reminders are checked every 60 seconds. If multiple notes are due simultaneously, notifications are shown concurrently — one per note.
-
-### Note format with a reminder
-
-```markdown
----
-id: lp9k3fab
-title: Fix auth token expiry
-color: orange
-tags: bug
-remindAt: 1745226000000
-createdAt: 1712345678
-updatedAt: 1712349000
 ---
 
-Token TTL is 1 hour — needs refresh token flow.
-```
+## Core Workflows
 
-`remindAt` is a Unix timestamp in milliseconds. It is omitted from the frontmatter when no reminder is set.
+### Creating notes
 
-## Note Archiving
+Notes can be created from three places:
 
-Archiving lets you hide notes that are no longer actively relevant — completed work, resolved bugs, old meeting notes — without permanently deleting them. Archived notes remain fully searchable and can be restored at any time.
+- **Quick capture** — `Ctrl+Alt+Q` anywhere. Prompts for a title, optionally a template, and optionally a branch scope. If an editor is active, the note is linked to the current file and line automatically.
+- **Sidebar** — the "+" button opens a creation form directly in the sidebar.
+- **Command palette** — `DevNotes: Add DevNote Here`.
 
-### Archiving a note
+### The rich-text editor
 
-Hover any note card to reveal the action buttons, then click **📦**. The note disappears from the main list immediately. Archiving a starred note also removes its star.
+Click "Open in editor" on any sidebar card to open the full editor. It supports:
 
-### Browsing archived notes
+- Headings, bold, italic, strikethrough, inline code
+- Ordered and unordered lists, task lists (checkboxes)
+- Tables (add/remove rows and columns)
+- Code blocks
+- Images (paste or drag-and-drop; stored in `.devnotes/assets/`)
+- Clickable links (open in browser)
 
-Click the **archive box icon** (☰ box) in the sidebar top bar. The view switches to show only archived notes. The icon highlights to indicate you are in archive mode.
+The sidebar also supports inline editing: click the body of any card to edit it in place. The editor saves automatically on blur.
 
-### Restoring a note
+### Linking notes to code
 
-While in archive view, hover any archived card and click **↩** to unarchive it. The note returns to the main list.
+When you create a note with `Ctrl+Alt+Q` from inside an editor, DevNotes stores the current `file:line` with the note. You can also add or remove a code link later from the sidebar card's overflow menu.
 
-### How archiving affects Claude
+Once a note has a code link:
 
-Archived notes are excluded from all active-work surfaces:
+- A gutter icon appears on the linked line.
+- Hovering the line shows the note title in the standard hover widget.
+- The status bar displays the count of notes linked to the active file.
+- Clicking "Jump to file" on the card navigates the editor to that line.
 
-- `list_notes` hides archived notes by default — pass `archived: true` to list them
-- `get_todos`, `get_stale_notes`, and all MCP resources (`devnotes://todos`, `devnotes://recent`, `devnotes://branch`) never include archived notes
-- `get_note` still works on archived notes directly when queried by ID or title
+### Templates
 
-### Note format with archiving
+DevNotes ships with six built-in templates:
 
-```markdown
----
-id: lp9k3fab
-title: Old bug fix
-color: orange
-tags: bug
-archived: true
-createdAt: 1712345678
-updatedAt: 1712349000
----
-```
-
-`archived: true` is omitted from the frontmatter when the note is not archived.
-
-## Stale Notes Filter
-
-The stale notes filter surfaces notes that have fallen through the cracks — old enough to be forgotten but still carrying unresolved work.
-
-### What counts as stale
-
-A note is stale when **both** of the following are true:
-
-1. It has not been updated in **14 or more days**
-2. It contains at least one of:
-   - An unchecked todo item (`- [ ]`)
-   - The **bug** tag
-
-Archived notes are never included.
-
-This is the same definition used by the MCP server's `get_stale_notes` tool, so the filter and Claude see the same set of notes.
-
-### Using the filter
-
-Click the **clock icon** (🕐) in the sidebar top bar. The button turns orange when the filter is active to distinguish it from the blue used by other active filters — orange reinforces the "needs attention" signal.
-
-- Clicking the button when the archive view is open automatically exits archive view first, since archived notes are excluded by definition.
-- The filter stacks with search, tag filters, the branch filter, and the Mine filter — you can narrow stale notes further.
-- When the filter is active but nothing qualifies, the sidebar shows: **"No stale notes. Everything looks up to date."**
-
-Click the button again to return to the full list.
-
-### When to use it
-
-- **Weekly review** — run the filter before your standup or retrospective to catch unresolved bugs and forgotten todos
-- **Before a release** — confirm nothing critical is sitting idle
-- **After a long break** — re-orient quickly on what was left open
-
-## Note Templates
-
-Templates let you scaffold a new note with a pre-defined structure, color, and tags in one click. Six templates are built in and ready to use — no setup required.
-
-| Template | Pre-fills | Default color | Default tags |
-|---|---|---|---|
-| **Bug Report** | Steps to Reproduce, Expected, Actual, Environment | Orange | Bug |
-| **ADR** | Context, Decision, Consequences | Purple | Reference |
-| **Meeting Notes** | Attendees, Decisions, Action Items | Blue | Meeting |
-| **Standup** | Done, Doing, Blocked | Green | Todo |
-| **Feature Spec** | Goal, Acceptance Criteria, Notes, Open Questions | Cyan | Idea |
-| **Code Review** | What to Check, Findings, Decision | Yellow | Reference |
-
-### Using a template
-
-**In the sidebar** — when creating a note, template chips appear between the title field and the color strip. Click one to pre-select it; the color and tags update automatically. Click **Blank** to deselect.
-
-**In Quick Capture** (`Ctrl+Alt+Q`) — after typing the note title and pressing `Enter`, a template picker appears. **Blank** is pre-selected so pressing `Enter` again creates a plain note instantly. Arrow down to pick a template.
-
-**In the rich editor** — the toolbar has two new buttons on the right:
-- **`Tpl↓`** — applies a template to the current note (replaces the body; prompts to choose which template)
-- **`Tpl↑`** — saves the current note's content as a new custom template (prompts for a name)
-
-### Custom templates
-
-Any note can become a template via `Tpl↑` in the editor toolbar. Custom templates are stored in `.devnotes/templates.json` and appear alongside the built-ins everywhere — sidebar picker, Quick Capture, and the editor.
-
-To delete a custom template, remove its entry from `.devnotes/templates.json` directly.
-
-## Status Bar Integration
-
-DevNotes places two items in the VS Code status bar (bottom-right) that surface context without requiring you to open the sidebar.
-
-### Overdue reminders
-
-```
-🔔 2 overdue
-```
-
-Appears whenever one or more non-archived notes have a past reminder date. The item uses the warning background colour (amber) so it stands out. Hovering shows a tooltip listing each overdue note by title. Clicking opens the DevNotes sidebar.
-
-The item disappears automatically once all overdue reminders are dismissed or rescheduled.
-
-### Linked notes
-
-```
-📒 3 notes here
-```
-
-Appears when the file currently open in the editor has notes linked to it via a code link. Hovering shows a tooltip listing the linked note titles. Clicking opens the DevNotes sidebar.
-
-The item updates instantly on every editor tab switch — if you move to a file with no linked notes it hides, if you move to one with notes it shows.
-
-### Compatibility
-
-Both items use the standard VS Code Extension API and work in all VS Code-based editors: VS Code, Windsurf, Cursor, and VSCodium.
-
-## Sort Options
-
-Click the sort button (**↓U**) in the sidebar toolbar to cycle through three sort modes:
-
-| Button | Mode | Order |
-|--------|------|-------|
-| `↓U` | Last updated | Most recently edited first (default) |
-| `↓C` | Date created | Newest notes first |
-| `A–Z` | Alphabetical | A to Z by title |
-
-Starred notes are always pinned to the top regardless of the active sort mode. The button turns accent-coloured when a non-default sort is active so you can tell at a glance that the list is reordered.
-
-## Note Duplication
-
-Click the **copy icon** (⧉) in a card's action bar to duplicate the note. The new note is created immediately with:
-
-- Title prefixed `Copy of …`
-- Same content, color, tags, and branch scope as the original
-
-Reminders, code links, GitHub links, and note-to-note links are not copied — these are context-specific to the original note. Rename and adjust the duplicate as needed.
-
-## Note Linking
-
-Notes can be linked to each other to build a lightweight knowledge graph across your workspace. All links are bidirectional — creating or removing a link always updates both notes simultaneously.
-
-### Creating a link
-
-Click the chain-link-with-arrow button (↗) in a card's action bar. A VS Code quick pick lists all other non-archived notes not already linked to this one — searchable by title or tags. Pick one to create the link. The back-link from the target note to this one is added automatically.
-
-### Navigating links
-
-Linked notes appear as `↗ Note Title` chips below the tag row on the card. Clicking a chip opens that note in the rich editor immediately.
-
-### Removing a link
-
-Hover a chip and click the `✕` that appears on the right. Both directions are removed at once — neither note is deleted.
-
-### Note format with links
-
-```markdown
----
-id: abc123
-title: Auth bug
-linked_notes: def456,ghi789
----
-```
-
-`linked_notes` is a comma-separated list of note IDs. Links are bidirectional — linking note A to note B automatically adds a back-link from B to A. Unlinking either direction removes both sides simultaneously.
-
-## Card Keyboard Shortcuts
-
-Once a card is focused you can act on it entirely from the keyboard. Focus a card by navigating to it with the arrow keys from the search box or from another card.
-
-| Key | Action |
-|-----|--------|
-| `↓` (from search box) | Focus the first card |
-| `↓` / `↑` | Move to the next / previous card |
-| `↑` (from first card) | Return focus to the search box |
-| `Enter` | Open the note in the rich editor |
-| `S` | Toggle star (pins the note to the top) |
-| `A` | Archive the note (or unarchive if already archived) |
-| `R` | Rename — focuses the title input |
-| `Delete` | Delete the note |
-| `Escape` | Blur the card |
-
-A focused card is highlighted with the editor's standard focus ring (`--vscode-focusBorder`). Shortcuts only fire when the card itself has focus — child inputs such as the title field and the inline content editor handle their own keys independently.
-
-## Getting Started
-
-1. Install the extension (or run it via **F5** in the repo)
-2. Click the **DevNotes** icon in the activity bar
-3. Hit **+** to create a note — pick a title, color, and any tags upfront
-4. Click the note content to edit inline, or press **✏** to open the full rich text editor
-
-## Code-Linked Notes
-
-Code-linked notes let you attach a note to a specific file and line number. The link is stored in the note's frontmatter and persists across sessions.
-
-### Creating a link
-
-There are two ways to link a note to a line:
-
-**From the editor (new note):** right-click any line → **Add DevNote Here**, or press `Ctrl+Alt+Q`. An input box pre-labelled with the file and line appears; enter a title and the note is created already linked.
-
-**From the sidebar (existing note):** click the chain-link icon (🔗) on any note card. The note is linked to wherever your cursor currently sits in the active editor. Clicking 🔗 on an already-linked note updates the link to the new position.
-
-### Navigating from a note
-
-Each linked note card shows a `{} filename:line` chip below its tags. Click the chip to open that file and jump directly to the linked line.
-
-To remove a link, hover the chip and click the **✕** that appears on the right.
-
-### Navigating from the editor
-
-When you open a file that has notes linked to it, a small sticky-note icon appears in the left gutter on each linked line. Hovering the line text shows a tooltip with the note title as a clickable link — clicking it opens the note in the rich editor.
-
-### Automatic link maintenance
-
-When you rename or move a file using VS Code's Explorer or refactoring tools, all notes linked to the old path are updated automatically. Links to files moved outside of VS Code (e.g. via a terminal `mv` or `git mv`) are not updated automatically — the chip will appear greyed out with strikethrough to indicate the link is stale.
-
-### Note format with a code link
-
-```markdown
----
-id: lp9k3fab
-title: Null check missing
-color: orange
-tags: bug
-starred: false
-codeLink_file: src/auth/tokenService.ts
-codeLink_line: 42
-createdAt: 1712345678
-updatedAt: 1712349000
----
-
-Token is never validated before use here.
-```
-
-## Image Paste
-
-Paste any image directly into the rich editor — screenshots, diagrams, browser captures — and it appears inline in the note body, right where your cursor is.
-
-### How to paste an image
-
-1. Copy an image to your clipboard (`Print Screen`, `Ctrl+Shift+S`, snipping tool, or copy from a browser)
-2. Open a note in the rich editor (click ✏ on a card)
-3. Place your cursor where you want the image
-4. Press `Ctrl+V`
-
-The image appears immediately. The note auto-saves after one second, as usual.
-
-### Where images are stored
-
-Images are written to `.devnotes/assets/<note-id>-<timestamp>.png` on paste. The markdown stores a workspace-relative path:
-
-```markdown
-## Bug reproduction
-
-Here is the error state I am seeing:
-
-![image](.devnotes/assets/lp9k3fab-1712345678.png)
-
-The modal appears before the data loads.
-```
-
-The `.devnotes/assets/` folder is gitignored by default — the same privacy model as notes. To share images alongside a shared note, add `!assets/` to `.devnotes/.gitignore`:
-
-```
-*
-!.gitignore
-!tags.json
-!assets/
-!<note-id>.md
-```
-
-### Supported formats
-
-Any image format the clipboard provides — PNG, JPEG, GIF, WebP. The file extension is detected from the clipboard MIME type.
-
-## Exporting Notes
-
-Notes can be exported as Markdown files, HTML files, or copied to the clipboard — individually, in bulk, or as a hand-picked selection.
-
-### Export a single note
-
-Open a note in the rich editor (click ✏ on the card), then click the **Export** button in the toolbar. A format picker appears and the file is saved to a location of your choice.
-
-### Export all notes
-
-Open the **Command Palette** (`Ctrl+Shift+P`) and run **DevNotes: Export All Notes**.
-
-### Export selected notes
-
-1. Click the **checklist icon** (☰) in the sidebar top bar to enter selection mode
-2. Click any note cards you want to include — a checkmark appears and the card is highlighted
-3. Click **↓** in the action bar at the bottom of the sidebar
-4. Pick a format and save
-
-Click **Cancel** or the toggle button again to exit selection mode without exporting.
-
-### Export formats
-
-| Format | Output | Best for |
+| Template | Tags | Contents |
 |---|---|---|
-| **Markdown file** | `.md` with frontmatter-style metadata footer | Wikis, GitHub, other editors |
-| **HTML file** | Styled `.html` with note colors preserved | Sharing with non-developers |
-| **Copy to clipboard** | Markdown — ready to paste | Slack, Notion, GitHub issues |
+| Bug Report | Bug | Steps to reproduce, expected vs actual behaviour, environment |
+| ADR | Reference | Context, decision, consequences |
+| Meeting Notes | Meeting | Attendees, decisions, action items |
+| Standup | Todo | Done, doing, blocked |
+| Feature Spec | Idea | Goal, acceptance criteria, open questions |
+| Code Review | Reference | What to check, findings, decision |
 
-Multiple notes exported to a single file are separated by `---` dividers with a header and timestamp.
+Custom templates can be added from the sidebar settings panel. Templates pre-select the matching tags when applied.
 
-## Bulk Actions
+### Tags
 
-Selection mode lets you act on multiple notes at once. Click the **checklist icon** (☰) in the sidebar toolbar to enter it, then click cards to select them.
+Tags appear as coloured pills on sidebar cards. Each tag has a label, a hex colour, and an optional Lucide icon.
 
-The action bar at the bottom shows:
+The five default tags — Idea, Todo, Bug, Meeting, Reference — can be renamed, recoloured, reordered, and deleted. Custom tags can be added from the tag manager in the sidebar. The full Lucide icon library is searchable from the icon picker.
 
-| Button | Action |
-|--------|--------|
-| **All** | Selects every visible note; click again to deselect all |
-| **📦** | Archives all selected notes |
-| **#** | Opens a tag picker — adds the chosen tag to every selected note |
-| **↓** | Exports selected notes |
-| **✕** | Deletes selected notes — a single confirmation modal covers the whole batch |
-| **Cancel** | Exits selection mode |
+`tags.json` is committed to git so custom tags are shared with your team automatically.
 
-The **All** button turns bold when every visible card is selected. Bulk delete requires confirmation and cannot be undone. Bulk tag skips notes that already carry the chosen tag.
-
-## Working with Tags
-
-Tags are shown in the filter bar at the top of the sidebar. Click any tag to filter the list to matching notes; click multiple tags to broaden the selection.
-
-- **Create a tag** — click **+ tag** at the right end of the tag bar, enter a name, and pick a color
-- **Assign tags to a note** — click the **#** button on a card to open the tag picker; click any tag to toggle it on or off
-- **Assign tags at creation** — tags can also be selected in the new-note form before the note is created
-- **Delete a tag** — hover a custom tag chip in the filter bar and click **✕**; the chip highlights orange and the icon changes to **✓** — click again within 3 seconds to confirm, or wait for it to auto-cancel (built-in tags cannot be deleted)
-- **Rename a tag** — click **⚙** at the end of the tag bar to open the tag manager, then click the tag's name field, edit it, and press **Enter** (or click away) to save; press **Escape** to discard
-- **Recolor a tag** — in the tag manager, click the color dot to the left of the tag name to open a color picker
-- **See usage** — the tag manager shows a note count next to every tag (custom and built-in), so you know the impact before deleting
-- **Delete from the manager** — click **✕** in the manager row; it expands into a confirmation showing how many notes will be affected, with **Delete** and **Cancel** buttons
-
-## Sharing Notes with Teammates
-
-Notes are private by default — the `.devnotes/` folder is fully gitignored and nothing appears in `git status` until you choose to share.
-
-To share a note:
-
-1. Click the **share icon** (⇄) on a note card — it highlights teal when sharing is active
-2. A notification appears with the exact git commands to commit; click **Copy git commands** to copy them
-3. Run the commands and push — teammates pull and the note appears automatically in their DevNotes panel
-
-To un-share, click the share icon again to toggle it off, then commit the updated `.devnotes/.gitignore`.
-
-## Activity Feed
-
-The Activity panel gives your team a live view of what's been changing in the shared knowledge base — without opening a terminal or running `git log`.
-
-### Where to find it
-
-The **Activity** panel lives directly below the **Notes** panel in the DevNotes sidebar. Click it to expand. It refreshes automatically whenever notes change (e.g. after a `git pull`), and a ↺ button in the panel title bar lets you refresh manually.
-
-### What it shows
-
-All shared notes and notes created by Claude Code, sorted by most recently updated and grouped by day:
-
-```
-TODAY
-  SM  Sara Morales  updated
-      Onboarding flow ADR · 2h ago
-
-  AT  Alex Turner  created
-      DB migration notes · 5h ago
-
-YESTERDAY
-  ML  Marcus Lee  updated
-      Perf regression in prod · yesterday
-```
-
-Each entry shows:
-- **Owner avatar** — a color-coded initials circle. Each person always gets the same color for easy recognition across sessions. Claude Code entries show a purple **CC** avatar.
-- **Owner name** — the git user who created the note. Your own entries are labelled with a small `you` badge. Claude Code entries show an **AI** badge.
-- **Action** — `created` when the note was just added, `updated` when it has been edited since creation.
-- **Note title** — click it to open the note directly in the rich editor.
-- **Relative timestamp** — "just now", "2h ago", "yesterday", or a short date.
-
-### Empty state
-
-When no notes have been shared yet, the panel shows a prompt explaining how to share notes to start populating the feed.
-
-### When it updates
-
-The feed refreshes automatically on every external file change — this includes notes arriving after a `git pull`, shared by a teammate, or modified outside the extension. It reflects the current state of all shared notes in the workspace.
-
-## Note Ownership
-
-Every note is automatically attributed to the git user who created it, read from the local `.git/config` (with `~/.gitconfig` as a fallback). Ownership makes shared notes more useful — teammates can see at a glance who to ask about a given note.
-
-### Owner badge
-
-Each note with an owner shows a small circular initials badge and first name in the card footer. Hovering the badge shows the full name.
-
-For example, a note created by **Jane Smith** shows `JS Jane` in the footer.
-
-### Mine filter
-
-Click the **person icon** (👤) in the sidebar top bar to activate the Mine filter. When active:
-
-- Notes owned by **you** are shown normally
-- Notes owned by **teammates** are hidden
-- Notes with **no owner** (created before this feature) are always shown
-
-Click the button again to return to the full list.
-
-### How ownership is detected
-
-On activation, DevNotes reads the `name` field from the `[user]` section in your `.git/config`. If not found there, it falls back to `~/.gitconfig`, then to the `email` field. If neither is set, the feature is silently disabled — the Mine filter button is hidden and no owner is assigned to new notes.
-
-You can verify your git identity by running:
-
-```bash
-git config user.name
-git config user.email
-```
-
-### Note format with ownership
-
-```markdown
 ---
-id: lp9k3fab
-title: Auth token expiry bug
-color: orange
-tags: bug
-owner: Jane Smith
-createdAt: 1712345678
-updatedAt: 1712349000
+
+## Keeping Notes Organised
+
+### Branch scoping
+
+When creating a note, DevNotes detects the current git branch and offers to scope the note to it. A branch-scoped note only appears in the sidebar when you are on that branch — useful for work-in-progress notes tied to a feature branch.
+
+The branch filter toggle in the sidebar header narrows the view to notes for the current branch only.
+
+### Reminders
+
+Set a reminder date and time on any note from the overflow menu. When the reminder is due:
+
+- The status bar shows an overdue indicator.
+- A notification fires with an option to open the note.
+
+Reminders are stored in the note's frontmatter and survive workspace restarts.
+
+### Starring and archiving
+
+Star important notes to pin them to the top of the sidebar. Archive notes you no longer need to act on but don't want to delete — archived notes are hidden from the main view and accessible via the archive filter.
+
+Bulk operations (archive, delete, tag) are available in selection mode, toggled from the sidebar header.
+
 ---
-```
 
-Ownership is stored as a plain string — the name or email, exactly as set in git config.
+## Team Features
 
-## Conflict Resolution
+### Sharing notes
 
-When two teammates edit the same shared note and one pulls after the other has pushed, git writes conflict markers into the `.devnotes/<id>.md` file. DevNotes detects this automatically and handles it without requiring any raw file editing.
+All notes are stored in `.devnotes/` and gitignored by default. To share a note, toggle "Share this note" from its overflow menu. DevNotes adds an exception to `.devnotes/.gitignore` for that specific file — teammates see it the next time they pull.
 
-### How it works
+Shared notes are committed and diffed like any other file. The `.gitignore` and `tags.json` files are also un-ignored the first time any note is shared, so custom tag definitions and sharing rules propagate to the team automatically.
 
-1. **Detection** — the file watcher fires after a `git pull`. DevNotes checks for conflict markers (`<<<<<<<`, `=======`, `>>>>>>>`) before parsing. If found, the note is flagged as conflicted and a ⚠ notification fires:
+### Conflict resolution
 
-   ```
-   ⚠ Conflict in shared note: "Auth token bug"   [Resolve]  [Dismiss]
-   ```
+If a shared note receives conflicting edits (for example, two developers edit it on different branches and merge), DevNotes detects the git conflict markers and surfaces a resolution panel with three options:
 
-2. **Sidebar indicator** — the note card shows a persistent `⚠ Conflict — click to resolve` badge with a red left-border stripe so it can't be missed.
+- **Keep mine** — discards incoming changes.
+- **Keep theirs** — discards your changes.
+- **Merge both** — unions tags and concatenates content with a divider. A custom merge editor lets you adjust the result before confirming.
 
-3. **Resolution panel** — clicking **Resolve** (in the notification or on the badge) opens a two-column panel:
+A notification fires automatically when a newly conflicted note is detected after a pull.
 
-   ```
-   ┌─────────────────────────┬────────────────────────────────┐
-   │  YOUR VERSION  (HEAD)   │  INCOMING  (feature/auth-v2)   │
-   │  ─────────────────────  │  ──────────────────────────    │
-   │  color: orange          │  color: blue          (★ diff) │
-   │  tags: bug, important   │  tags: bug            (★ diff) │
-   │                         │                                │
-   │  ## My approach…        │  ## Teammate's approach…       │
-   │                         │                                │
-   │  [✓ Keep mine]          │             [✓ Keep theirs]    │
-   └─────────────────────────┴────────────────────────────────┘
-              [⊕ Keep both]   [Edit raw file manually]
-   ```
+### Activity feed
 
-   Fields that differ between the two versions are highlighted.
+The Activity panel (below the Notes panel in the sidebar) lists recent note changes from all contributors — you, teammates, and Claude Code. Each entry shows who made the change, what note was affected, and when. Clicking an entry opens that note in the editor.
 
-### Resolution options
+The activity feed only appears when there is shared note activity to display.
 
-| Option | What it does |
+---
+
+## GitHub Integration
+
+Connect a GitHub account from the sidebar settings panel. DevNotes uses VS Code's built-in GitHub authentication — no personal access token needed.
+
+Once connected:
+
+- **Link a PR** — paste a GitHub pull request URL to attach it to a note. DevNotes fetches the PR title and status (open, merged, closed) and displays them on the sidebar card.
+- **Create an issue** — convert a note into a GitHub issue directly from the overflow menu. The note title and content become the issue title and body.
+- Linked issue and PR status updates when you refresh the sidebar.
+
+The GitHub token is stored in `.devnotes/.github-token`, which is always gitignored.
+
+---
+
+## Claude Code / MCP
+
+DevNotes can register itself as an MCP server so Claude Code can interact with your notes from the conversation.
+
+**To register:**
+
+1. Open the Command Palette and run `DevNotes: Connect to Claude Code (Register MCP Server)`.
+2. Restart Claude Code.
+
+Once registered, Claude Code can list notes, read note content, create new notes, update existing ones, append to notes, complete todos, search, and more — all without leaving the chat.
+
+Changes made by Claude Code are attributed in the Activity feed so you can see what was added or modified.
+
+---
+
+## Keyboard Shortcuts
+
+| Shortcut | Action |
 |---|---|
-| **Keep mine** | Keeps the HEAD version entirely; discards the incoming changes |
-| **Keep theirs** | Keeps the incoming version entirely; discards your local changes |
-| **Keep both** | Merges the two versions: tags are unioned, content is concatenated with a `---` divider, single-value fields (color, title) come from your version |
-| **Edit raw file** | Opens the `.md` file in VS Code for manual conflict editing |
+| `Ctrl+Alt+Q` / `Cmd+Alt+Q` | Quick capture — create a note linked to the current file:line |
 
-### When to use "Keep both"
+All other actions are available from the sidebar and the Command Palette (`DevNotes:` prefix).
 
-"Keep both" is most useful when both versions contain independent, non-overlapping information — for example, two people added different action items to a Meeting Notes, or two separate bug findings to a Code Review note. The merged result includes everything and can be cleaned up afterward.
-
-## Storage Design
-
-### Why file-based storage?
-
-Previous versions stored notes in VS Code's internal `workspaceState` — a SQLite database inside the VS Code installation. While simple to implement, this had three fundamental problems:
-
-1. **No git tracking.** Notes couldn't be versioned or recovered via `git log`.
-2. **No sharing.** There was no way to share notes with teammates short of copying text manually.
-3. **No portability.** Notes were locked to a single VS Code installation and inaccessible from any other tool.
-
-Storing notes as files in the workspace solves all three: git handles versioning and sharing for free, and the files are readable without the extension.
-
-### File layout
-
-```
-.devnotes/
-  .gitignore      — ignores everything by default; updated when notes are shared
-  tags.json       — custom tag definitions for this workspace
-  templates.json  — custom note templates (built-ins are hardcoded, not stored here)
-  assets/         — images pasted into notes (gitignored by default)
-  <id>.md         — one file per note
-```
-
-### Note format
-
-Each note is a plain Markdown file with a YAML frontmatter header:
-
-```markdown
----
-id: lp9k3fab
-title: Auth token expiry bug
-color: orange
-tags: bug,important
-starred: true
-codeLink_file: src/auth/tokenService.ts
-codeLink_line: 42
-createdAt: 1712345678
-updatedAt: 1712349000
 ---
 
-## Steps to reproduce
-1. Log in, wait 1 hour
-2. Make any API call → 401
-```
-
-`codeLink_file`, `codeLink_line`, `branch`, `owner`, `remindAt`, and the `github_*` fields are all optional — notes without these fields simply omit them. Notes are readable and editable in any text editor, even without the extension installed.
-
-### Personal vs. shared data
-
-| File | Default | Committed when |
-|---|---|---|
-| `<id>.md` | Gitignored | Note marked as Shared |
-| `tags.json` | Gitignored | Added manually by user |
-| `templates.json` | Gitignored | Added manually by user |
-| `.gitignore` | Gitignored | First note is shared |
-
-## Why the canvas view was removed
-
-An earlier version included a freeform canvas — a separate VS Code panel where notes could be arranged and resized spatially. It was removed for the following reasons:
-
-- **Complexity for little gain.** The canvas required a dedicated webview, a separate esbuild bundle, and a `canvas-layout.json` file to persist card positions. This was a significant slice of the codebase serving a feature that duplicated what the sidebar already does.
-- **State fragmentation.** The extension had to keep two panels in sync — any note mutation in the sidebar had to be pushed to the canvas and vice versa. This introduced subtle race conditions and made the message-passing logic harder to follow.
-- **Personal layout, no sharing value.** Canvas positions were intentionally never committed to git, making the spatial arrangement purely personal. Given that notes themselves are the shareable artifact, the canvas added friction without adding collaboration value.
-- **The sidebar covers the same need more simply.** The sidebar has inline search, tag filtering, starred sorting, and per-card editing — the same information the canvas displayed, without the overhead of a free-form layout engine.
-
-## Claude Code Integration (MCP Server)
-
-DevNotes ships a companion MCP (Model Context Protocol) server that connects Claude Code directly to your notes. Once registered, Claude can create notes mid-conversation, read them back, append solutions, query your open todos, and generate standups or PR handoffs — all reading and writing the same `.devnotes/` files the VS Code extension uses. Notes you create via Claude appear instantly in the sidebar, and notes you write in the editor are immediately visible to Claude.
-
-### Setup
-
-**1. Build the server**
+## Building from Source
 
 ```bash
-cd mcp-server
+git clone https://github.com/hibachaabnia/devnotes.git
+cd devnotes
 npm install
-npm run build
+npm run compile   # TypeScript + webview bundles
 ```
 
-**2. Register it with Claude Code**
+Press `F5` in VS Code to launch an Extension Development Host with DevNotes loaded.
 
-Click the **bot icon** (🤖) in the DevNotes sidebar top bar. The button detects your extension path and runs `claude mcp add --scope user` to register the server, then confirms with a notification. If Claude Code is not installed it tells you so and links to the download page.
-
-Alternatively, register it from the terminal using the Claude Code CLI:
+To watch for TypeScript changes during development:
 
 ```bash
-claude mcp add --scope user devnotes node /absolute/path/to/DevNotes/mcp-server/dist/index.js
+npm run watch
 ```
 
-The `--scope user` flag registers the server globally across all projects. Claude Code stores the config in its own location per platform — the CLI handles this automatically.
-
-**3. Restart Claude Code** — the `devnotes` server will be available in every session from that point on.
-
-### Workspace detection
-
-The server finds your `.devnotes/` folder automatically — it walks up from the current working directory looking for one. You can override this with an environment variable if needed:
-
-```json
-{
-  "mcpServers": {
-    "devnotes": {
-      "command": "node",
-      "args": ["/path/to/mcp-server/dist/index.js"],
-      "env": { "DEVNOTES_WORKSPACE": "/path/to/your/project" }
-    }
-  }
-}
-```
-
-### Tools
-
-Claude can call these tools at any point in a conversation:
-
-| Tool | What it does |
-|---|---|
-| `create_note` | Creates a new note with title, content, tags, color, optional code link, and optional reminder (`remindAt`) |
-| `get_note` | Retrieves a note by ID or title (fuzzy match). Returns the full content and metadata |
-| `list_notes` | Lists notes with optional filters: tag, search text, branch, or starred status |
-| `append_to_note` | Appends a new section to an existing note — preserves the original body |
-| `update_note` | Updates metadata: title, tags, color, starred, archived, shared, owner, or reminder (`remindAt`) |
-| `complete_todo` | Marks matching `- [ ]` items as done (`- [x]`) inside a note — matched by substring |
-| `delete_note` | Permanently deletes a note. Requires `confirm: true` as a safety guard |
-| `get_todos` | Extracts every unchecked `- [ ]` item across all notes into a unified list |
-| `get_stale_notes` | Finds notes not updated in N days that still have open todos or a bug tag |
-| `note_history` | Shows the git commit history for a note file. Requires the workspace to be a git repo and the note to be tracked by git. |
-| `log_session` | Appends a timestamped Done / In-progress / Blocked entry to a persistent session log. Called automatically at the end of every work session. |
-| `link_github` | Links a note to a GitHub issue or PR URL. Fetches the title and current status (open/closed/merged) from the GitHub API and stores them in the note's frontmatter. |
-| `get_github_context` | Fetches the full context of a linked GitHub issue or PR: description, labels, assignees, and the last 20 comments. Refreshes the cached status automatically. |
-| `search_notes` | Full-text search with ranked results and match snippets. All terms must be present (AND logic). Searches title, content, tags, GitHub title, and code link path. Returns results ordered by relevance with highlighted snippets showing where each term matched. |
-
-### Resources
-
-Resources are data Claude can read passively — without you asking — as background context:
-
-| Resource URI | What it contains |
-|---|---|
-| `devnotes://todos` | All unchecked `- [ ]` items across every note |
-| `devnotes://recent` | Notes created or updated in the last 72 hours |
-| `devnotes://session-log` | The last 5 session log entries (what was worked on in previous Claude Code sessions) |
-| `devnotes://branch` | All notes scoped to the current git branch |
-
-### Prompts
-
-Prompts are pre-built workflows. Invoke them with `/mcp__devnotes__<name>` in Claude Code, or ask Claude to run them by name:
-
-| Prompt | What it does |
-|---|---|
-| `solve` | Loads a note and its linked source file into context, then asks Claude to diagnose and fix the problem. Saves the solution back as an appended `## Solution` section. |
-| `standup` | Reads notes updated in the last 24 hours and writes a Done / Doing / Blocked standup update |
-
-### Example conversations
-
-```
-"I found a null pointer in parseConfig when the input is empty — make a bug note"
-→ Claude calls create_note with the title, tags: ["bug"], color: "orange",
-  and links it to the current file if one is open.
-
-"What are my open todos?"
-→ Claude calls get_todos and returns a grouped list across all notes.
-
-"Mark 'write tests' as done in my Auth bug note"
-→ Claude calls complete_todo, ticking off the matching - [ ] item in place.
-
-"Delete the scratch note from yesterday"
-→ Claude calls delete_note with confirm: true after locating the note by title.
-
-"Look at my 'Auth bug' note and suggest a fix"
-→ Claude calls get_note, reads the content and linked code file,
-  reasons about it, and calls append_to_note to save the solution.
-
-"Generate my standup for today"
-→ Claude runs the standup prompt against notes updated in the last 24 hours.
-
-"Find my notes about JWT token expiry"
-→ Claude calls search_notes with query "JWT token expiry", returns ranked results
-  with snippets showing exactly where each term appears in the note content.
-
-```
-
-### GitHub integration
-
-Link a note to a GitHub issue or PR so Claude can pull full context without leaving your workspace.
-
-**Setup** — click the GitHub icon (🐙) in the DevNotes sidebar top bar. VS Code will prompt you to sign in to GitHub using its built-in OAuth flow — the same one used by GitHub Copilot and the GitHub Pull Requests extension. If you are already signed in to GitHub in your editor, this completes with zero additional clicks.
-
-Once connected, the icon turns green and a `.devnotes/.github-token` file is written locally. The MCP server reads this file automatically — no environment variables or config changes needed.
-
-The token file is gitignored by default (`.devnotes/` ignores everything) and never leaves your machine.
-
-**Sidebar badge**
-
-Once a note is linked, a badge appears directly on the card:
-
-| Status | Appearance |
-|---|---|
-| Open | Green badge with filled dot — `● #42 open` |
-| Closed | Grey dimmed badge — `● #42 closed` |
-| Merged (PR) | Purple badge — `● PR#42 merged` |
-
-Hovering the badge shows the issue title as a tooltip. Clicking it opens the issue or PR in the browser.
-
-**Filtering by GitHub status**
-
-When at least one non-archived note has a GitHub link, a filter bar appears between the tag bar and the card list:
-
-```
-GitHub:  All  ● Open  ● Closed  ● Merged
-```
-
-- Only statuses that exist in the current note list are shown — no ghost chips for unused states
-- Clicking a chip filters the list to notes with that exact status; **All** clears the filter
-- The bar hides automatically when no linked notes are visible (e.g. when the archive view is open)
-
-**Creating an issue from a note**
-
-When GitHub is connected and a note has no existing GitHub link, a circle-dot icon (the GitHub issues icon) appears in the card's action bar. Clicking it:
-
-1. Pre-fills the issue title with the note's title — edit it if needed and press Enter
-2. Uses the workspace's git remote to detect the repo automatically; if the remote isn't a GitHub URL, VS Code asks for `owner/repo`
-3. Posts the note's content as the issue body via the GitHub API
-4. Writes the new issue URL back to the note's frontmatter immediately — the green badge appears on the card straight away
-5. Offers to open the new issue in the browser
-
-**Workflow:**
-
-```
-"Link my 'Auth bug' note to github.com/org/repo/issues/42"
-→ Claude calls link_github — fetches the title and status from GitHub,
-  stores them in the note's frontmatter.
-→ A green "● #42 open" badge appears on the note card immediately.
-
-"What's the full context on the issue linked to 'Auth bug'?"
-→ Claude calls get_github_context — returns the issue description,
-  labels, assignees, and the last 20 comments inline.
-→ The badge status is refreshed automatically.
-```
-
-**Note format with a GitHub link:**
-
-```markdown
----
-id: lp9k3fab
-title: Auth bug
-color: orange
-tags: bug
-github_url: https://github.com/org/repo/issues/42
-github_repo: org/repo
-github_number: 42
-github_type: issue
-github_status: open
-github_title: Token expiry not handled on mobile
-github_status_checked_at: 1745226000000
-createdAt: 1712345678
-updatedAt: 1712349000
----
-```
-
-`github_status` is one of `open`, `closed`, or `merged` (PRs only). It is refreshed automatically whenever `get_github_context` is called.
-
-### Session log
-
-The `log_session` tool writes timestamped entries to a special `session-log` note (`session-log.md` in `.devnotes/`). Over time this becomes a searchable engineering diary — and since the last 5 entries are included as a resource in every session, Claude always starts with context about what you were working on previously.
-
-```
-"We're done for today — log what we did"
-→ Claude calls log_session with a summary of the session's work,
-  what's still in progress, and any blockers.
-```
-
-### Claude Code activity in the feed
-
-Every note the MCP server creates is automatically attributed to **Claude Code** (`owner: 'Claude Code'`). The Activity feed panel surfaces these notes alongside shared teammate notes — Claude's entries appear with a purple **CC** avatar and an **AI** badge so they're immediately distinguishable.
-
-The footer of the activity feed shows a split count: `3 shared notes · 2 from Claude`.
-
-### Sync with the VS Code extension
-
-The MCP server reads and writes `.devnotes/*.md` files directly. Notes created by Claude appear in the sidebar within a second (the extension's file watcher picks them up automatically). If you want to see them immediately, click the **↻ Refresh** button in the DevNotes sidebar.
-
----
-
-## Development
+The webview bundles (`media/editor.js`, `media/sidebar-editor.js`) must be rebuilt manually after changes to files under `src/webview/`:
 
 ```bash
-npm install
-npm run compile
+npm run build:webview
 ```
 
-Press **F5** in VS Code to launch the Extension Development Host.
+---
 
-| Script | Description |
-|---|---|
-| `npm run compile` | Full build (TypeScript + webview) |
-| `npm run watch` | Watch TypeScript files |
-| `npm run lint` | Lint source files |
+## License
 
-## Tech Stack
-
-- TypeScript + VS Code Extension API
-- [Tiptap](https://tiptap.dev/) (rich text editor)
-- [esbuild](https://esbuild.github.io/) (webview bundler)
+MIT
