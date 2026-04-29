@@ -2935,6 +2935,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
       return;
     }
     if (msg.type === 'imageReady') {
+      imageUriMap[msg.storagePath] = msg.src;
       const pending = pendingImageInsertions.get(msg.noteId);
       pendingImageInsertions.delete(msg.noteId);
       if (pending) {
@@ -5154,7 +5155,7 @@ if (searchQuery) {
               });
               return parts.join('<br>');
             }
-            return Array.from(cell.childNodes).map(walk).join('').trim().replace(/\\n+/g, ' ');
+            return Array.from(cell.childNodes).map(walk).join('').trim().replace(/\\n+/g, '<br>');
           };
           const walkRow = tr => {
             const cells = Array.from(tr.querySelectorAll('th, td'));
@@ -5195,6 +5196,10 @@ if (searchQuery) {
       let l = esc(raw)
         .replace(/↵/g,                  '<br>')
         .replace(/&lt;br[^&]*&gt;/gi,   '<br>')
+        .replace(/!\\[([^\\]]*)\\]\\(([^)]+)\\)/g, (_, alt, storagePath) => {
+          const src = imageUriMap[storagePath] || storagePath;
+          return '<img src="' + src + '" alt="' + alt + '" data-storage-path="' + storagePath + '" style="max-width:100%;border-radius:4px;margin:4px 0;display:block;">';
+        })
         .replace(/\\*\\*(.+?)\\*\\*/g, '<strong>$1</strong>')
         .replace(/\\*(.+?)\\*/g,        '<em>$1</em>')
         .replace(/\`(.+?)\`/g,          '<code>$1</code>')

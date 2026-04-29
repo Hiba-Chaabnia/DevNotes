@@ -241,6 +241,15 @@ export class EditorPanel {
       grpLists:     svgIcon(ALL_LUCIDE_NODES['AlignJustify']),
       grpBlocks:    svgIcon(ALL_LUCIDE_NODES['Layers']),
       grpTemplates: svgIcon(ALL_LUCIDE_NODES['LayoutTemplate']),
+      grpTable:    svgIcon(ALL_LUCIDE_NODES['Table']),
+      tableInsert: svgIcon(ALL_LUCIDE_NODES['TableProperties']),
+      rowAbove:    svgIcon(ALL_LUCIDE_NODES['ArrowUpToLine']),
+      rowBelow:    svgIcon(ALL_LUCIDE_NODES['ArrowDownToLine']),
+      rowDelete:   svgIcon(ALL_LUCIDE_NODES['Rows2']),
+      colBefore:   svgIcon(ALL_LUCIDE_NODES['ArrowLeftToLine']),
+      colAfter:    svgIcon(ALL_LUCIDE_NODES['ArrowRightToLine']),
+      colDelete:   svgIcon(ALL_LUCIDE_NODES['Columns2']),
+      tableDelete: svgIcon(ALL_LUCIDE_NODES['Grid2X2X']),
     };
 
     const checkmarkUri = 'data:image/svg+xml,' + encodeURIComponent(
@@ -530,6 +539,20 @@ export class EditorPanel {
       <button data-action="taskList"    title="Task list">${ico.listChecks}</button>
       <button data-action="indent"      title="Indent (Tab)">${ico.indent}</button>
       <button data-action="outdent"     title="Outdent (Shift+Tab)">${ico.outdent}</button>
+    </div>
+  </div>
+  <div class="tb-sep"></div>
+  <div class="tb-grp" id="grp-table">
+    <button class="tb-grp-toggle" title="Table">${ico.grpTable}</button>
+    <div class="tb-grp-content">
+      <button data-action="insertTable"  title="Insert table">${ico.tableInsert}</button>
+      <button data-action="addRowBefore" title="Add row above">${ico.rowAbove}</button>
+      <button data-action="addRowAfter"  title="Add row below">${ico.rowBelow}</button>
+      <button data-action="deleteRow"    title="Delete row">${ico.rowDelete}</button>
+      <button data-action="addColBefore" title="Add column before">${ico.colBefore}</button>
+      <button data-action="addColAfter"  title="Add column after">${ico.colAfter}</button>
+      <button data-action="deleteCol"    title="Delete column">${ico.colDelete}</button>
+      <button data-action="deleteTable"  title="Delete table">${ico.tableDelete}</button>
     </div>
   </div>
   <div class="tb-sep"></div>

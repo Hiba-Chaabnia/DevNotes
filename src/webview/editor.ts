@@ -217,11 +217,15 @@ const FixedTable = Table.extend({
                   parts.push(`- [${checked}] ${itemText(item)}`);
                 });
                 state.write(parts.join('<br>'));
-              } else if (cell.textContent.trim()) {
-                // serializeCellInline handles hardBreak → <br> so that line breaks
-                // inside cells round-trip correctly (state.renderInline would use
-                // the default hardBreak serializer which emits \\\n, terminating the row).
-                state.write(serializeCellInline(cell));
+              } else {
+                // Collect all paragraph children (Enter in a cell creates a new paragraph,
+                // not a hardBreak) and join with <br> so line breaks survive the round-trip.
+                const parts: string[] = [];
+                col.forEach((child: any) => {
+                  const text = serializeCellInline(child);
+                  if (text.trim()) parts.push(text);
+                });
+                if (parts.length) state.write(parts.join('<br>'));
               }
             });
             state.write(' |');
@@ -540,10 +544,18 @@ function fromEditorMd(md: string): string {
       if (action in ACTIVE_CHECKS) {
         btn.classList.toggle('is-active', ACTIVE_CHECKS[action]());
       }
-      if (action === 'undo')    btn.disabled = !editor.can().undo();
-      if (action === 'redo')    btn.disabled = !editor.can().redo();
-      if (action === 'indent')  btn.disabled = !canIndent();
-      if (action === 'outdent') btn.disabled = !canOutdent();
+      if (action === 'undo')        btn.disabled = !editor.can().undo();
+      if (action === 'redo')        btn.disabled = !editor.can().redo();
+      if (action === 'indent')      btn.disabled = !canIndent();
+      if (action === 'outdent')     btn.disabled = !canOutdent();
+      const inTable = editor.isActive('table');
+      if (action === 'addRowBefore') btn.disabled = !inTable;
+      if (action === 'addRowAfter')  btn.disabled = !inTable;
+      if (action === 'deleteRow')    btn.disabled = !inTable;
+      if (action === 'addColBefore') btn.disabled = !inTable;
+      if (action === 'addColAfter')  btn.disabled = !inTable;
+      if (action === 'deleteCol')    btn.disabled = !inTable;
+      if (action === 'deleteTable')  btn.disabled = !inTable;
     });
     // Reflect active state on each group's toggle button
     toolbarEl.querySelectorAll<HTMLElement>('.tb-grp').forEach(grp => {
@@ -584,6 +596,14 @@ function fromEditorMd(md: string): string {
         if (!editor.chain().focus().liftListItem('listItem').run())
              editor.chain().focus().liftListItem('taskItem').run();
         break;
+      case 'insertTable':  ch.insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run(); break;
+      case 'addRowBefore': ch.addRowBefore().run();  break;
+      case 'addRowAfter':  ch.addRowAfter().run();   break;
+      case 'deleteRow':    ch.deleteRow().run();     break;
+      case 'addColBefore': ch.addColumnBefore().run(); break;
+      case 'addColAfter':  ch.addColumnAfter().run();  break;
+      case 'deleteCol':    ch.deleteColumn().run();  break;
+      case 'deleteTable':  ch.deleteTable().run();   break;
       case 'blockquote':  ch.toggleBlockquote().run();          break;
       case 'codeBlock':   ch.toggleCodeBlock().run();           break;
       case 'hr':          ch.setHorizontalRule().run();         break;
