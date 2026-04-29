@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import * as fs      from 'fs';
 import * as path    from 'path';
-import { NoteStorage } from './services/NoteStorage';
+import { NoteStorage, Note } from './services/NoteStorage';
 import { SidebarView } from './views/SidebarView';
 import { EditorPanel } from './views/EditorPanel';
 import { GutterController } from './controllers/GutterController';
@@ -214,8 +214,9 @@ async function _activate(context: vscode.ExtensionContext): Promise<void> {
       if (editor) {
         const filePath = vscode.workspace.asRelativePath(editor.document.uri, false);
         if (filePath !== editor.document.uri.fsPath) {
-          const line = editor.selection.active.line + 1;
-          codeLink = { file: filePath, line };
+          const line        = editor.selection.active.line + 1;
+          const lineContent = editor.document.lineAt(line - 1).text;
+          codeLink = { file: filePath, line, lineContent };
           prompt = `Note linked to ${filePath}:${line}`;
         }
       }
@@ -378,6 +379,15 @@ async function _activate(context: vscode.ExtensionContext): Promise<void> {
     })
   );
 
+  // Recover drifted code-link line numbers when a file is opened or saved.
+  // onDidOpenTextDocument covers first-open and external changes (e.g. git pull).
+  // onDidSaveTextDocument covers edits made while the document was already in memory —
+  // VS Code keeps documents cached after a tab is closed, so open never fires again.
+  context.subscriptions.push(
+    vscode.workspace.onDidOpenTextDocument(doc => recoverCodeLinkDrift(doc, storage, sidebar, gutterController)),
+    vscode.workspace.onDidSaveTextDocument(doc => recoverCodeLinkDrift(doc, storage, sidebar, gutterController)),
+  );
+
   // Auto-update codeLinks when files are renamed inside VS Code
   context.subscriptions.push(
     vscode.workspace.onDidRenameFiles(async (event) => {
@@ -397,6 +407,64 @@ async function _activate(context: vscode.ExtensionContext): Promise<void> {
         statusBar.refresh();
       }
     })
+  );
+
+  // Fallback rename detection for macOS / Linux where external renames surface
+  // as a delete + create pair rather than a single onDidRenameFiles event.
+  // On Windows, onDidRenameFiles fires first and updates the notes before the
+  // deletion is cached here, so the two paths never both trigger for the same rename.
+  const recentDeletions = new Map<string, { notes: Note[]; ts: number }>();
+  const RENAME_WINDOW_MS = 2000;
+
+  context.subscriptions.push(
+    vscode.workspace.onDidDeleteFiles(event => {
+      const now = Date.now();
+      let anyStaleLinkAffected = false;
+      for (const { fsPath } of event.files) {
+        const relPath  = vscode.workspace.asRelativePath(fsPath, false);
+        const affected = storage.getNotes().filter(n => n.codeLink?.file === relPath);
+        if (affected.length > 0) {
+          recentDeletions.set(relPath, { notes: affected, ts: now });
+          for (const note of affected) sidebar.invalidateStaleLinkCache(note.id);
+          anyStaleLinkAffected = true;
+        }
+      }
+      if (anyStaleLinkAffected) sidebar.push();
+    }),
+
+    vscode.workspace.onDidCreateFiles(async event => {
+      const now = Date.now();
+      // Evict expired entries
+      for (const [p, entry] of recentDeletions) {
+        if (now - entry.ts > RENAME_WINDOW_MS) recentDeletions.delete(p);
+      }
+      if (recentDeletions.size === 0) return;
+
+      for (const { fsPath } of event.files) {
+        const newRelPath = vscode.workspace.asRelativePath(fsPath, false);
+        const newDir     = newRelPath.replace(/\\/g, '/').split('/').slice(0, -1).join('/');
+
+        for (const [oldRelPath, { notes }] of recentDeletions) {
+          const oldDir = oldRelPath.replace(/\\/g, '/').split('/').slice(0, -1).join('/');
+          if (oldDir !== newDir) continue;
+
+          const action = await vscode.window.showInformationMessage(
+            `DevNotes: "${path.basename(oldRelPath)}" was renamed to "${path.basename(newRelPath)}". Update code links?`,
+            'Update', 'Ignore'
+          );
+          if (action === 'Update') {
+            for (const note of notes) {
+              await storage.updateNote(note.id, { codeLink: { ...note.codeLink!, file: newRelPath } });
+            }
+            sidebar.push();
+            gutterController.refresh();
+            statusBar.refresh();
+          }
+          recentDeletions.delete(oldRelPath);
+          break;
+        }
+      }
+    }),
   );
 }
 
@@ -440,6 +508,85 @@ function refreshBranch(sidebar: SidebarView, rootPath: string): void {
     sidebar.setAvailableBranches(getLocalBranches(rootPath));
   } catch (err) {
     console.error('[DevNotes] refreshBranch error:', err);
+  }
+}
+
+// Searches ±100 lines around a note's stored line for the stored line content.
+// If found at a different position, updates the note and refreshes the UI.
+// Lines shorter than 10 characters are skipped — too common to match reliably.
+// Notes sharing identical lineContent are grouped and assigned to distinct
+// occurrences via greedy-nearest-with-exclusion, preventing them from collapsing
+// to the same line when large blocks of code are inserted above all duplicates.
+function recoverCodeLinkDrift(
+  document        : vscode.TextDocument,
+  storage         : NoteStorage,
+  sidebar         : SidebarView,
+  gutterController: GutterController,
+): void {
+  const relPath = vscode.workspace.asRelativePath(document.uri, false);
+  if (relPath === document.uri.fsPath) return;
+
+  const eligible = storage.getNotes().filter(n => {
+    const cl = n.codeLink;
+    return cl?.file === relPath && cl.lineContent && cl.lineContent.trim().length >= 10;
+  });
+  if (eligible.length === 0) return;
+
+  // Group by trimmed lineContent so notes sharing identical text are assigned
+  // to distinct occurrences rather than all snapping to the nearest one.
+  const groups = new Map<string, typeof eligible>();
+  for (const note of eligible) {
+    const key = note.codeLink!.lineContent!.trim();
+    const arr = groups.get(key) ?? [];
+    arr.push(note);
+    groups.set(key, arr);
+  }
+
+  let anyUpdated = false;
+  const radius = 100;
+
+  for (const [target, group] of groups) {
+    // Build a search window that covers all stored positions in the group.
+    const storedIndices = group.map(n => n.codeLink!.line - 1);
+    const from = Math.max(0, Math.min(...storedIndices) - radius);
+    const to   = Math.min(document.lineCount - 1, Math.max(...storedIndices) + radius);
+
+    // Collect all matching line indices within the window (ascending).
+    const matches: number[] = [];
+    for (let i = from; i <= to; i++) {
+      if (document.lineAt(i).text.trim() === target) matches.push(i);
+    }
+    if (matches.length === 0) continue;
+
+    // Sort notes by stored position. Process each in order, assigning it the
+    // closest unclaimed match so no two notes end up on the same line.
+    const sortedNotes      = [...group].sort((a, b) => a.codeLink!.line - b.codeLink!.line);
+    const availableMatches = [...matches];
+
+    for (const note of sortedNotes) {
+      const storedIdx = note.codeLink!.line - 1;
+      let bestMatchIdx = -1;
+      let bestDist     = Infinity;
+      let bestArrIdx   = -1;
+
+      for (let j = 0; j < availableMatches.length; j++) {
+        const dist = Math.abs(availableMatches[j] - storedIdx);
+        if (dist < bestDist) { bestDist = dist; bestMatchIdx = availableMatches[j]; bestArrIdx = j; }
+      }
+
+      if (bestMatchIdx === -1) continue;
+      availableMatches.splice(bestArrIdx, 1); // claim this match
+
+      if (bestMatchIdx !== storedIdx) {
+        storage.updateNote(note.id, { codeLink: { ...note.codeLink!, line: bestMatchIdx + 1 } });
+        anyUpdated = true;
+      }
+    }
+  }
+
+  if (anyUpdated) {
+    sidebar.push();
+    gutterController.refresh();
   }
 }
 

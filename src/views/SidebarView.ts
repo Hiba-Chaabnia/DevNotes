@@ -14,7 +14,7 @@ function githubSvg(size = 14): string {
 
 type ToExt =
   | { type: 'ready' }
-  | { type: 'createNote'; title: string; tags: string[]; templateId?: string; branch?: string; body?: string; codeLink?: { file: string; line: number } }
+  | { type: 'createNote'; title: string; tags: string[]; templateId?: string; branch?: string; body?: string; codeLink?: { file: string; line: number; lineContent?: string } }
   | { type: 'requestCodeLink' }
   | { type: 'setBranchScope'; noteId: string; branch: string | null }
   | { type: 'branchFilterChanged'; active: boolean }
@@ -528,8 +528,9 @@ export class SidebarView implements vscode.WebviewViewProvider {
         if (!editor) { this.view?.webview.postMessage({ type: 'setCodeLink', file: null }); break; }
         const filePath = vscode.workspace.asRelativePath(editor.document.uri, false);
         if (filePath === editor.document.uri.fsPath) { this.view?.webview.postMessage({ type: 'setCodeLink', file: null }); break; }
-        const line = editor.selection.active.line + 1;
-        this.view?.webview.postMessage({ type: 'setCodeLink', file: filePath, line });
+        const line        = editor.selection.active.line + 1;
+        const lineContent = editor.document.lineAt(line - 1).text;
+        this.view?.webview.postMessage({ type: 'setCodeLink', file: filePath, line, lineContent });
         break;
       }
 
@@ -859,6 +860,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
       sortAlpha:     JSON.stringify(svgIcon(ALL_LUCIDE_NODES['ArrowDownAZ'],        13)),
       noteLinkIcon:  JSON.stringify(svgIcon(ALL_LUCIDE_NODES['Files'],              11)),
       codeLinkIcon:  JSON.stringify(svgIcon(ALL_LUCIDE_NODES['FileSymlink'],        11)),
+      brokenLinkIcon:JSON.stringify(svgIcon(ALL_LUCIDE_NODES['FileX'],             11)),
       codeLinkMenu:  JSON.stringify(svgIcon(ALL_LUCIDE_NODES['FileSymlink'],        14)),
       conflictIcon:  JSON.stringify(svgIcon(ALL_LUCIDE_NODES['TriangleAlert'],      11)),
       archiveIcon:   JSON.stringify(svgIcon(ALL_LUCIDE_NODES['Archive'],            11)),
@@ -2256,10 +2258,15 @@ export class SidebarView implements vscode.WebviewViewProvider {
     flex-shrink: 0;
   }
   .code-link-chip.stale {
-    opacity: .5;
-    text-decoration: line-through;
-    cursor: default;
+    background: rgba(226, 165, 75, .15);
+    border-color: var(--vscode-editorWarning-foreground, #e2a54b);
+    color: var(--vscode-editorWarning-foreground, #e2a54b);
     pointer-events: none;
+    cursor: not-allowed;
+  }
+  .code-link-chip.stale .chip-remove {
+    pointer-events: all;
+    cursor: pointer;
   }
   .note-links-row { display: contents; } /* flattened into row2 */
   .note-link-chip {
@@ -2918,7 +2925,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
   window.addEventListener('message', ({ data: msg }) => {
     if (msg.type === 'setCodeLink') {
       if (pendingCodeLinkCallback) {
-        pendingCodeLinkCallback(msg.file ?? null, msg.line ?? null);
+        pendingCodeLinkCallback(msg.file ?? null, msg.line ?? null, msg.lineContent ?? null);
         pendingCodeLinkCallback = null;
       }
       return;
@@ -3241,8 +3248,8 @@ export class SidebarView implements vscode.WebviewViewProvider {
       }
       if (draftCodeLink) return;
       vscode.postMessage({ type: 'requestCodeLink' });
-      pendingCodeLinkCallback = (file, line) => {
-        if (file) draftCodeLink = { file, line };
+      pendingCodeLinkCallback = (file, line, lineContent) => {
+        if (file) draftCodeLink = { file, line, ...(lineContent ? { lineContent } : {}) };
         renderFileLinkChip();
       };
     });
@@ -4338,17 +4345,17 @@ if (searchQuery) {
     if (note.codeLink) {
       const shortName  = note.codeLink.file.split('/').pop() || note.codeLink.file;
       const staleTitle = note.codeLink.file + ':' + note.codeLink.line + ' — file not found';
-      const chip = makeChip('button', 'code-link-chip' + (note.codeLinkStale ? ' stale' : ''), ${jsSvg.codeLinkIcon}, shortName + ':' + note.codeLink.line, 'chip-label');
+      const chip = makeChip('button', 'code-link-chip' + (note.codeLinkStale ? ' stale' : ''), note.codeLinkStale ? ${jsSvg.brokenLinkIcon} : ${jsSvg.codeLinkIcon}, shortName + ':' + note.codeLink.line, 'chip-label');
       chip.title = note.codeLinkStale ? staleTitle : note.codeLink.file + ':' + note.codeLink.line + ' — click to jump';
       chip.setAttribute('aria-label', note.codeLinkStale ? 'Broken link: ' + staleTitle : 'Jump to ' + note.codeLink.file + ' line ' + note.codeLink.line);
       if (!note.codeLinkStale) {
         chip.addEventListener('click', e => { e.stopPropagation(); vscode.postMessage({ type: 'jumpToLink', file: note.codeLink.file, line: note.codeLink.line }); });
-        const removeBtn = mkEl('span', 'chip-remove');
-        removeBtn.innerHTML = ${jsSvg.unlinkSmall};
-        removeBtn.title = 'Remove code link';
-        removeBtn.addEventListener('click', e => { e.stopPropagation(); vscode.postMessage({ type: 'removeCodeLink', noteId: note.id }); });
-        chip.appendChild(removeBtn);
       }
+      const removeBtn = mkEl('span', 'chip-remove');
+      removeBtn.innerHTML = ${jsSvg.unlinkSmall};
+      removeBtn.title = note.codeLinkStale ? 'Remove broken link' : 'Remove code link';
+      removeBtn.addEventListener('click', e => { e.stopPropagation(); vscode.postMessage({ type: 'removeCodeLink', noteId: note.id }); });
+      chip.appendChild(removeBtn);
       row2.appendChild(chip);
     }
 

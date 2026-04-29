@@ -25,6 +25,7 @@ export class GutterController implements vscode.Disposable {
       gutterIconSize: 'contain',
       overviewRulerColor: new vscode.ThemeColor('editorOverviewRuler.warningForeground'),
       overviewRulerLane: vscode.OverviewRulerLane.Left,
+      rangeBehavior: vscode.DecorationRangeBehavior.ClosedClosed,
     });
 
     // Hover provider — fires when hovering line text in any file-scheme document.

@@ -6,8 +6,9 @@ export { NOTE_COLORS };
 // ─── Data model ──────────────────────────────────────────────────────────────
 
 export interface CodeLink {
-  file: string;   // workspace-relative path, e.g. "src/utils.ts"
-  line: number;   // 1-based line number
+  file: string;        // workspace-relative path, e.g. "src/utils.ts"
+  line: number;        // 1-based line number
+  lineContent?: string; // text of the linked line at creation time, used for drift recovery
 }
 
 export interface GitHubLink {
@@ -305,7 +306,8 @@ export class NoteStorage {
     // Never overwrite a conflicted file — the raw conflict markers must stay on disk
     // until the user resolves them through the conflict panel.
     if (this.notes[idx].conflicted) return;
-    this.notes[idx] = { ...this.notes[idx], ...changes, updatedAt: Date.now() };
+    const touchedAt = ('title' in changes || 'content' in changes) ? Date.now() : this.notes[idx].updatedAt;
+    this.notes[idx] = { ...this.notes[idx], ...changes, updatedAt: touchedAt };
     await this.writeNote(this.notes[idx]);
     if ('shared' in changes) {
       await this.updateGitignore(id, changes.shared ?? false);
@@ -615,7 +617,11 @@ export class NoteStorage {
         starred  : meta.starred  === true,
         shared   : meta.shared   === true || undefined,
         codeLink : (typeof meta.codeLink_file === 'string' && meta.codeLink_file && meta.codeLink_line !== undefined)
-          ? { file: meta.codeLink_file, line: Number(meta.codeLink_line) }
+          ? {
+              file       : meta.codeLink_file,
+              line       : Number(meta.codeLink_line),
+              ...(meta.codeLink_lineContent ? { lineContent: String(meta.codeLink_lineContent) } : {}),
+            }
           : undefined,
         branch     : typeof meta.branch === 'string' && meta.branch ? meta.branch : undefined,
         owner      : typeof meta.owner  === 'string' && meta.owner  ? meta.owner  : undefined,
@@ -686,6 +692,7 @@ export class NoteStorage {
       if (note.codeLink) {
         meta.codeLink_file = note.codeLink.file;
         meta.codeLink_line = note.codeLink.line;
+        if (note.codeLink.lineContent) meta.codeLink_lineContent = note.codeLink.lineContent;
       }
       await vscode.workspace.fs.writeFile(
         this.noteUri(note.id),
