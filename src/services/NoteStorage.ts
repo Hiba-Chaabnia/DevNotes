@@ -306,7 +306,9 @@ export class NoteStorage {
     // Never overwrite a conflicted file — the raw conflict markers must stay on disk
     // until the user resolves them through the conflict panel.
     if (this.notes[idx].conflicted) return;
-    const touchedAt = ('title' in changes || 'content' in changes) ? Date.now() : this.notes[idx].updatedAt;
+    const titleChanged   = 'title'   in changes && changes.title   !== this.notes[idx].title;
+    const contentChanged = 'content' in changes && changes.content !== this.notes[idx].content;
+    const touchedAt = (titleChanged || contentChanged) ? Date.now() : this.notes[idx].updatedAt;
     this.notes[idx] = { ...this.notes[idx], ...changes, updatedAt: touchedAt };
     await this.writeNote(this.notes[idx]);
     if ('shared' in changes) {

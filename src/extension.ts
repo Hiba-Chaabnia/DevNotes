@@ -503,7 +503,7 @@ async function notifyConflict(
   sidebar : SidebarView,
 ): Promise<void> {
   const action = await vscode.window.showWarningMessage(
-    `⚠ Conflict in shared note: "${title}"`,
+    `Conflict in shared note: "${title}"`,
     'Resolve',
     'Dismiss',
   );
