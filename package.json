@@ -129,10 +129,12 @@
   },
   "scripts": {
     "vscode:prepublish": "npm run compile",
-    "compile": "tsc -p ./ && npm run build:webview",
+    "compile": "tsc -p ./ && npm run bundle:extension && npm run build:webview",
+    "bundle:extension": "esbuild src/extension.ts --bundle --outfile=out/extension.js --platform=node --external:vscode --minify",
     "build:webview": "npm run build:editor && npm run build:sidebar-editor",
     "build:editor": "esbuild src/webview/editor.ts --bundle --outfile=media/editor.js --platform=browser --target=es2020 --minify",
     "build:sidebar-editor": "esbuild src/webview/sidebar-editor.ts --bundle --outfile=media/sidebar-editor.js --platform=browser --target=es2020 --minify",
+    "package": "vsce package",
     "watch": "tsc -watch -p ./",
     "lint": "eslint src --ext ts"
   },
@@ -143,14 +145,14 @@
     "typescript": "^5.3.0"
   },
   "dependencies": {
-    "@tiptap/core": "^3.23.6",
-    "@tiptap/extension-image": "^3.23.6",
-    "@tiptap/extension-placeholder": "^3.23.6",
-    "@tiptap/extension-table": "^3.23.6",
-    "@tiptap/extension-task-item": "^3.23.6",
-    "@tiptap/extension-task-list": "^3.23.6",
-    "@tiptap/pm": "^3.23.6",
-    "@tiptap/starter-kit": "^3.23.6",
+    "@tiptap/core": "^3.27.1",
+    "@tiptap/extension-image": "^3.27.1",
+    "@tiptap/extension-placeholder": "^3.27.1",
+    "@tiptap/extension-table": "^3.27.1",
+    "@tiptap/extension-task-item": "^3.27.1",
+    "@tiptap/extension-task-list": "^3.27.1",
+    "@tiptap/pm": "^3.27.1",
+    "@tiptap/starter-kit": "^3.27.1",
     "lucide": "^1.12.0",
     "tiptap-markdown": "^0.9.0"
   }
