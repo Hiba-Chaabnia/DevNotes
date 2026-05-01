@@ -63,6 +63,10 @@ function serializeCellInline(paraNode: any): string {
     } else if (child.type.name === 'hardBreak') {
       flushLink();
       out += '<br>';
+    } else if (child.type.name === 'image') {
+      flushLink();
+      const { src = '', alt = '' } = child.attrs;
+      out += `![${alt}](${src})`;
     }
   });
   flushLink();
@@ -91,6 +95,15 @@ function cleanCellPrefix(nodes: any[], prefixRe: RegExp, schema: any): any[] {
 const CellListNormalizer = Extension.create({
   name: 'cellListNormalizer',
 
+  // The editor constructor sets content directly on the initial state — no
+  // transaction is dispatched, so appendTransaction never fires. Kick it off
+  // manually with a meta transaction so cells normalise on first open.
+  onCreate() {
+    this.editor.view.dispatch(
+      this.editor.state.tr.setMeta('cellListNormalizerInit', true)
+    );
+  },
+
   addProseMirrorPlugins() {
     const { schema } = this.editor;
 
@@ -98,7 +111,7 @@ const CellListNormalizer = Extension.create({
       new Plugin({
         key: new PluginKey('cellListNormalizer'),
         appendTransaction(transactions, _old, newState) {
-          if (!transactions.some(t => t.docChanged)) return null;
+          if (!transactions.some(t => t.docChanged || t.getMeta('cellListNormalizerInit'))) return null;
 
           const tr = newState.tr;
           let modified = false;
@@ -122,46 +135,54 @@ const CellListNormalizer = Extension.create({
               else cur.push(child);
             });
             segs.push(cur);
-            if (segs.length < 2) return false; // single segment — not a list
 
             // Detect list type from the first segment's raw text.
             const segText = (seg: any[]) => seg.map((n: any) => n.isText ? n.text : '').join('');
             const t0 = segText(segs[0]);
-            const isTask    = /^- \[[ x]\] /i.test(t0);
-            const isBullet  = !isTask && /^- /.test(t0);
-            const isOrdered = !isTask && !isBullet && /^\d+\. /.test(t0);
+            const isTask    = /^- \[[ x]\]( |$)/i.test(t0);
+            const isBullet  = !isTask && /^-( |$)/.test(t0);
+            const isOrdered = !isTask && !isBullet && /^\d+\.( |$)/.test(t0);
             if (!isTask && !isBullet && !isOrdered) return false;
 
             // All segments must match the same type.
             if (!segs.every((seg: any[]) => {
               const t = segText(seg);
-              if (isTask)    return /^- \[[ x]\] /i.test(t);
-              if (isBullet)  return /^- /.test(t);
-              return /^\d+\. /.test(t);
+              if (isTask)    return /^- \[[ x]\]( |$)/i.test(t);
+              if (isBullet)  return /^-( |$)/.test(t);
+              return /^\d+\.( |$)/.test(t);
             })) return false;
 
             const mkPara = (children: any[]) =>
               schema.nodes.paragraph.create(null, children.length ? children : []);
+
+            // Block nodes (e.g. images, inline:false) cannot be children of a
+            // paragraph. Separate them and place them as siblings of the paragraph
+            // inside the listItem / taskItem, which allow `paragraph block*`.
+            const mkItemChildren = (seg: any[], prefixRe: RegExp): any[] => {
+              const nodes = cleanCellPrefix(seg, prefixRe, schema);
+              const inlines = nodes.filter((n: any) => n.isText || (n.type && n.type.isInline));
+              const blocks  = nodes.filter((n: any) => !n.isText && n.type && !n.type.isInline);
+              const para    = mkPara(inlines.length ? inlines : []);
+              return blocks.length ? [para, ...blocks] : [para];
+            };
 
             let listNode: any;
             if (isTask) {
               listNode = schema.nodes.taskList.create(null,
                 segs.map((seg: any[]) => {
                   const raw = segText(seg);
-                  const checked = /^- \[x\] /i.test(raw);
+                  const checked = /^- \[x\]( |$)/i.test(raw);
                   return schema.nodes.taskItem.create({ checked },
-                    mkPara(cleanCellPrefix(seg, /^- \[[ x]\] /i, schema)));
+                    mkItemChildren(seg, /^- \[[ x]\]( |$)/i));
                 }));
             } else if (isBullet) {
               listNode = schema.nodes.bulletList.create(null,
                 segs.map((seg: any[]) =>
-                  schema.nodes.listItem.create(null,
-                    mkPara(cleanCellPrefix(seg, /^- /, schema)))));
+                  schema.nodes.listItem.create(null, mkItemChildren(seg, /^-( |$)/))));
             } else {
               listNode = schema.nodes.orderedList.create(null,
                 segs.map((seg: any[]) =>
-                  schema.nodes.listItem.create(null,
-                    mkPara(cleanCellPrefix(seg, /^\d+\. /, schema)))));
+                  schema.nodes.listItem.create(null, mkItemChildren(seg, /^\d+\.( |$)/))));
             }
 
             // pos is the tableCell position; pos+1 is where its paragraph starts.
@@ -185,9 +206,20 @@ const FixedTable = Table.extend({
       markdown: {
         serialize(state: any, node: any) {
           // Helper: get the markdown text of a list item, preserving inline marks.
+          // A pasted block image becomes a sibling of the paragraph (not inside it),
+          // so we walk all children and concatenate paragraph text + image markdown.
           const itemText = (item: any): string => {
-            const para = item.firstChild;
-            return para ? serializeCellInline(para) : item.textContent;
+            const parts: string[] = [];
+            item.forEach((child: any) => {
+              if (child.type.name === 'paragraph') {
+                const t = serializeCellInline(child);
+                if (t) parts.push(t);
+              } else if (child.type.name === 'image') {
+                const { src = '', alt = '' } = child.attrs;
+                parts.push(`![${alt}](${src})`);
+              }
+            });
+            return parts.join(' ').trim();
           };
 
           state.inTable = true;
@@ -357,11 +389,9 @@ const IndentLimiter = Extension.create({
   addKeyboardShortcuts() {
     return {
       Tab: () => {
+        if (this.editor.isActive('taskItem')) return true; // no nested tasks
         if (listDepth(this.editor) >= MAX_LIST_DEPTH) return true;
-        return (
-          this.editor.commands.sinkListItem('listItem') ||
-          this.editor.commands.sinkListItem('taskItem')
-        );
+        return this.editor.commands.sinkListItem('listItem');
       },
     };
   },
@@ -381,6 +411,11 @@ function toEditorMd(md: string): string {
   // a task item. Pad empty task items with a ZWS so the parser creates a real
   // task node; fromEditorMd strips it back before saving.
   result = result.replace(/^(- \[[ x]\] *)$/gm, '$1​');
+
+  // tiptap-markdown parses `## ` at the start of list item content as an ATX
+  // heading (per CommonMark), then lifts it out since headings can't nest inside
+  // listItem — corrupting the note. Escape the `#` so it's treated as literal text.
+  result = result.replace(/^([ \t]*(?:[-*+]|\d+[.)]) +)(#{1,6}) /gm, '$1\\$2 ');
 
   // tiptap-markdown needs \n\n between paragraphs to create separate nodes.
   // Our storage uses \n (from htmlToMarkdown). Insert a blank line between
@@ -410,10 +445,9 @@ function toEditorMd(md: string): string {
 
 function fromEditorMd(md: string): string {
   return md
-    // Convert underline spans; skip if content is only whitespace/newlines
+    // Convert underline spans; skip only truly empty spans (not whitespace-only)
     .replace(/<u>([\s\S]*?)<\/u>/g, (_, inner) => {
-      const c = inner.trim();
-      return c ? `++${c}++` : '';
+      return inner.length ? `++${inner}++` : '';
     })
     // Remove lone formatting markers that appear between paragraph breaks
     // (tiptap-markdown emits these for empty paragraphs with an active mark)
@@ -435,14 +469,21 @@ function fromEditorMd(md: string): string {
   const titleEl  = document.getElementById('title-input') as HTMLInputElement | null;
 
   let saveTimer: ReturnType<typeof setTimeout> | null = null;
+  // Null until the post-init baseline is captured; save() is a no-op until then.
+  let lastSentContent: string | null = null;
+  let lastSavedTitle = typeof __INITIAL_TITLE__ !== 'undefined' ? __INITIAL_TITLE__ : '';
 
   // ── Tiptap instance ──────────────────────────────────────────────────────
   // ── Title input ──────────────────────────────────────────────────────────
   if (titleEl) {
-    titleEl.value = typeof __INITIAL_TITLE__ !== 'undefined' ? __INITIAL_TITLE__ : '';
+    titleEl.value = lastSavedTitle;
     titleEl.addEventListener('blur', () => {
       const t = titleEl!.value.trim();
-      if (t) vscode.postMessage({ type: 'saveTitle', title: t });
+      // Only send if the title actually changed (blur fires on autofocus too).
+      if (t && t !== lastSavedTitle) {
+        lastSavedTitle = t;
+        vscode.postMessage({ type: 'saveTitle', title: t });
+      }
     });
     titleEl.addEventListener('keydown', (e: KeyboardEvent) => {
       if (e.key === 'Enter')  { e.preventDefault(); titleEl!.blur(); }
@@ -457,7 +498,7 @@ function fromEditorMd(md: string): string {
         heading: { levels: [1, 2, 3] },
       }),
       TaskList,
-      TaskItem.configure({ nested: true }),
+      TaskItem.configure({ nested: false }),
       Image.configure({ inline: false, allowBase64: true }),
       Underline,
       Link.configure({ openOnClick: false, autolink: true }),
@@ -509,9 +550,19 @@ function fromEditorMd(md: string): string {
     },
   });
 
+  // Capture round-trip baseline AFTER autofocus + appendTransaction plugins settle.
+  // Until then lastSentContent is null and save() is a no-op.
+  setTimeout(() => {
+    const s = editor.storage as unknown as Record<string, { getMarkdown(): string }>;
+    lastSentContent = fromEditorMd(s['markdown'].getMarkdown());
+  }, 0);
+
   function save() {
+    if (lastSentContent === null) return; // init not complete yet
     const storage = editor.storage as unknown as Record<string, { getMarkdown(): string }>;
     const md = fromEditorMd(storage['markdown'].getMarkdown());
+    if (md === lastSentContent) { statusEl.textContent = 'Saved'; return; }
+    lastSentContent = md;
     vscode.postMessage({ type: 'save', content: md });
     statusEl.textContent = 'Saved';
   }
@@ -534,7 +585,7 @@ function fromEditorMd(md: string): string {
     link:        () => editor.isActive('link'),
   };
 
-  const canIndent  = () => listDepth(editor) < MAX_LIST_DEPTH && (editor.can().sinkListItem('listItem') || editor.can().sinkListItem('taskItem'));
+  const canIndent  = () => listDepth(editor) < MAX_LIST_DEPTH && editor.can().sinkListItem('listItem');
   const canOutdent = () => editor.can().liftListItem('listItem') || editor.can().liftListItem('taskItem');
 
   function syncToolbar() {
@@ -589,8 +640,7 @@ function fromEditorMd(md: string): string {
       case 'orderedList': ch.toggleOrderedList().run();         break;
       case 'taskList':    ch.toggleTaskList().run();            break;
       case 'indent':
-        if (!editor.chain().focus().sinkListItem('listItem').run())
-             editor.chain().focus().sinkListItem('taskItem').run();
+        editor.chain().focus().sinkListItem('listItem').run();
         break;
       case 'outdent':
         if (!editor.chain().focus().liftListItem('listItem').run())
@@ -638,8 +688,14 @@ function fromEditorMd(md: string): string {
     if (data?.type === 'setContent') {
       // Pass emitUpdate:false so auto-save doesn't fire on programmatic updates
       editor.commands.setContent(toEditorMd(data.content ?? ''), { emitUpdate: false } as never);
+      // Refresh baseline so the next save() compares against this new content.
+      setTimeout(() => {
+        const s = editor.storage as unknown as Record<string, { getMarkdown(): string }>;
+        lastSentContent = fromEditorMd(s['markdown'].getMarkdown());
+      }, 0);
       if (titleEl && data.title !== undefined) {
         titleEl.value = data.title;
+        lastSavedTitle = data.title;
       }
     }
     if (data?.type === 'insertTemplate') {

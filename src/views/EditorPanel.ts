@@ -388,6 +388,7 @@ export class EditorPanel {
   .ProseMirror h3 { font-size: 1.15em; font-weight: 700; margin: .8em 0 .3em; }
   .ProseMirror ul, .ProseMirror ol { padding-left: 1.6em; margin-bottom: .75em; }
   .ProseMirror li { margin: 2px 0; }
+  .ProseMirror ul.tight > li > p, .ProseMirror ol.tight > li > p { margin: 0; }
   .ProseMirror blockquote {
     border-left: 3px solid rgba(${hexToRgb(UI_COLORS.neutral)},.35);
     margin: .75em 0;
@@ -423,6 +424,7 @@ export class EditorPanel {
   .ProseMirror ul[data-type="taskList"] { list-style: none; padding-left: 0; }
   .ProseMirror ul[data-type="taskList"] li { display: flex; align-items: flex-start; gap: 8px; }
   .ProseMirror ul[data-type="taskList"] li > label { margin-top: 3px; flex-shrink: 0; }
+  .ProseMirror ul[data-type="taskList"] li > div > p { margin: 0; }
   .ProseMirror ul[data-type="taskList"] input[type="checkbox"] {
     appearance: none; -webkit-appearance: none;
     width: 13px; height: 13px; flex-shrink: 0;
