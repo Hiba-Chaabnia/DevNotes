@@ -13,7 +13,7 @@ import {
   Lightbulb, ListTodo, Bug, Presentation, BookMarked,
   Link, FileSymlink, TriangleAlert,
   GitPullRequest, GitPullRequestClosed, GitMerge, CircleDot, CircleCheck,
-  Bold, Italic, Underline, Strikethrough, ChevronDown, ChevronUp,
+  Bold, Italic, Underline, Strikethrough,
   List, ListOrdered, ListChecks, Code, Indent, Outdent, RemoveFormatting, Check,
 } from 'lucide';
 import type { IconNode as LucideNode } from 'lucide';
@@ -109,13 +109,9 @@ export class SidebarView implements vscode.WebviewViewProvider {
   resolveWebviewView(webviewView: vscode.WebviewView): void {
     this.view = webviewView;
 
-    const wsRoot = vscode.workspace.workspaceFolders?.[0]?.uri;
     webviewView.webview.options = {
       enableScripts: true,
-      localResourceRoots: [
-        vscode.Uri.joinPath(this.context.extensionUri, 'media'),
-        ...(wsRoot ? [wsRoot] : []),
-      ],
+      localResourceRoots: [vscode.Uri.joinPath(this.context.extensionUri, 'media')],
     };
 
     webviewView.webview.html = this.buildHtml(webviewView.webview);
@@ -143,28 +139,9 @@ export class SidebarView implements vscode.WebviewViewProvider {
       const absPath = path.join(wsRoot.fsPath, n.codeLink.file);
       return { ...n, codeLinkStale: !fs.existsSync(absPath) };
     });
-
-    const imageUriMap: Record<string, string> = {};
-    if (wsRoot) {
-      const imgRegex = /!\[[^\]]*\]\(([^)]+)\)/g;
-      for (const note of notes) {
-        let match: RegExpExecArray | null;
-        imgRegex.lastIndex = 0;
-        while ((match = imgRegex.exec(note.content)) !== null) {
-          const rawPath = match[1];
-          if (!imageUriMap[rawPath]) {
-            const absUri = vscode.Uri.joinPath(wsRoot, rawPath);
-            imageUriMap[rawPath] = this.view!.webview.asWebviewUri(absUri).toString();
-          }
-          imgRegex.lastIndex = match.index + 1;
-        }
-      }
-    }
-
     this.view.webview.postMessage({
       type              : 'init',
       notes,
-      imageUriMap,
       tags              : this.storage.getTags().map(t => ({
         ...t,
         iconSvg: t.icon && TAG_ICON_MAP[t.icon] ? svgIcon(TAG_ICON_MAP[t.icon], 11) : undefined,
@@ -648,8 +625,6 @@ export class SidebarView implements vscode.WebviewViewProvider {
       ghPrMerged:    JSON.stringify(svgIcon(GitMerge,              11)),
       ghIssueOpen:   JSON.stringify(svgIcon(CircleDot,             11)),
       ghIssueClosed: JSON.stringify(svgIcon(CircleCheck,           11)),
-      showMore:      JSON.stringify(svgIcon(ChevronDown, 13)),
-      showLess:      JSON.stringify(svgIcon(ChevronUp,   13)),
       fmtBold:       JSON.stringify(svgIcon(Bold,             13)),
       fmtItalic:     JSON.stringify(svgIcon(Italic,           13)),
       fmtUnderline:  JSON.stringify(svgIcon(Underline,        13)),
@@ -673,7 +648,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
 <head>
 <meta charset="UTF-8">
 <meta http-equiv="Content-Security-Policy"
-  content="default-src 'none'; style-src 'unsafe-inline'; img-src data: ${webview.cspSource}; script-src 'nonce-${nonce}';">
+  content="default-src 'none'; style-src 'unsafe-inline'; img-src data:; script-src 'nonce-${nonce}';">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -1344,11 +1319,12 @@ export class SidebarView implements vscode.WebviewViewProvider {
   }
 
   .show-more {
+    font-size: 11px;
     cursor: pointer;
     opacity: .5;
-    display: none;
-    justify-content: flex-end;
+    text-align: right;
     color: var(--card-text);
+    display: none;
     user-select: none;
   }
   .show-more:hover { opacity: 1; }
@@ -2274,7 +2250,6 @@ export class SidebarView implements vscode.WebviewViewProvider {
   let newTags           = [];
   let newTemplateId     = null;
   let tagColor          = '${NC.blue}';
-  let imageUriMap       = {};
   let currentBranch      = null;
   let currentUser        = null;
   let availableBranches  = [];
@@ -2498,7 +2473,6 @@ export class SidebarView implements vscode.WebviewViewProvider {
       notes         = msg.notes         ?? [];
       tags          = msg.tags          ?? [];
       templates     = msg.templates     ?? [];
-      imageUriMap   = msg.imageUriMap   ?? {};
       defaultTagIds = msg.defaultTagIds ?? [];
       currentBranch     = msg.currentBranch     ?? null;
       currentUser       = msg.currentUser       ?? null;
@@ -3196,16 +3170,15 @@ export class SidebarView implements vscode.WebviewViewProvider {
     const preview  = mkEl('div', 'card-preview clamped');
     preview.innerHTML = searchQuery ? matchSnippet(note.content, searchQuery) : simpleMarkdown(note.content);
 
-    const showMore = mkEl('div', 'show-more');
-    showMore.innerHTML = ${jsSvg.showMore};
+    const showMore = mkEl('div', 'show-more', '▾ more');
     const isLong   = note.content.split('\\n').length > 3 || note.content.length > 180;
-    if (isLong) showMore.style.display = 'flex';
+    if (isLong) showMore.style.display = 'block';
 
     let expanded = false;
     showMore.addEventListener('click', () => {
       expanded = !expanded;
       preview.classList.toggle('clamped', !expanded);
-      showMore.innerHTML = expanded ? ${jsSvg.showLess} : ${jsSvg.showMore};
+      showMore.textContent = expanded ? '▴ less' : '▾ more';
     });
 
     // Intercept checkbox mousedown to prevent focus-steal (which triggers blur = "done" effect)
@@ -3259,7 +3232,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
       preview.innerHTML = simpleMarkdown(note.content);
       if (!expanded) preview.classList.add('clamped');
       const stillLong = note.content.split('\\n').length > 3 || note.content.length > 180;
-      showMore.style.display = (stillLong && !expanded) ? 'flex' : 'none';
+      showMore.style.display = (stillLong && !expanded) ? 'block' : 'none';
     });
 
     preview.addEventListener('keydown', e => {
@@ -3677,7 +3650,6 @@ export class SidebarView implements vscode.WebviewViewProvider {
     const esc = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
     const inline = raw => {
       let l = esc(raw)
-        .replace(/!\\[([^\\]]*)\\]\\(([^)]+)\\)/g, (_, alt, rawPath) => '<img src="' + (imageUriMap[rawPath] || rawPath) + '" alt="' + alt + '" style="max-width:100%;border-radius:4px;margin:2px 0;display:block;">')
         .replace(/\\*\\*(.+?)\\*\\*/g, '<strong>$1</strong>')
         .replace(/\\*(.+?)\\*/g,        '<em>$1</em>')
         .replace(/\`(.+?)\`/g,          '<code>$1</code>')
