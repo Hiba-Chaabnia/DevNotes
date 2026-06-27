@@ -86,7 +86,7 @@ export class GutterController implements vscode.Disposable {
       const args = encodeURIComponent(JSON.stringify([n.id]));
       // Escape ] so a title like "foo [bar]" doesn't break the markdown link syntax
       const safeTitle = n.title.replace(/\]/g, '\\]');
-      md.appendMarkdown(`[${safeTitle}](command:devnotes.focusNote?${args})\n\n`);
+      md.appendMarkdown(`[${safeTitle}](command:devnotesPlus.focusNote?${args})\n\n`);
     });
     return new vscode.Hover(md);
   }

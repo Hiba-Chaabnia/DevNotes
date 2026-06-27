@@ -1,4 +1,4 @@
-import { execSync } from 'child_process';
+import { execSync, exec } from 'child_process';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -10,14 +10,20 @@ export interface McpRegistrationResult {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
+function execAsync(command: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    exec(command, (error, stdout) => {
+      if (error) reject(error);
+      else resolve(stdout);
+    });
+  });
+}
+
 /** Returns true when the `claude` CLI is available in PATH. */
-export function isClaudeCodeInstalled(): boolean {
-  try {
-    execSync('claude --version', { stdio: 'pipe' });
-    return true;
-  } catch {
-    return false;
-  }
+export function isClaudeCodeInstalled(): Promise<boolean> {
+  return new Promise(resolve => {
+    exec('claude --version', err => resolve(!err));
+  });
 }
 
 /** Returns true when the devnotes MCP server is registered in Claude Code. */
@@ -30,6 +36,16 @@ export function isMcpRegistered(): boolean {
   }
 }
 
+/** Non-blocking version of isMcpRegistered — resolves on the next event loop tick. */
+export function isMcpRegisteredAsync(): Promise<boolean> {
+  return new Promise(resolve => {
+    exec('claude mcp list', (err, stdout) => {
+      if (err) { resolve(false); return; }
+      resolve(stdout.toLowerCase().includes('devnotes'));
+    });
+  });
+}
+
 /**
  * Register (or update) the DevNotes MCP server using the Claude Code CLI.
  *
@@ -38,21 +54,18 @@ export function isMcpRegistered(): boolean {
  *
  * Pure function — only depends on child_process. Safe to import in tests.
  */
-export function registerDevNotesMcp(serverDistPath: string): McpRegistrationResult {
+export async function registerDevNotesMcp(serverDistPath: string): Promise<McpRegistrationResult> {
   const normalizedPath = serverDistPath.replace(/\\/g, '/');
   let alreadyRegistered = false;
 
   // Remove any existing entry so re-registration always uses the latest path
   try {
-    execSync('claude mcp remove devnotes', { stdio: 'pipe' });
+    await execAsync('claude mcp remove devnotes');
     alreadyRegistered = true;
   } catch { /* not registered yet — fine */ }
 
   try {
-    execSync(
-      `claude mcp add --scope user devnotes node "${normalizedPath}"`,
-      { stdio: 'pipe' },
-    );
+    await execAsync(`claude mcp add --scope user devnotes node "${normalizedPath}"`);
     return { success: true, message: '', alreadyRegistered };
   } catch (err) {
     return {

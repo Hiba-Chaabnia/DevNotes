@@ -306,11 +306,11 @@ export class SidebarView implements vscode.WebviewViewProvider {
         break;
 
       case 'exportNotes':
-        vscode.commands.executeCommand('devnotes.exportSelected', msg.noteIds);
+        vscode.commands.executeCommand('devnotesPlus.exportSelected', msg.noteIds);
         break;
 
       case 'openConflict':
-        vscode.commands.executeCommand('devnotes.openConflict', msg.noteId);
+        vscode.commands.executeCommand('devnotesPlus.openConflict', msg.noteId);
         break;
 
       case 'setReminder': {
@@ -494,7 +494,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
       }
 
       case 'jumpToLink':
-        vscode.commands.executeCommand('devnotes.jumpToLink', msg.file, msg.line);
+        vscode.commands.executeCommand('devnotesPlus.jumpToLink', msg.file, msg.line);
         break;
 
       case 'linkToEditor': {
@@ -631,7 +631,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
         }
 
         // Detect owner/repo from git remote
-        const identity = detectProjectIdentity();
+        const identity = await detectProjectIdentity();
         let ownerRepo = identity?.remoteUrl ? parseGitHubOwnerRepo(identity.remoteUrl) : undefined;
 
         if (!ownerRepo) {
@@ -786,7 +786,7 @@ export class SidebarView implements vscode.WebviewViewProvider {
         break;
 
       case 'registerMcp':
-        vscode.commands.executeCommand('devnotes.registerMcp');
+        vscode.commands.executeCommand('devnotesPlus.registerMcp');
         break;
 
       case 'bannerDismiss':
@@ -827,14 +827,6 @@ export class SidebarView implements vscode.WebviewViewProvider {
     const sidebarEditorUri  = webview.asWebviewUri(
       vscode.Uri.joinPath(this.context.extensionUri, 'media', 'sidebar-editor.js')
     );
-    const gifUri = (name: string) =>
-      webview.asWebviewUri(vscode.Uri.joinPath(this.context.extensionUri, 'media', name)).toString();
-    const emptyGifs = {
-      notes   : gifUri('empty-notes.gif'),
-      archived: gifUri('empty-archived.gif'),
-      stale   : gifUri('empty-stale.gif'),
-      search  : gifUri('empty-search.gif'),
-    };
 
     // SVG strings injected into the webview script (browser side can't import lucide)
     const jsSvg = {
@@ -2235,8 +2227,6 @@ export class SidebarView implements vscode.WebviewViewProvider {
     text-align: center;
     padding: 24px;
   }
-  .empty-icon { font-size: 2.4em; }
-  .empty-gif { width: 80px; height: 80px; object-fit: contain; opacity: .85; }
   .empty p { font-size: 12px; line-height: 1.5; }
 
   /* ── Code link chip ──────────────────────────────────── */
@@ -2592,7 +2582,6 @@ export class SidebarView implements vscode.WebviewViewProvider {
   const COLORS          = ${colorsJson};
   const COLOR_KEYS      = Object.keys(COLORS);
   const DEFAULT_TAG_ICONS = ${defaultTagIconsJson};
-  const EMPTY_GIFS = ${JSON.stringify(emptyGifs)};
 
   let notes             = [];
   let tags              = [];
@@ -4000,15 +3989,26 @@ if (searchQuery) {
     const visible = visibleNotes();
     if (visible.length === 0) {
       const empty = mkEl('div', 'empty');
-      const gif = (key) => '<img class="empty-gif" src="' + EMPTY_GIFS[key] + '" alt="">';
       if (showArchived) {
-        empty.innerHTML = gif('archived') + '<p>No archived notes.</p>';
-      } else if (staleFilterActive) {
-        empty.innerHTML = gif('stale') + '<p>No stale notes.<br>Everything looks up to date.</p>';
+        empty.innerHTML = '<p>No archived notes.</p>';
       } else if (notes.length === 0) {
-        empty.innerHTML = gif('notes') + '<p>No notes yet.<br>Click <strong>+</strong> to create one.</p>';
+        empty.innerHTML = '<p>No notes yet. Click <strong>+</strong> to create one.</p>';
       } else {
-        empty.innerHTML = gif('search') + '<p>No notes match<br><strong>' + esc(searchQuery || 'the selected filter') + '</strong>.</p>';
+        let desc;
+        if (searchQuery) {
+          desc = 'match <strong>' + esc(searchQuery) + '</strong>';
+        } else {
+          const parts = [];
+          if (activeTagIds.length > 0) {
+            const names = activeTagIds.map(id => { const t = tags.find(t => t.id === id); return t ? t.label : id; });
+            parts.push('tagged <strong>' + esc(names.join(', ')) + '</strong>');
+          }
+          if (branchFilterActive && currentBranch) parts.push('on <strong>' + esc(currentBranch) + '</strong>');
+          if (mineFilterActive) parts.push('owned by <strong>you</strong>');
+          if (staleFilterActive) parts.push('matching <strong>stale</strong> criteria');
+          desc = parts.length ? parts.join(' ') : 'match the selected filter';
+        }
+        empty.innerHTML = '<p>No notes ' + desc + '.</p>';
       }
       cardList.appendChild(empty);
       return;

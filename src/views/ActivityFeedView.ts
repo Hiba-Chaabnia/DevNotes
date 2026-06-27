@@ -51,7 +51,7 @@ export class ActivityFeedView implements vscode.WebviewViewProvider {
 
   push(): void {
     const entries = this.generateEntries();
-    vscode.commands.executeCommand('setContext', 'devnotes.hasActivity', entries.length > 0);
+    vscode.commands.executeCommand('setContext', 'devnotesPlus.hasActivity', entries.length > 0);
     if (!this.view?.visible) return;
     this.view.webview.postMessage({ type: 'init', entries, currentUser: this.currentUser ?? null });
   }

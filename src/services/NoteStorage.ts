@@ -216,9 +216,11 @@ export class NoteStorage {
   async init(): Promise<vscode.Disposable> {
     await this.ensureFolder();
     await this.migrate();
-    this.notes     = await this.readAllNotes();
-    this.tags      = await this.readTags();
-    this.templates = await this.readTemplates();
+    [this.notes, this.tags, this.templates] = await Promise.all([
+      this.readAllNotes(),
+      this.readTags(),
+      this.readTemplates(),
+    ]);
     return this.setupWatcher();
   }
 

@@ -68,7 +68,7 @@ export class EditorPanel {
     const editorJsUri = vscode.Uri.joinPath(context.extensionUri, 'media', 'editor.js');
 
     this.panel = vscode.window.createWebviewPanel(
-      'devnotes.editor',
+      'devnotesPlus.editor',
       `${note.title}`,
       vscode.ViewColumn.One,
       {
@@ -127,7 +127,7 @@ export class EditorPanel {
           await this.handlePasteImage(msg.base64, msg.ext ?? 'png');
 
         } else if (msg.type === 'exportCurrentNote') {
-          vscode.commands.executeCommand('devnotes.exportNote', this.noteId);
+          vscode.commands.executeCommand('devnotesPlus.exportNote', this.noteId);
 
         } else if (msg.type === 'saveAsTemplate' && msg.content !== undefined) {
           const name = await vscode.window.showInputBox({

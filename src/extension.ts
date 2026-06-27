@@ -10,12 +10,16 @@ import { ActivityFeedView } from './views/ActivityFeedView';
 import { ConflictPanel } from './views/ConflictPanel';
 import { runExport } from './controllers/ExportController';
 import { detectProjectIdentity, getCurrentBranch, getGitUser, getLocalBranches } from './services/GitDetector';
-import { registerDevNotesMcp, isClaudeCodeInstalled, isMcpRegistered } from './services/McpRegistration';
+import { registerDevNotesMcp, isClaudeCodeInstalled, isMcpRegistered, isMcpRegisteredAsync } from './services/McpRegistration';
 import { StatusBarController } from './controllers/StatusBarController';
 
 // ─── Activation ──────────────────────────────────────────────────────────────
 
+let _activated = false;
+
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
+  if (_activated) return;
+  _activated = true;
   try {
     await _activate(context);
   } catch (err) {
@@ -29,7 +33,7 @@ async function _activate(context: vscode.ExtensionContext): Promise<void> {
 
   if (!workspaceRoot) {
     context.subscriptions.push(
-      vscode.window.registerWebviewViewProvider('devnotesNoFolderView', {
+      vscode.window.registerWebviewViewProvider('devnotesPlusNoFolderView', {
         resolveWebviewView(view: vscode.WebviewView) {
           view.webview.options = { enableScripts: true };
           view.webview.html = `<!DOCTYPE html>
@@ -93,8 +97,8 @@ async function _activate(context: vscode.ExtensionContext): Promise<void> {
     (noteId) => { if (EditorPanel.current?.noteId === noteId) EditorPanel.current.push(); },
   );
 
-  // Seed MCP registration state so the banner reflects reality on first load
-  sidebar.setMcpRegistered(isMcpRegistered());
+  // Seed MCP registration state — deferred so the subprocess doesn't block activation
+  isMcpRegisteredAsync().then(registered => sidebar.setMcpRegistered(registered));
 
   // Gutter decorations — shows sticky-note icon on lines with linked notes
   gutterController = new GutterController(context, storage);
@@ -120,13 +124,13 @@ async function _activate(context: vscode.ExtensionContext): Promise<void> {
   );
 
   context.subscriptions.push(
-    vscode.window.registerWebviewViewProvider('devnotesActivityView', activityFeed, {
+    vscode.window.registerWebviewViewProvider('devnotesPlusActivityView', activityFeed, {
       webviewOptions: { retainContextWhenHidden: true },
     })
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('devnotes.refreshActivity', () => activityFeed.push())
+    vscode.commands.registerCommand('devnotesPlus.refreshActivity', () => activityFeed.push())
   );
 
   // Track which note IDs have already shown a conflict notification this session
@@ -160,15 +164,17 @@ async function _activate(context: vscode.ExtensionContext): Promise<void> {
 
   // Register the WebviewView in the sidebar
   context.subscriptions.push(
-    vscode.window.registerWebviewViewProvider('devnotesView', sidebar, {
+    vscode.window.registerWebviewViewProvider('devnotesPlusView', sidebar, {
       webviewOptions: { retainContextWhenHidden: true },
     })
   );
 
-  // Detect Git project identity, current branch, and git user
-  refreshProjectIdentity(sidebar);
-  refreshBranch(sidebar, workspaceRoot.fsPath);
-  const currentUser = getGitUser(workspaceRoot.fsPath);
+  // Detect Git project identity, current branch, and git user — all in parallel
+  const [, , currentUser] = await Promise.all([
+    refreshProjectIdentity(sidebar),
+    refreshBranch(sidebar, workspaceRoot.fsPath),
+    getGitUser(workspaceRoot.fsPath),
+  ]);
   sidebar.setCurrentUser(currentUser);
   activityFeed.setCurrentUser(currentUser);
 
@@ -183,20 +189,20 @@ async function _activate(context: vscode.ExtensionContext): Promise<void> {
   const headWatcher = vscode.workspace.createFileSystemWatcher(
     new vscode.RelativePattern(workspaceRoot, '.git/HEAD')
   );
-  headWatcher.onDidChange(() => refreshBranch(sidebar, workspaceRoot.fsPath));
+  headWatcher.onDidChange(() => { refreshBranch(sidebar, workspaceRoot.fsPath); });
   context.subscriptions.push(headWatcher);
 
   // ── Commands ─────────────────────────────────────────────────────────────
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('devnotes.refresh', () => {
+    vscode.commands.registerCommand('devnotesPlus.refresh', () => {
       sidebar.push();
     })
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('devnotes.focusSidebar', () => {
-      vscode.commands.executeCommand('devnotesView.focus');
+    vscode.commands.registerCommand('devnotesPlus.focusSidebar', () => {
+      vscode.commands.executeCommand('devnotesPlusView.focus');
     })
   );
 
@@ -205,7 +211,7 @@ async function _activate(context: vscode.ExtensionContext): Promise<void> {
   // Works from anywhere: auto-links to current file:line when an editor is
   // focused, falls back to a plain note when no editor is open.
   context.subscriptions.push(
-    vscode.commands.registerCommand('devnotes.quickCapture', async () => {
+    vscode.commands.registerCommand('devnotesPlus.quickCapture', async () => {
       const editor = vscode.window.activeTextEditor;
 
       let prompt    = 'New note';
@@ -247,7 +253,7 @@ async function _activate(context: vscode.ExtensionContext): Promise<void> {
 
       // Branch scope step — only shown when on a named git branch
       let branch: string | undefined;
-      const detectedBranch = getCurrentBranch(workspaceRoot.fsPath);
+      const detectedBranch = await getCurrentBranch(workspaceRoot.fsPath);
       if (detectedBranch) {
         type ScopeItem = vscode.QuickPickItem & { branch?: string };
         // Pre-select "Scope to branch" when the sidebar branch filter is active —
@@ -280,14 +286,14 @@ async function _activate(context: vscode.ExtensionContext): Promise<void> {
 
   // Open a note in the rich editor (used by hover tooltip links)
   context.subscriptions.push(
-    vscode.commands.registerCommand('devnotes.focusNote', (noteId: string) => {
+    vscode.commands.registerCommand('devnotesPlus.focusNote', (noteId: string) => {
       EditorPanel.show(context, storage, noteId, () => sidebar.push());
     })
   );
 
   // Jump to the file:line stored in a note's codeLink
   context.subscriptions.push(
-    vscode.commands.registerCommand('devnotes.jumpToLink', async (file: string, line: number) => {
+    vscode.commands.registerCommand('devnotesPlus.jumpToLink', async (file: string, line: number) => {
       const wsRoot = vscode.workspace.workspaceFolders?.[0]?.uri;
       if (!wsRoot) return;
       const uri = vscode.Uri.joinPath(wsRoot, file);
@@ -305,7 +311,7 @@ async function _activate(context: vscode.ExtensionContext): Promise<void> {
 
   // Open the conflict resolution panel for a specific note
   context.subscriptions.push(
-    vscode.commands.registerCommand('devnotes.openConflict', (noteId: string) => {
+    vscode.commands.registerCommand('devnotesPlus.openConflict', (noteId: string) => {
       ConflictPanel.show(context, storage, noteId, () => sidebar.push());
     })
   );
@@ -314,14 +320,14 @@ async function _activate(context: vscode.ExtensionContext): Promise<void> {
 
   // Export all notes
   context.subscriptions.push(
-    vscode.commands.registerCommand('devnotes.exportAll', () =>
+    vscode.commands.registerCommand('devnotesPlus.exportAll', () =>
       runExport(storage.getNotes(), devnotesDir)
     )
   );
 
   // Export a single note by ID (called from editor toolbar and sidebar)
   context.subscriptions.push(
-    vscode.commands.registerCommand('devnotes.exportNote', (noteId: string) => {
+    vscode.commands.registerCommand('devnotesPlus.exportNote', (noteId: string) => {
       const note = storage.getNote(noteId);
       if (!note) return;
       return runExport([note], devnotesDir);
@@ -330,7 +336,7 @@ async function _activate(context: vscode.ExtensionContext): Promise<void> {
 
   // Export a specific set of notes by IDs (called from sidebar selection mode)
   context.subscriptions.push(
-    vscode.commands.registerCommand('devnotes.exportSelected', (noteIds: string[]) => {
+    vscode.commands.registerCommand('devnotesPlus.exportSelected', (noteIds: string[]) => {
       const notes = noteIds.map(id => storage.getNote(id)).filter((n): n is import('./services/NoteStorage').Note => !!n);
       return runExport(notes, devnotesDir);
     })
@@ -338,10 +344,10 @@ async function _activate(context: vscode.ExtensionContext): Promise<void> {
 
   // Register the DevNotes MCP server with Claude Code (~/.claude/mcp.json)
   context.subscriptions.push(
-    vscode.commands.registerCommand('devnotes.registerMcp', async () => {
-      if (!isClaudeCodeInstalled()) {
+    vscode.commands.registerCommand('devnotesPlus.registerMcp', async () => {
+      if (!await isClaudeCodeInstalled()) {
         const action = await vscode.window.showWarningMessage(
-          'Claude Code does not appear to be installed — ~/.claude/ was not found.',
+          'Claude Code CLI not found. Make sure it is installed and available in your PATH.',
           'Install Claude Code'
         );
         if (action === 'Install Claude Code') {
@@ -353,17 +359,13 @@ async function _activate(context: vscode.ExtensionContext): Promise<void> {
       const serverDistPath = path.join(context.extensionPath, 'mcp-server', 'dist', 'index.js');
 
       if (!fs.existsSync(serverDistPath)) {
-        const action = await vscode.window.showWarningMessage(
-          'DevNotes MCP server is not built yet. Run `npm install && npm run build` inside the mcp-server/ folder.',
-          'Open Terminal'
+        vscode.window.showErrorMessage(
+          'DevNotes: MCP server bundle is missing. Try reinstalling the extension.'
         );
-        if (action === 'Open Terminal') {
-          vscode.commands.executeCommand('workbench.action.terminal.new');
-        }
         return;
       }
 
-      const result = registerDevNotesMcp(serverDistPath);
+      const result = await registerDevNotesMcp(serverDistPath);
 
       if (!result.success) {
         vscode.window.showErrorMessage(`DevNotes MCP: ${result.message}`);
@@ -486,9 +488,9 @@ export function deactivate(): void {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-function refreshProjectIdentity(sidebar: SidebarView): void {
+async function refreshProjectIdentity(sidebar: SidebarView): Promise<void> {
   try {
-    const identity = detectProjectIdentity();
+    const identity = await detectProjectIdentity();
     if (identity) sidebar.setProjectName(identity.displayName);
   } catch (err) {
     console.error('[DevNotes] refreshProjectIdentity error:', err);
@@ -512,10 +514,14 @@ async function notifyConflict(
   }
 }
 
-function refreshBranch(sidebar: SidebarView, rootPath: string): void {
+async function refreshBranch(sidebar: SidebarView, rootPath: string): Promise<void> {
   try {
-    sidebar.setCurrentBranch(getCurrentBranch(rootPath));
-    sidebar.setAvailableBranches(getLocalBranches(rootPath));
+    const [branch, branches] = await Promise.all([
+      getCurrentBranch(rootPath),
+      getLocalBranches(rootPath),
+    ]);
+    sidebar.setCurrentBranch(branch);
+    sidebar.setAvailableBranches(branches);
   } catch (err) {
     console.error('[DevNotes] refreshBranch error:', err);
   }

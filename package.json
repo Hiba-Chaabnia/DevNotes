@@ -1,14 +1,14 @@
 {
-  "name": "devnotes",
-  "displayName": "DevNotes",
-  "description": "Project-scoped sticky-note canvas for developers",
-  "version": "0.1.0",
+  "name": "devnotes-plus",
+  "displayName": "DevNotes+",
+  "description": "Project-scoped developer notes anchored to files & git branches. Features rich block editor (images, tables, code), Claude Code integration, team sharing, and more.",
+  "version": "0.1.1",
   "icon": "media/icon.png",
   "publisher": "HibaChaabnia",
   "license": "AGPL-3.0",
   "repository": {
     "type": "git",
-    "url": "https://github.com/HibaChaabnia/devnotes"
+    "url": "https://github.com/Hiba-Chaabnia/DevNotes-Plus"
   },
   "engines": {
     "vscode": "^1.85.0"
@@ -24,83 +24,83 @@
     "viewsContainers": {
       "activitybar": [
         {
-          "id": "devnotes-container",
+          "id": "devnotes-plus-container",
           "title": "DevNotes",
           "icon": "media/icon.svg"
         }
       ]
     },
     "views": {
-      "devnotes-container": [
+      "devnotes-plus-container": [
         {
           "type": "webview",
-          "id": "devnotesNoFolderView",
+          "id": "devnotesPlusNoFolderView",
           "name": "DevNotes",
           "when": "workspaceFolderCount == 0"
         },
         {
           "type": "webview",
-          "id": "devnotesView",
+          "id": "devnotesPlusView",
           "name": "Notes",
           "visibility": "collapsed",
           "when": "workspaceFolderCount != 0"
         },
         {
           "type": "webview",
-          "id": "devnotesActivityView",
+          "id": "devnotesPlusActivityView",
           "name": "Activity",
           "visibility": "collapsed",
-          "when": "workspaceFolderCount != 0 && devnotes.hasActivity"
+          "when": "workspaceFolderCount != 0 && devnotesPlus.hasActivity"
         }
       ]
     },
     "commands": [
       {
-        "command": "devnotes.refresh",
+        "command": "devnotesPlus.refresh",
         "title": "Refresh",
         "icon": "$(refresh)",
         "category": "DevNotes"
       },
       {
-        "command": "devnotes.jumpToLink",
+        "command": "devnotesPlus.jumpToLink",
         "title": "Jump to Linked File",
         "category": "DevNotes"
       },
       {
-        "command": "devnotes.quickCapture",
+        "command": "devnotesPlus.quickCapture",
         "title": "Add DevNote Here",
         "category": "DevNotes"
       },
       {
-        "command": "devnotes.exportAll",
+        "command": "devnotesPlus.exportAll",
         "title": "Export All Notes",
         "category": "DevNotes"
       },
       {
-        "command": "devnotes.exportNote",
+        "command": "devnotesPlus.exportNote",
         "title": "Export Note",
         "category": "DevNotes"
       },
       {
-        "command": "devnotes.refreshActivity",
+        "command": "devnotesPlus.refreshActivity",
         "title": "Refresh Activity Feed",
         "icon": "$(refresh)",
         "category": "DevNotes"
       },
       {
-        "command": "devnotes.registerMcp",
+        "command": "devnotesPlus.registerMcp",
         "title": "Connect to Claude Code (Register MCP Server)",
         "category": "DevNotes"
       },
       {
-        "command": "devnotes.focusSidebar",
+        "command": "devnotesPlus.focusSidebar",
         "title": "Open DevNotes Sidebar",
         "category": "DevNotes"
       }
     ],
     "keybindings": [
       {
-        "command": "devnotes.quickCapture",
+        "command": "devnotesPlus.quickCapture",
         "key": "ctrl+alt+q",
         "mac": "cmd+alt+q"
       }
@@ -108,29 +108,30 @@
     "menus": {
       "view/title": [
         {
-          "command": "devnotes.refresh",
-          "when": "view == devnotesView",
+          "command": "devnotesPlus.refresh",
+          "when": "view == devnotesPlusView",
           "group": "navigation@1"
         },
         {
-          "command": "devnotes.refreshActivity",
-          "when": "view == devnotesActivityView",
+          "command": "devnotesPlus.refreshActivity",
+          "when": "view == devnotesPlusActivityView",
           "group": "navigation@1"
         }
       ],
       "editor/context": [
         {
-          "command": "devnotes.quickCapture",
+          "command": "devnotesPlus.quickCapture",
           "when": "editorTextFocus",
-          "group": "devnotes@1"
+          "group": "devnotesPlus@1"
         }
       ]
     }
   },
   "scripts": {
     "vscode:prepublish": "npm run compile",
-    "compile": "tsc -p ./ && npm run bundle:extension && npm run build:webview",
+    "compile": "tsc -p ./ && npm run bundle:extension && npm run build:webview && npm run bundle:mcp",
     "bundle:extension": "esbuild src/extension.ts --bundle --outfile=out/extension.js --platform=node --external:vscode --minify",
+    "bundle:mcp": "esbuild mcp-server/src/index.ts --bundle --outfile=mcp-server/dist/index.js --platform=node --format=cjs --minify --tsconfig=mcp-server/tsconfig.json",
     "build:webview": "npm run build:editor && npm run build:sidebar-editor",
     "build:editor": "esbuild src/webview/editor.ts --bundle --outfile=media/editor.js --platform=browser --target=es2020 --minify",
     "build:sidebar-editor": "esbuild src/webview/sidebar-editor.ts --bundle --outfile=media/sidebar-editor.js --platform=browser --target=es2020 --minify",

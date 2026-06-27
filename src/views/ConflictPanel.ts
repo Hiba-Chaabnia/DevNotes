@@ -45,7 +45,7 @@ export class ConflictPanel {
     private readonly onResolved : () => void,
   ) {
     this.panel = vscode.window.createWebviewPanel(
-      'devnotes.conflict',
+      'devnotesPlus.conflict',
       `Conflict Panel — ${ours.title}`,
       vscode.ViewColumn.One,
       { enableScripts: true, retainContextWhenHidden: true },

@@ -53,7 +53,7 @@ export class ReminderController implements vscode.Disposable {
     const now = Date.now();
 
     if (action === 'Open') {
-      vscode.commands.executeCommand('devnotes.focusNote', noteId);
+      vscode.commands.executeCommand('devnotesPlus.focusNote', noteId);
       // Keep the reminder set so the user doesn't lose it
       return;
     }

@@ -21,13 +21,13 @@ export class StatusBarController implements vscode.Disposable {
     this.reminderItem = vscode.window.createStatusBarItem(
       vscode.StatusBarAlignment.Right, 100
     );
-    this.reminderItem.command = 'devnotes.focusSidebar';
+    this.reminderItem.command = 'devnotesPlus.focusSidebar';
     this.disposables.push(this.reminderItem);
 
     this.linkedItem = vscode.window.createStatusBarItem(
       vscode.StatusBarAlignment.Right, 99
     );
-    this.linkedItem.command = 'devnotes.focusSidebar';
+    this.linkedItem.command = 'devnotesPlus.focusSidebar';
     this.disposables.push(this.linkedItem);
 
     this.disposables.push(

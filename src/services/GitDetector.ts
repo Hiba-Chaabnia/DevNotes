@@ -17,17 +17,16 @@ export interface ProjectIdentity {
  * Checks the local `.git/config` first, then falls back to `~/.gitconfig`.
  * Returns the `name` field if present, otherwise `email`, otherwise undefined.
  */
-export function getGitUser(workspaceRootPath: string): string | undefined {
+export async function getGitUser(workspaceRootPath: string): Promise<string | undefined> {
   const candidates = [
     path.join(workspaceRootPath, '.git', 'config'),
     path.join(os.homedir(), '.gitconfig'),
   ];
-  // Values that must never be returned as a user identity
   const INVALID = new Set(['', 'undefined', 'null', 'unknown']);
 
   for (const configPath of candidates) {
     try {
-      const content     = fs.readFileSync(configPath, 'utf8');
+      const content     = await fs.promises.readFile(configPath, 'utf8');
       const userSection = content.match(/\[user\]([^\[]*)/)?.[1] ?? '';
       const name        = userSection.match(/name\s*=\s*(.+)/)?.[1]?.trim() ?? '';
       if (name && !INVALID.has(name))  return name;
@@ -42,10 +41,10 @@ export function getGitUser(workspaceRootPath: string): string | undefined {
  * Reads the current branch from `.git/HEAD`.
  * Returns `undefined` when not on a named branch (detached HEAD) or no git repo.
  */
-export function getCurrentBranch(workspaceRootPath: string): string | undefined {
+export async function getCurrentBranch(workspaceRootPath: string): Promise<string | undefined> {
   const headPath = path.join(workspaceRootPath, '.git', 'HEAD');
   try {
-    const content = fs.readFileSync(headPath, 'utf8').trim();
+    const content = (await fs.promises.readFile(headPath, 'utf8')).trim();
     if (content.startsWith('ref: refs/heads/')) {
       return content.slice('ref: refs/heads/'.length);
     }
@@ -60,7 +59,7 @@ export function getCurrentBranch(workspaceRootPath: string): string | undefined 
  * Falls back to the workspace folder name when no Git remote is found.
  * Returns `undefined` when no workspace is open.
  */
-export function detectProjectIdentity(): ProjectIdentity | undefined {
+export async function detectProjectIdentity(): Promise<ProjectIdentity | undefined> {
   const folders = vscode.workspace.workspaceFolders;
   if (!folders || folders.length === 0) return undefined;
 
@@ -68,17 +67,15 @@ export function detectProjectIdentity(): ProjectIdentity | undefined {
 
   // Try .git/config first
   const gitConfigPath = path.join(rootPath, '.git', 'config');
-  if (fs.existsSync(gitConfigPath)) {
-    try {
-      const content = fs.readFileSync(gitConfigPath, 'utf8');
-      const remoteUrl = parseOriginUrl(content);
-      if (remoteUrl) {
-        const slug = slugFromRemoteUrl(remoteUrl);
-        return { id: slug, displayName: slug, remoteUrl };
-      }
-    } catch {
-      // fall through
+  try {
+    const content  = await fs.promises.readFile(gitConfigPath, 'utf8');
+    const remoteUrl = parseOriginUrl(content);
+    if (remoteUrl) {
+      const slug = slugFromRemoteUrl(remoteUrl);
+      return { id: slug, displayName: slug, remoteUrl };
     }
+  } catch {
+    // fall through
   }
 
   // Fallback: workspace folder name
@@ -92,17 +89,18 @@ export function detectProjectIdentity(): ProjectIdentity | undefined {
  * and `.git/packed-refs` (packed refs). Returns a sorted, deduplicated array.
  * Returns an empty array when the directory is not a git repository.
  */
-export function getLocalBranches(workspaceRootPath: string): string[] {
+export async function getLocalBranches(workspaceRootPath: string): Promise<string[]> {
   const branches = new Set<string>();
 
   // Unpacked refs
   const headsDir = path.join(workspaceRootPath, '.git', 'refs', 'heads');
-  try { collectBranchRefs(headsDir, '', branches); } catch { /* not a git repo */ }
+  try { await collectBranchRefs(headsDir, '', branches); } catch { /* not a git repo */ }
 
   // Packed refs
   const packedRefs = path.join(workspaceRootPath, '.git', 'packed-refs');
   try {
-    for (const line of fs.readFileSync(packedRefs, 'utf8').split('\n')) {
+    const content = await fs.promises.readFile(packedRefs, 'utf8');
+    for (const line of content.split('\n')) {
       if (line.startsWith('#') || line.startsWith('^')) continue;
       const m = line.match(/^\S+ refs\/heads\/(.+)$/);
       if (m) branches.add(m[1].trim());
@@ -112,17 +110,18 @@ export function getLocalBranches(workspaceRootPath: string): string[] {
   return [...branches].sort();
 }
 
-function collectBranchRefs(dir: string, prefix: string, out: Set<string>): void {
-  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+async function collectBranchRefs(dir: string, prefix: string, out: Set<string>): Promise<void> {
+  const entries = await fs.promises.readdir(dir, { withFileTypes: true });
+  for (const entry of entries) {
     if (entry.isDirectory()) {
-      collectBranchRefs(path.join(dir, entry.name), `${prefix}${entry.name}/`, out);
+      await collectBranchRefs(path.join(dir, entry.name), `${prefix}${entry.name}/`, out);
     } else {
       out.add(prefix + entry.name);
     }
   }
 }
 
-// ─── Helpers ───────────────────────────────────────────────────────────────
+// ─── Helpers ───────────────────────────────────────────────────────────────────
 
 /**
  * Parses the `[remote "origin"]` block in a `.git/config` file and returns
